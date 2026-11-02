@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>calsync docs</title>
+<meta name="description" content="How to install calsync, make your sign-in apps, connect calendars and understand what a sync does.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<link rel="canonical" href="https://docs.calsync.co/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="calsync docs">
+<meta property="og:description" content="How to install calsync, make your sign-in apps, connect calendars and understand what a sync does.">
+<meta property="og:url" content="https://docs.calsync.co/">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap bar hd">
+<a class="brand" href="/"><img src="/logo.svg" alt="" width="30" height="30">calsync docs</a>
+<nav aria-label="Main"><a href="https://calsync.co/">calsync.co</a><a href="https://github.com/calsync-co/calsync">GitHub</a></nav>
+</header>
+<div class="wrap docs">
+<nav class="side" aria-label="Docs"><p>Docs</p><ul>
+<li><a href="/" aria-current="page">Overview</a></li>
+<li><a href="/docker/">Install with Docker</a></li>
+<li><a href="/python/">Install without Docker</a></li>
+<li><a href="/google/">Google sign-in app</a></li>
+<li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/ics/">Published .ics feeds</a></li>
+<li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/settings/">Settings and environment</a></li>
+<li><a href="/faq/">FAQ</a></li>
+<li><a href="/troubleshooting/">Troubleshooting</a></li>
+</ul></nav>
+<main id="main" class="doc">
+
+<h1>calsync docs</h1>
+<p class="lede">calsync keeps your Google and Microsoft 365 calendars showing the same events. You run it yourself. These pages cover everything from install to troubleshooting.</p>
+<h2>The order to do things in</h2>
+<ol>
+<li>Install calsync, with or without Docker.</li>
+<li>Make a free sign-in app for each provider you use: Google, Microsoft, or both.</li>
+<li>Open the page at <code>http://localhost:8484</code>, add your calendars and sign in.</li>
+<li>Press Preview changes. Read the plan.</li>
+<li>Press Apply and keep syncing.</li>
+</ol>
+<h2>Pages</h2>
+<ul class="idx">
+<li><a href="/docker/">Install with Docker</a><span>Compose, the setup code and the first run.</span></li>
+<li><a href="/python/">Install without Docker</a><span>pipx, the command line and a timer.</span></li>
+<li><a href="/google/">Google sign-in app</a><span>Create your own app in Google Cloud and sign in.</span></li>
+<li><a href="/microsoft/">Microsoft sign-in app</a><span>Register an app in Entra and sign in with a device code.</span></li>
+<li><a href="/ics/">Published .ics feeds</a><span>A read-only source, for calendars that block outside apps.</span></li>
+<li><a href="/how-a-sync-decides/">How a sync decides</a><span>What gets copied, updated and deleted, and what stops a run.</span></li>
+<li><a href="/settings/">Settings and environment</a><span>Port, time zone, hosts, and putting it behind HTTPS.</span></li>
+<li><a href="/faq/">FAQ</a><span>Short answers.</span></li>
+<li><a href="/troubleshooting/">Troubleshooting</a><span>Errors and what to do about them.</span></li>
+</ul>
+<h2>What you need</h2>
+<ul>
+<li>A machine that stays on, such as a home server, a spare computer or a small VPS.</li>
+<li>Docker with Compose, or Python 3.10 or newer.</li>
+<li>About 10 minutes to make a sign-in app for each of Google and Microsoft.</li>
+</ul>
+<p>There is no hosted version of calsync. There is no account with us.</p>
+
+<div class="pager"><span></span><a href="/docker/">Next: Install with Docker</a></div>
+</main>
+</div>
+<footer class="foot">
+<div class="wrap">
+<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg" alt="" width="30" height="30">calsync</a>
+<p>This page has no trackers, analytics or cookies.</p>
+</div>
+</footer>
+</body>
+</html>

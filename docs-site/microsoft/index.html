@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Microsoft sign-in app | calsync docs</title>
+<meta name="description" content="Register your own app in Microsoft Entra for calsync: public client flow, Calendars.ReadWrite and offline_access, then sign in with a device code.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<link rel="canonical" href="https://docs.calsync.co/microsoft/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Microsoft sign-in app | calsync docs">
+<meta property="og:description" content="Register your own app in Microsoft Entra for calsync: public client flow, Calendars.ReadWrite and offline_access, then sign in with a device code.">
+<meta property="og:url" content="https://docs.calsync.co/microsoft/">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap bar hd">
+<a class="brand" href="/"><img src="/logo.svg" alt="" width="30" height="30">calsync docs</a>
+<nav aria-label="Main"><a href="https://calsync.co/">calsync.co</a><a href="https://github.com/calsync-co/calsync">GitHub</a></nav>
+</header>
+<div class="wrap docs">
+<nav class="side" aria-label="Docs"><p>Docs</p><ul>
+<li><a href="/">Overview</a></li>
+<li><a href="/docker/">Install with Docker</a></li>
+<li><a href="/python/">Install without Docker</a></li>
+<li><a href="/google/">Google sign-in app</a></li>
+<li><a href="/microsoft/" aria-current="page">Microsoft sign-in app</a></li>
+<li><a href="/ics/">Published .ics feeds</a></li>
+<li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/settings/">Settings and environment</a></li>
+<li><a href="/faq/">FAQ</a></li>
+<li><a href="/troubleshooting/">Troubleshooting</a></li>
+</ul></nav>
+<main id="main" class="doc">
+
+<h1>Microsoft sign-in app</h1>
+<p class="lede">Microsoft 365 and Outlook.com calendars need your own app registration. It is free and takes about 10 minutes.</p>
+<div class="callout"><p>Some school and work tenants block outside apps or require an admin to approve them. If yours does, use a <a href="/ics/">published .ics link</a> instead. It works one way, as a read-only source.</p></div>
+<h2>Register the app</h2>
+<ol>
+<li>Go to <code>entra.microsoft.com</code> and sign in.</li>
+<li>Open App registrations and click New registration.</li>
+<li>Give it any name, such as calsync.</li>
+<li>For supported account types, choose Accounts in any organizational directory and personal Microsoft accounts.</li>
+<li>Leave Redirect URI empty. Click Register.</li>
+<li>Open Authentication. Set Allow public client flows to Yes. Save.</li>
+<li>Open API permissions. Click Add a permission, then Microsoft Graph, then Delegated permissions. Add <code>Calendars.ReadWrite</code> and <code>offline_access</code>.</li>
+<li>Open Overview and copy the Application (client) ID.</li>
+</ol>
+<p>Registering an app needs a directory in Microsoft Entra. If your Microsoft account has none, Microsoft may ask you to create a free one first.</p>
+<h2>Give it to calsync</h2>
+<p>Paste the Application (client) ID into the calsync page. With the command line, run <code>calsync setup microsoft</code>.</p>
+<h2>Sign in with a device code</h2>
+<p>calsync shows a short code and tells you which Microsoft page to open. Open that page on any device, type the code, sign in and approve. With the command line:</p>
+<pre><code>calsync auth outlook work</code></pre>
+<p>Pick any label you like. The code expires after a few minutes, so do it right away.</p>
+
+<div class="pager"><a href="/google/">Back: Google sign-in app</a><a href="/ics/">Next: Published .ics feeds</a></div>
+</main>
+</div>
+<footer class="foot">
+<div class="wrap">
+<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg" alt="" width="30" height="30">calsync</a>
+<p>This page has no trackers, analytics or cookies.</p>
+</div>
+</footer>
+</body>
+</html>

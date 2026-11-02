@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install with Docker | calsync docs</title>
+<meta name="description" content="Run calsync with Docker Compose and finish setup on a web page at localhost:8484.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<link rel="canonical" href="https://docs.calsync.co/docker/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Install with Docker | calsync docs">
+<meta property="og:description" content="Run calsync with Docker Compose and finish setup on a web page at localhost:8484.">
+<meta property="og:url" content="https://docs.calsync.co/docker/">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap bar hd">
+<a class="brand" href="/"><img src="/logo.svg" alt="" width="30" height="30">calsync docs</a>
+<nav aria-label="Main"><a href="https://calsync.co/">calsync.co</a><a href="https://github.com/calsync-co/calsync">GitHub</a></nav>
+</header>
+<div class="wrap docs">
+<nav class="side" aria-label="Docs"><p>Docs</p><ul>
+<li><a href="/">Overview</a></li>
+<li><a href="/docker/" aria-current="page">Install with Docker</a></li>
+<li><a href="/python/">Install without Docker</a></li>
+<li><a href="/google/">Google sign-in app</a></li>
+<li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/ics/">Published .ics feeds</a></li>
+<li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/settings/">Settings and environment</a></li>
+<li><a href="/faq/">FAQ</a></li>
+<li><a href="/troubleshooting/">Troubleshooting</a></li>
+</ul></nav>
+<main id="main" class="doc">
+
+<h1>Install with Docker</h1>
+<p class="lede">Docker Compose runs calsync and its setup page. This is the easiest route.</p>
+<h2>Start it</h2>
+<p>You need Docker with the Compose plugin.</p>
+<pre><code>git clone https://github.com/calsync-co/calsync
+cd calsync
+docker compose up -d</code></pre>
+<p>Open <code>http://localhost:8484</code> in a browser on the same machine. Compose publishes the port on that machine only.</p>
+<h2>First visit</h2>
+<ol>
+<li>The page asks for a setup code. Get it from the logs:
+<pre><code>docker compose logs calsync</code></pre></li>
+<li>Choose a password for the page. It guards your sign-ins, so make it a good one.</li>
+</ol>
+<h2>Add your calendars</h2>
+<ol>
+<li>Make a sign-in app for your provider: <a href="/google/">Google</a> or <a href="/microsoft/">Microsoft</a>. Paste its details into the page.</li>
+<li>Add a calendar: Google, Outlook or Microsoft 365, or a published <a href="/ics/">.ics link</a>. Sign in when asked.</li>
+<li>Choose the calendars to keep in sync. Give each a short name.</li>
+<li>Set the options on each calendar. See below.</li>
+<li>Press Preview changes. It shows how many events would be added, updated and removed. Nothing has changed yet.</li>
+<li>Press Apply and keep syncing.</li>
+</ol>
+<h2>Options on each calendar</h2>
+<dl class="kv">
+<div><dt>Copies here only say Busy</dt><dd>Copies on this calendar have no title or location.</dd></div>
+<div><dt>Never write to this calendar</dt><dd>Read only. calsync uses it as a source and never writes to it.</dd></div>
+<div><dt>Don't copy X here</dt><dd>One switch for every other calendar, named X. Events from X are not copied here.</dd></div>
+</dl>
+<h2>How often it runs</h2>
+<p>In the settings, choose every 2, 5, 10, 15, 30 or 60 minutes. The default is 5.</p>
+<h2>The way out</h2>
+<p>On each calendar, "Delete the copies calsync made here" removes every copy calsync made on it. It touches nothing else. From the command line, <code>calsync purge</code> does the same.</p>
+<h2>Everyday commands</h2>
+<pre><code>docker compose ps           # is it running?
+docker compose logs calsync  # what has it done?
+docker compose down          # stop it
+git pull &amp;&amp; docker compose up -d --build   # update</code></pre>
+<p>Your sign-ins and calendar data live in the Docker volume <code>calsync-data</code>, on your machine. To change the port, time zone or allowed host names, see <a href="/settings/">Settings and environment</a>.</p>
+<div class="callout"><p>Put calsync behind your own HTTPS proxy before you expose it to the internet.</p></div>
+
+<div class="pager"><a href="/">Back: Overview</a><a href="/python/">Next: Install without Docker</a></div>
+</main>
+</div>
+<footer class="foot">
+<div class="wrap">
+<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg" alt="" width="30" height="30">calsync</a>
+<p>This page has no trackers, analytics or cookies.</p>
+</div>
+</footer>
+</body>
+</html>

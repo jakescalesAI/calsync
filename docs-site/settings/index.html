@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings and environment | calsync docs</title>
+<meta name="description" content="calsync settings: how often it runs, environment variables, time zone, and exposing the page safely behind HTTPS.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<link rel="canonical" href="https://docs.calsync.co/settings/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Settings and environment | calsync docs">
+<meta property="og:description" content="calsync settings: how often it runs, environment variables, time zone, and exposing the page safely behind HTTPS.">
+<meta property="og:url" content="https://docs.calsync.co/settings/">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap bar hd">
+<a class="brand" href="/"><img src="/logo.svg" alt="" width="30" height="30">calsync docs</a>
+<nav aria-label="Main"><a href="https://calsync.co/">calsync.co</a><a href="https://github.com/calsync-co/calsync">GitHub</a></nav>
+</header>
+<div class="wrap docs">
+<nav class="side" aria-label="Docs"><p>Docs</p><ul>
+<li><a href="/">Overview</a></li>
+<li><a href="/docker/">Install with Docker</a></li>
+<li><a href="/python/">Install without Docker</a></li>
+<li><a href="/google/">Google sign-in app</a></li>
+<li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/ics/">Published .ics feeds</a></li>
+<li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/settings/" aria-current="page">Settings and environment</a></li>
+<li><a href="/faq/">FAQ</a></li>
+<li><a href="/troubleshooting/">Troubleshooting</a></li>
+</ul></nav>
+<main id="main" class="doc">
+
+<h1>Settings and environment</h1>
+<p class="lede">Most settings are on the calsync page. A few live in environment variables.</p>
+<h2>On the page</h2>
+<ul>
+<li><strong>How often it runs.</strong> Every 2, 5, 10, 15, 30 or 60 minutes. The default is 5.</li>
+<li><strong>Time zone.</strong> Used for quick add text, agendas and .ics times that name no zone.</li>
+<li><strong>Password.</strong> You can change it in the settings.</li>
+</ul>
+<h2>Environment variables</h2>
+<dl class="kv">
+<div><dt><code>CALSYNC_HOME</code></dt><dd>The folder for config and sign-in tokens. Default <code>~/.calsync</code>. Keep it private to your user.</dd></div>
+<div><dt><code>CALSYNC_PORT</code></dt><dd>The port for the page. Default 8484. In Compose, it sets the port published on your machine.</dd></div>
+<div><dt><code>CALSYNC_BIND</code></dt><dd>The address the page listens on. Default <code>127.0.0.1</code>. The Docker image listens on all addresses inside the container, and Compose publishes the port to this machine only.</dd></div>
+<div><dt><code>CALSYNC_HOSTS</code></dt><dd>Extra host names allowed to reach the page, separated by commas.</dd></div>
+<div><dt><code>CALSYNC_PUBLIC_URL</code></dt><dd>The https address, if you put calsync behind your own proxy. It is used as Google's sign-in return address.</dd></div>
+<div><dt><code>CALSYNC_TZ</code></dt><dd>The time zone for quick add text, agendas and .ics times that name none.</dd></div>
+</dl>
+<p>With Docker Compose, put these in your shell or in a <code>.env</code> file next to <code>compose.yaml</code>. Compose passes <code>CALSYNC_TZ</code>, <code>CALSYNC_HOSTS</code>, <code>CALSYNC_PUBLIC_URL</code> and <code>CALSYNC_PORT</code> through.</p>
+<h2>Reaching it from other machines</h2>
+<p>By default only the machine running calsync can reach the page. Before you expose it to the internet, put it behind your own HTTPS proxy. Then set <code>CALSYNC_PUBLIC_URL</code> to the proxy's https address and <code>CALSYNC_HOSTS</code> to its host name. Sign-ins and tokens are on that machine, so treat it like a password manager.</p>
+<h2>Optional notes features</h2>
+<p>Three extras are switched on in <code>config.json</code> inside the calsync folder. They are all optional.</p>
+<dl class="kv">
+<div><dt><code>quick_add</code></dt><dd>New lines starting with "- " in a Markdown note become events.</dd></div>
+<div><dt><code>agenda</code></dt><dd>Writes a Markdown agenda and refreshes the Calendar section of daily notes, for Obsidian-style folders.</dd></div>
+<div><dt><code>export</code></dt><dd>Writes one .ics file per source calendar, with real events only.</dd></div>
+</dl>
+
+<div class="pager"><a href="/how-a-sync-decides/">Back: How a sync decides</a><a href="/faq/">Next: FAQ</a></div>
+</main>
+</div>
+<footer class="foot">
+<div class="wrap">
+<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg" alt="" width="30" height="30">calsync</a>
+<p>This page has no trackers, analytics or cookies.</p>
+</div>
+</footer>
+</body>
+</html>

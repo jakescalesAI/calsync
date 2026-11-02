@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install without Docker | calsync docs</title>
+<meta name="description" content="Install calsync with pipx and run its web page or command line without Docker.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<link rel="canonical" href="https://docs.calsync.co/python/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Install without Docker | calsync docs">
+<meta property="og:description" content="Install calsync with pipx and run its web page or command line without Docker.">
+<meta property="og:url" content="https://docs.calsync.co/python/">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap bar hd">
+<a class="brand" href="/"><img src="/logo.svg" alt="" width="30" height="30">calsync docs</a>
+<nav aria-label="Main"><a href="https://calsync.co/">calsync.co</a><a href="https://github.com/calsync-co/calsync">GitHub</a></nav>
+</header>
+<div class="wrap docs">
+<nav class="side" aria-label="Docs"><p>Docs</p><ul>
+<li><a href="/">Overview</a></li>
+<li><a href="/docker/">Install with Docker</a></li>
+<li><a href="/python/" aria-current="page">Install without Docker</a></li>
+<li><a href="/google/">Google sign-in app</a></li>
+<li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/ics/">Published .ics feeds</a></li>
+<li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/settings/">Settings and environment</a></li>
+<li><a href="/faq/">FAQ</a></li>
+<li><a href="/troubleshooting/">Troubleshooting</a></li>
+</ul></nav>
+<main id="main" class="doc">
+
+<h1>Install without Docker</h1>
+<p class="lede">One Python package gives you the web page and the command line.</p>
+<h2>Install</h2>
+<p>You need Python 3.10 or newer and <code>pipx</code>.</p>
+<pre><code>pipx install git+https://github.com/calsync-co/calsync
+calsync web</code></pre>
+<p>Open <code>http://localhost:8484</code>. From the same machine the page asks only for a password. From another machine it also asks for a setup code, which <code>calsync web</code> prints when it starts. The page syncs in the background while <code>calsync web</code> runs.</p>
+<p>To update later, run <code>pipx upgrade calsync</code>.</p>
+<h2>The command line</h2>
+<dl class="kv">
+<div><dt><code>calsync web</code></dt><dd>The web page and background sync.</dd></div>
+<div><dt><code>calsync setup</code></dt><dd>Store your Google or Microsoft sign-in app.</dd></div>
+<div><dt><code>calsync auth</code></dt><dd>Sign in an account: google, outlook or ics.</dd></div>
+<div><dt><code>calsync calendars</code></dt><dd>List the calendars on your accounts.</dd></div>
+<div><dt><code>calsync add</code></dt><dd>Add a calendar to the sync.</dd></div>
+<div><dt><code>calsync remove</code></dt><dd>Take a calendar out of the sync.</dd></div>
+<div><dt><code>calsync run</code></dt><dd>One sync pass. Add <code>--dry-run</code> to preview.</dd></div>
+<div><dt><code>calsync purge</code></dt><dd>Delete the copies calsync made.</dd></div>
+<div><dt><code>calsync status</code></dt><dd>Show the calendars and the last run.</dd></div>
+<div><dt><code>calsync new</code></dt><dd>Add an event from plain text.</dd></div>
+</dl>
+<h2>Using only the command line</h2>
+<pre><code>calsync setup google                 # store the sign-in app. Hidden prompts.
+calsync auth google personal         # sign in. The label is yours to choose.
+calsync setup microsoft
+calsync auth outlook work            # sign in with a device code
+calsync auth ics school              # a published .ics link, read only
+
+calsync calendars                    # list calendars on every account
+calsync add main personal primary
+calsync add work work CALENDAR_ID --busy-only --skip main
+calsync add school school ics --read-only
+calsync status</code></pre>
+<p>The arguments are <code>NAME ACCOUNT CALENDAR_ID</code>, then any flags. <code>--busy-only</code>, <code>--read-only</code> and <code>--skip OTHER_NAME</code> match the three options on the web page. A .ics link is a single calendar with the ID <code>ics</code>. <code>calsync remove NAME</code> takes a calendar out.</p>
+<h2>Preview, then sync</h2>
+<pre><code>calsync run --dry-run    # show what would change. Changes nothing.
+calsync run              # one sync pass</code></pre>
+<h2>Put it on a timer</h2>
+<p>If you do not run <code>calsync web</code>, run <code>calsync run</code> every few minutes. The repository has a sample systemd service and timer in its <code>deploy</code> folder. With cron, every 5 minutes:</p>
+<pre><code>*/5 * * * * calsync run &gt;&gt; $HOME/.calsync/run.log 2&gt;&amp;1</code></pre>
+<p>Cron has a small environment. If you set <code>CALSYNC_HOME</code>, set it on the cron line too, and use the full path to <code>calsync</code>.</p>
+<h2>Quick add</h2>
+<p>Add an event from plain text. It goes on your main calendar, then calsync syncs so it appears everywhere.</p>
+<pre><code>calsync new Dentist tomorrow 3pm 1h
+calsync new Dentist tomorrow 3pm 1h --check   # show how it was read, add nothing</code></pre>
+<h2>The way out</h2>
+<pre><code>calsync purge --dry-run   # list the copies calsync made
+calsync purge             # delete them. Your own events stay.</code></pre>
+
+<div class="pager"><a href="/docker/">Back: Install with Docker</a><a href="/google/">Next: Google sign-in app</a></div>
+</main>
+</div>
+<footer class="foot">
+<div class="wrap">
+<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg" alt="" width="30" height="30">calsync</a>
+<p>This page has no trackers, analytics or cookies.</p>
+</div>
+</footer>
+</body>
+</html>

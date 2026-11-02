@@ -1,0 +1,23 @@
+services:
+  calsync:
+    build: .
+    container_name: calsync
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${CALSYNC_PORT:-8484}:8484"   # this machine only; see the docs before opening it up
+    environment:
+      CALSYNC_TZ: ${CALSYNC_TZ:-}
+      CALSYNC_HOSTS: ${CALSYNC_HOSTS:-}
+      CALSYNC_PUBLIC_URL: ${CALSYNC_PUBLIC_URL:-}
+    volumes:
+      - calsync-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  calsync-data:

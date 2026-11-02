@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+secrets/
+config.json
+last-run.json
+*.lock
+export/
+*.tmp
+dist/
+build/
+*.egg-info/

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Troubleshooting | calsync docs</title>
+<meta name="description" content="Fixes for common calsync problems with Google, Microsoft, Docker, Python and stopped runs.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<link rel="canonical" href="https://docs.calsync.co/troubleshooting/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Troubleshooting | calsync docs">
+<meta property="og:description" content="Fixes for common calsync problems with Google, Microsoft, Docker, Python and stopped runs.">
+<meta property="og:url" content="https://docs.calsync.co/troubleshooting/">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap bar hd">
+<a class="brand" href="/"><img src="/logo.svg" alt="" width="30" height="30">calsync docs</a>
+<nav aria-label="Main"><a href="https://calsync.co/">calsync.co</a><a href="https://github.com/calsync-co/calsync">GitHub</a></nav>
+</header>
+<div class="wrap docs">
+<nav class="side" aria-label="Docs"><p>Docs</p><ul>
+<li><a href="/">Overview</a></li>
+<li><a href="/docker/">Install with Docker</a></li>
+<li><a href="/python/">Install without Docker</a></li>
+<li><a href="/google/">Google sign-in app</a></li>
+<li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/ics/">Published .ics feeds</a></li>
+<li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/settings/">Settings and environment</a></li>
+<li><a href="/faq/">FAQ</a></li>
+<li><a href="/troubleshooting/" aria-current="page">Troubleshooting</a></li>
+</ul></nav>
+<main id="main" class="doc">
+
+<h1>Troubleshooting</h1>
+<p class="lede">Start with Preview changes. It shows what calsync sees and what it plans, and changes nothing. From the command line, use <code>calsync run --dry-run</code>. In Docker, <code>docker compose logs calsync</code> shows what it has done.</p>
+<h2>Google</h2>
+<dl class="q">
+<dt>I get signed out every week</dt>
+<dd>Your app is in Testing mode. Open Google Auth Platform, then Audience, and click Publish app. Then sign in again.</dd>
+<dt>Google says it has not verified the app</dt>
+<dd>That is expected. The app is yours. Click Advanced, then Go to your app name, then Allow.</dd>
+<dt>After I allow it, the browser shows a page that won't load</dt>
+<dd>That happens when calsync runs on another machine. Copy that page's whole address and paste it into the box on the calsync sign-in page.</dd>
+<dt>An error says the Calendar API is disabled</dt>
+<dd>Enable Google Calendar API in the same project as your sign-in app.</dd>
+<dt>Sign-in fails with a client error</dt>
+<dd>Check that the client type is Desktop app, and that the client ID and secret were pasted whole.</dd>
+</dl>
+<h2>Microsoft</h2>
+<dl class="q">
+<dt>The sign-in says it needs admin approval, or blocks the app</dt>
+<dd>Your tenant blocks outside apps. Use a <a href="/ics/">published .ics link</a> as a read-only source.</dd>
+<dt>An error mentions a public client</dt>
+<dd>Open the app's Authentication page and set Allow public client flows to Yes.</dd>
+<dt>The device code expired</dt>
+<dd>Run the sign-in again and enter the new code within a few minutes.</dd>
+<dt>Permissions errors</dt>
+<dd>Check that the Microsoft Graph delegated permissions <code>Calendars.ReadWrite</code> and <code>offline_access</code> are both on the app.</dd>
+</dl>
+<h2>A run stopped</h2>
+<dl class="q">
+<dt>It says it would delete N of M copies and skipped</dt>
+<dd>That is the safety stop. A run would have deleted more than half of a calendar's copies. Check what changed: a removed or renamed calendar, a new "Don't copy" switch, a source that came back empty. Run a preview. If the delete is what you want, run <code>calsync run --force</code>.</dd>
+<dt>One calendar was not synced</dt>
+<dd>It failed to load, so calsync left it alone and deleted nothing because of it. Check the sign-in and the network. It tries again next run.</dd>
+</dl>
+<h2>Events missing or odd</h2>
+<ul>
+<li>Only the next 120 days are synced. Events that already ended are ignored.</li>
+<li>Declined and cancelled events are skipped.</li>
+<li>An event already on a calendar through a shared invite is not copied there again.</li>
+<li>A calendar set to "Never write to this calendar" never receives copies.</li>
+<li>"Don't copy X here" keeps one calendar's events off another.</li>
+<li>A published .ics feed can lag behind the calendar it comes from.</li>
+</ul>
+<h2>Install problems</h2>
+<dl class="q">
+<dt>The page at localhost:8484 will not open</dt>
+<dd>Run <code>docker compose ps</code> to see if it is up, and <code>docker compose logs calsync</code> to see why not. Another program may be using port 8484. You can change the port with <code>CALSYNC_PORT</code>.</dd>
+<dt>I lost the setup code</dt>
+<dd>Run <code>docker compose logs calsync</code> and look for the first-time setup code.</dd>
+<dt>The page says "This host name isn't allowed"</dt>
+<dd>You are reaching it by a name it does not know. Add the name to <code>CALSYNC_HOSTS</code>.</dd>
+<dt>The timer runs but nothing happens</dt>
+<dd>Cron has a smaller environment than your shell. Use the full path to <code>calsync</code>, set <code>CALSYNC_HOME</code> on the cron line if you changed it, and log the output to a file.</dd>
+</dl>
+<p>Still stuck? Open an issue on <a href="https://github.com/calsync-co/calsync">GitHub</a>. Leave out your client secret and tokens.</p>
+
+<div class="pager"><a href="/faq/">Back: FAQ</a><span></span></div>
+</main>
+</div>
+<footer class="foot">
+<div class="wrap">
+<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg" alt="" width="30" height="30">calsync</a>
+<p>This page has no trackers, analytics or cookies.</p>
+</div>
+</footer>
+</body>
+</html>

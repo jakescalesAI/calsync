@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "calsync"
+version = "0.1.0"
+description = "Keep your Google and Outlook calendars showing the same events. Self-hosted."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = ["python-dateutil>=2.8", "tzdata>=2024.1"]
+
+[project.urls]
+Homepage = "https://calsync.co"
+Documentation = "https://docs.calsync.co"
+
+[project.scripts]
+calsync = "calsync:cli"
+
+[tool.setuptools]
+py-modules = ["calsync", "calsync_web"]

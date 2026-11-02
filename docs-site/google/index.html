@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Google sign-in app | calsync docs</title>
+<meta name="description" content="Make your own Google sign-in app in Google Cloud for calsync: enable the Calendar API, publish, create a Desktop app client.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<link rel="canonical" href="https://docs.calsync.co/google/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Google sign-in app | calsync docs">
+<meta property="og:description" content="Make your own Google sign-in app in Google Cloud for calsync: enable the Calendar API, publish, create a Desktop app client.">
+<meta property="og:url" content="https://docs.calsync.co/google/">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap bar hd">
+<a class="brand" href="/"><img src="/logo.svg" alt="" width="30" height="30">calsync docs</a>
+<nav aria-label="Main"><a href="https://calsync.co/">calsync.co</a><a href="https://github.com/calsync-co/calsync">GitHub</a></nav>
+</header>
+<div class="wrap docs">
+<nav class="side" aria-label="Docs"><p>Docs</p><ul>
+<li><a href="/">Overview</a></li>
+<li><a href="/docker/">Install with Docker</a></li>
+<li><a href="/python/">Install without Docker</a></li>
+<li><a href="/google/" aria-current="page">Google sign-in app</a></li>
+<li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/ics/">Published .ics feeds</a></li>
+<li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/settings/">Settings and environment</a></li>
+<li><a href="/faq/">FAQ</a></li>
+<li><a href="/troubleshooting/">Troubleshooting</a></li>
+</ul></nav>
+<main id="main" class="doc">
+
+<h1>Google sign-in app</h1>
+<p class="lede">Google requires your own sign-in app. It is free, it takes about 10 minutes, and only you use it.</p>
+<p>Menu names in Google's console change now and then. If one differs, look for the nearest match.</p>
+<h2>Make the app</h2>
+<ol>
+<li>Go to <code>console.cloud.google.com</code> and sign in.</li>
+<li>Create a project. Any name works, such as calsync.</li>
+<li>With that project selected, open APIs and Services, then Library. Find Google Calendar API and click Enable.</li>
+<li>Open Google Auth Platform and click Get started.</li>
+<li>Fill in an app name and your contact email. For Audience, choose External. Finish the form.</li>
+<li>Open Audience and click Publish app. An unverified app is fine for yourself. In Testing mode Google signs you out every 7 days, so publish it.</li>
+<li>Open Clients and create an OAuth client. Choose the application type Desktop app. Give it any name.</li>
+<li>Copy the client ID and the client secret.</li>
+</ol>
+<h2>Give it to calsync</h2>
+<p>Paste the client ID and client secret into the calsync page. With the command line, run <code>calsync setup google</code> and paste them at the prompts.</p>
+<h2>Sign in</h2>
+<p>Sign in to your Google account from calsync. Google shows an unverified app warning. That is expected, because the app is yours.</p>
+<ol>
+<li>Click Advanced.</li>
+<li>Click Go to your app name.</li>
+<li>Click Allow.</li>
+</ol>
+<p>You do this once per account. To use another Google account, sign in again from calsync.</p>
+<h2>Signing in when calsync runs on a server</h2>
+<p>Google sends your browser back to an address that only works on the machine running calsync. If your browser ends on a page that won't load, that is fine. Copy that page's whole address and paste it into the box on the calsync sign-in page.</p>
+<h2>If something goes wrong</h2>
+<p>See <a href="/troubleshooting/">Troubleshooting</a>.</p>
+
+<div class="pager"><a href="/python/">Back: Install without Docker</a><a href="/microsoft/">Next: Microsoft sign-in app</a></div>
+</main>
+</div>
+<footer class="foot">
+<div class="wrap">
+<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg" alt="" width="30" height="30">calsync</a>
+<p>This page has no trackers, analytics or cookies.</p>
+</div>
+</footer>
+</body>
+</html>

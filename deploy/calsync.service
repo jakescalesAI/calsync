@@ -1,0 +1,8 @@
+[Unit]
+Description=calsync: one sync pass
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/calsync run
+TimeoutStartSec=300
