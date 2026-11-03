@@ -353,6 +353,8 @@ class WebTests(unittest.TestCase):
             self.assertIn("Setup code", self.req("GET", "/", host="cal.example.com")[1])
         with mock.patch.object(calsync_web, "PUBLIC_URL", "https://cal.example.com"):
             self.assertIn("Setup code", self.req("GET", "/")[1])
+        with mock.patch.object(calsync_web, "BIND", "0.0.0.0"):     # the Docker image listens beyond loopback
+            self.assertIn("Setup code", self.req("GET", "/")[1])
         self.assertIsNone(calsync_web.web_config())
         self.assertNotIn("Setup code", self.req("GET", "/")[1])     # plain local visit: no code needed
 

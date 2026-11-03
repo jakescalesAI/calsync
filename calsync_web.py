@@ -603,11 +603,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def needs_code(self):
         """Only someone on this machine itself skips the setup code. A proxy on the same machine makes every visitor
-        look local, so a public address, a forwarded request or a non-local host name all need the code."""
+        look local, so a public address, a forwarded request or a non-local host name all need the code. So does
+        listening beyond loopback (the Docker image): port forwarders can make an outside visitor look local."""
         name = re.sub(r":\d+$", "", (self.headers.get("Host") or "").strip().lower()).strip("[]")
         local_name = name in ("localhost", "127.0.0.1", "::1") or name.endswith(".localhost")
         forwarded = any(self.headers.get(h) for h in PROXY_HEADERS)
-        return not (is_loopback(self.client_address[0]) and local_name and not forwarded and not PUBLIC_URL)
+        return not (is_loopback(BIND) and is_loopback(self.client_address[0]) and local_name and not forwarded and not PUBLIC_URL)
 
     def first_run_page(self, flash=None):
         code = ('<label for="code">Setup code</label><input type="text" id="code" name="code" required autocomplete="off">'
