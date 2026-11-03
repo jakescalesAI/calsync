@@ -10,7 +10,7 @@ Every run makes each writable calendar hold one tagged copy of every real event 
 ## Run it
 
 ```bash
-git clone https://github.com/calsync-co/calsync.git
+git clone https://github.com/jakescalesAI/calsync.git
 cd calsync
 docker compose up -d
 docker compose logs calsync
@@ -23,7 +23,7 @@ Google and Microsoft each need a free sign-in app of your own. The page walks yo
 Without Docker, using Python 3.10 or newer:
 
 ```bash
-pipx install git+https://github.com/calsync-co/calsync.git
+pipx install git+https://github.com/jakescalesAI/calsync.git
 calsync web
 ```
 
