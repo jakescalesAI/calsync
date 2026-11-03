@@ -50,9 +50,9 @@ class WebTests(unittest.TestCase):
         calsync_web.pending_google.clear()
         self.cookie = None
 
-    def req(self, method, path, form=None, host=None, origin=None, cookie=True):
+    def req(self, method, path, form=None, host=None, origin=None, cookie=True, headers=None):
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=20)
-        h = {"Host": host or f"localhost:{self.port}"}
+        h = {"Host": host or f"localhost:{self.port}", **(headers or {})}
         body = None
         if form is not None:
             body = urllib.parse.urlencode(form, doseq=True)
@@ -328,6 +328,66 @@ class WebTests(unittest.TestCase):
             calsync_web.scheduler(stop)
             self.wait_for_run()
         self.assertEqual(len(self.cals["b"].events), 1)
+
+    def test_setup_code_tries_are_capped(self):
+        with mock.patch.object(calsync_web, "is_loopback", return_value=False):
+            for _ in range(calsync_web.ATTEMPTS_PER_MINUTE):
+                self.assertEqual(self.req("POST", "/first-run", {"password": "long enough password", "code": "nope"})[0].status, 200)
+            r, _ = self.req("POST", "/first-run", {"password": "long enough password", "code": calsync_web.setup_code})
+            self.assertEqual(r.status, 429)
+            self.assertIsNone(calsync_web.web_config())
+
+    def test_many_addresses_together_are_capped(self):
+        for kind, cap in calsync_web.EVERYONE_PER_MINUTE.items():
+            calsync_web.failed_logins.clear()
+            for i in range(cap):
+                self.assertIsNotNone(calsync_web.take_try(kind, f"10.0.{i // 250}.{i % 250}"))
+            self.assertIsNone(calsync_web.take_try(kind, "10.9.9.9"), kind)
+
+    def test_a_proxy_on_this_machine_still_needs_the_code(self):
+        local = {"password": "long enough password"}
+        for headers in ({"X-Forwarded-For": "203.0.113.9"}, {"Forwarded": "for=203.0.113.9"}, {"X-Real-IP": "203.0.113.9"}):
+            self.assertIn("Setup code", self.req("GET", "/", headers=headers)[1], headers)
+            self.assertIn("isn&#x27;t right", self.req("POST", "/first-run", local, headers=headers)[1])
+        with mock.patch.object(calsync_web, "EXTRA_HOSTS", {"cal.example.com"}):
+            self.assertIn("Setup code", self.req("GET", "/", host="cal.example.com")[1])
+        with mock.patch.object(calsync_web, "PUBLIC_URL", "https://cal.example.com"):
+            self.assertIn("Setup code", self.req("GET", "/")[1])
+        self.assertIsNone(calsync_web.web_config())
+        self.assertNotIn("Setup code", self.req("GET", "/")[1])     # plain local visit: no code needed
+
+    def test_parallel_wrong_passwords_respect_the_cap(self):
+        self.start()
+        self.cookie = None
+        statuses = []
+
+        def guess():
+            statuses.append(self.req("POST", "/login", {"password": "wrong guess"}, cookie=False)[0].status)
+        threads = [threading.Thread(target=guess) for _ in range(12)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(statuses.count(200), calsync_web.ATTEMPTS_PER_MINUTE)
+        self.assertEqual(statuses.count(429), 12 - calsync_web.ATTEMPTS_PER_MINUTE)
+
+    def test_negative_length_is_refused(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.putrequest("POST", "/login", skip_host=True)
+        c.putheader("Host", f"localhost:{self.port}")
+        c.putheader("Content-Length", "-1")
+        c.endheaders()
+        self.assertEqual(c.getresponse().status, 413)
+        c.close()
+
+    def test_sign_out_everywhere_ends_other_sessions(self):
+        self.start()
+        other = self.cookie
+        self.assertEqual(self.post("/logout/everywhere")[0].status, 303)
+        self.assertFalse(calsync_web.session_ok(calsync_web.web_config(), other))
+        self.cookie = other
+        self.assertIn("Sign in", self.req("GET", "/settings")[1])
+        self.assertEqual(self.req("POST", "/login", {"password": "correct horse battery"})[0].status, 303)
 
     def test_health_needs_nothing(self):
         self.assertEqual(self.req("GET", "/healthz", host="anything.example")[1], "ok")

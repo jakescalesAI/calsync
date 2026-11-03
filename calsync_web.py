@@ -19,12 +19,15 @@ EXTRA_HOSTS = {h.strip().lower() for h in (os.environ.get("CALSYNC_HOSTS") or ""
 SESSION_DAYS = 30
 MAX_BODY = 64 * 1024
 INTERVALS = (2, 5, 10, 15, 30, 60)
-ATTEMPTS_PER_MINUTE = 5
+ATTEMPTS_PER_MINUTE = 5            # wrong passwords or setup codes from one address
+EVERYONE_PER_MINUTE = {"login": 30, "setup": 10}   # and from all addresses together, so many addresses don't help
+PROXY_HEADERS = ("Forwarded", "X-Forwarded-For", "X-Real-IP")
 
 state_lock = threading.Lock()
 pending_google = {}     # state -> label, redirect, origin, expires
 pending_ms = {}         # flow id -> label, tenant, device_code, user_code, link, expires, status
-failed_logins = {}      # ip -> [times]
+failed_logins = {}      # (kind, ip or "*") -> [times of tries]
+first_run_lock = threading.Lock()
 setup_code = secrets.token_hex(4)
 last_preview = {}       # session key -> the preview shown next
 run_state = {"running": False}
@@ -80,6 +83,28 @@ def host_allowed(host):
         return False
 
 
+def take_try(kind, ip):
+    """Reserve one password or setup-code try before checking it, so parallel requests can't slip past the cap.
+    Returns the try's stamp, or None when this address or everyone together used up the last minute."""
+    now = time.time()
+    with state_lock:
+        mine = [t for t in failed_logins.get((kind, ip), []) if now - t < 60]
+        everyone = [t for t in failed_logins.get((kind, "*"), []) if now - t < 60]
+        if len(mine) >= ATTEMPTS_PER_MINUTE or len(everyone) >= EVERYONE_PER_MINUTE[kind]:
+            failed_logins[(kind, ip)], failed_logins[(kind, "*")] = mine, everyone
+            return None
+        failed_logins[(kind, ip)], failed_logins[(kind, "*")] = mine + [now], everyone + [now]
+        return now
+
+
+def give_back(kind, ip, stamp):
+    """A right answer doesn't count against anyone."""
+    with state_lock:
+        for key in ((kind, ip), (kind, "*")):
+            if stamp in failed_logins.get(key, []):
+                failed_logins[key].remove(stamp)
+
+
 def is_loopback(ip):
     try:
         return ipaddress.ip_address(ip).is_loopback
@@ -101,7 +126,7 @@ label{display:block;font-weight:600;margin:12px 0 4px}label.check{font-weight:40
 input[type=text],input[type=password],input[type=url],select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
 button,.button{display:inline-block;padding:10px 18px;border-radius:999px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
 button.plain,.button.plain{background:transparent;color:var(--ink);border-color:var(--line)}button.danger{background:transparent;color:var(--bad);border-color:var(--bad)}
-form.inline{display:inline}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.soft{color:var(--soft)}.bad{color:var(--bad);font-weight:600}
+form.inline{display:inline}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.actions.flat{margin:0}.soft{color:var(--soft)}.bad{color:var(--bad);font-weight:600}
 .note{background:var(--note);border-color:transparent}ol{padding-left:22px}li{margin:6px 0}code{background:var(--note);padding:2px 5px;border-radius:5px;overflow-wrap:anywhere}
 .code{font:700 28px/1.2 ui-monospace,monospace;letter-spacing:2px}pre{background:var(--note);padding:12px;border-radius:8px;overflow:auto;max-height:420px;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
 """
@@ -197,7 +222,7 @@ def connect_page(csrf, flash=None):
     rows = []
     for label, a in accounts.items():
         kind = {"google": "Google", "outlook": "Microsoft", "ics": ".ics link"}.get(a["provider"], "")
-        rows.append(f'''<div class="row"><div><b>{esc(label)}</b> <span class="soft">{kind}</span></div><div class="actions" style="margin:0"><a class="button" href="/account?label={urllib.parse.quote(label)}">Choose calendars</a>
+        rows.append(f'''<div class="row"><div><b>{esc(label)}</b> <span class="soft">{kind}</span></div><div class="actions flat"><a class="button" href="/account?label={urllib.parse.quote(label)}">Choose calendars</a>
 <form class="inline" method="post" action="/account/remove"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="label" value="{esc(label)}"><button class="plain">Sign out</button></form></div></div>''')
     existing = ("<h2>Signed in</h2>" + "".join(rows)) if rows else ""
     return page("Add a calendar", f'''<h1>Add a calendar</h1>{existing}<h2>Connect an account</h2>
@@ -271,7 +296,8 @@ def settings_page(csrf, flash=None):
 <h2>Change password</h2><section><form method="post" action="/settings/password" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
 <label for="old">Current password</label><input type="password" id="old" name="old" required><label for="new">New password</label><input type="password" id="new" name="new" required minlength="10">
 <div class="actions"><button>Change password</button></div></form></section>
-<form method="post" action="/logout"><input type="hidden" name="csrf" value="{csrf}"><button class="plain">Sign out</button></form>''', True, flash)
+<div class="actions"><form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="{csrf}"><button class="plain">Sign out</button></form>
+<form class="inline" method="post" action="/logout/everywhere"><input type="hidden" name="csrf" value="{csrf}"><button class="plain">Sign out on every device</button></form></div>''', True, flash)
 
 
 def short_error(e):
@@ -314,8 +340,8 @@ def tidy_flows():
         for flows in (pending_google, pending_ms):
             for key in [k for k, f in flows.items() if f["expires"] < now]:
                 del flows[key]
-        for ip in [i for i, times in failed_logins.items() if not any(now - t < 60 for t in times)]:
-            del failed_logins[ip]
+        for key in [k for k, times in failed_logins.items() if not any(now - t < 60 for t in times)]:
+            del failed_logins[key]
 
 
 def poll_microsoft(flow_id):
@@ -377,8 +403,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             size = int(self.headers.get("Content-Length") or 0)
         except ValueError:
-            size = MAX_BODY + 1
-        if size > MAX_BODY:
+            size = -1
+        if size < 0 or size > MAX_BODY:     # a negative length would read until the client hangs up
             return None
         return urllib.parse.parse_qs(self.rfile.read(size).decode("utf-8", "replace"), keep_blank_values=True)
 
@@ -458,6 +484,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def action(self, url, get, form, cfg):
         csrf = self.csrf()
         if url == "/logout":
+            return self.redirect("/", [self.session_header("", 0)])
+        if url == "/logout/everywhere":     # a new signing key ends every session, this one included
+            engine.save_json(web_file(), dict(cfg, key=secrets.token_hex(32)))
             return self.redirect("/", [self.session_header("", 0)])
         if url == "/connect/google/client":
             cid, sec = get("client_id").strip(), get("client_secret").strip()
@@ -573,7 +602,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # first run and sign-in
 
     def needs_code(self):
-        return not is_loopback(self.client_address[0])
+        """Only someone on this machine itself skips the setup code. A proxy on the same machine makes every visitor
+        look local, so a public address, a forwarded request or a non-local host name all need the code."""
+        name = re.sub(r":\d+$", "", (self.headers.get("Host") or "").strip().lower()).strip("[]")
+        local_name = name in ("localhost", "127.0.0.1", "::1") or name.endswith(".localhost")
+        forwarded = any(self.headers.get(h) for h in PROXY_HEADERS)
+        return not (is_loopback(self.client_address[0]) and local_name and not forwarded and not PUBLIC_URL)
 
     def first_run_page(self, flash=None):
         code = ('<label for="code">Setup code</label><input type="text" id="code" name="code" required autocomplete="off">'
@@ -584,25 +618,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def first_run(self, get):
         if web_config():
             return self.redirect("/")
-        if self.needs_code() and not hmac.compare_digest(get("code").strip(), setup_code):
-            return self.send(200, self.first_run_page("That setup code isn't right."))
+        ip = self.client_address[0]
+        if self.needs_code():
+            stamp = take_try("setup", ip)
+            if stamp is None:
+                return self.send(429, self.first_run_page("Too many tries. Wait a minute and try again."))
+            if not hmac.compare_digest(get("code").strip().encode(), setup_code.encode()):
+                return self.send(200, self.first_run_page("That setup code isn't right."))
+            give_back("setup", ip, stamp)
         if len(get("password")) < 10:
             return self.send(200, self.first_run_page("Use at least 10 characters."))
-        set_password(get("password"))
+        with first_run_lock:
+            if web_config():
+                return self.redirect("/")
+            set_password(get("password"))
         return self.redirect("/", [self.session_header(make_session(web_config()), SESSION_DAYS * 86400)])
 
     def login(self, cfg, get):
-        ip, now = self.client_address[0], time.time()
-        with state_lock:
-            recent = [t for t in failed_logins.get(ip, []) if now - t < 60]
-            failed_logins[ip] = recent
-            blocked = len(recent) >= ATTEMPTS_PER_MINUTE
-        if blocked:
+        ip = self.client_address[0]
+        stamp = take_try("login", ip)
+        if stamp is None:
             return self.send(429, login_page("Too many tries. Wait a minute and try again."))
         if not hmac.compare_digest(hash_password(get("password"), cfg["salt"]), cfg["hash"]):
-            with state_lock:
-                failed_logins.setdefault(ip, []).append(now)
             return self.send(200, login_page("That password isn't right."))
+        give_back("login", ip, stamp)
         return self.redirect("/", [self.session_header(make_session(cfg), SESSION_DAYS * 86400)])
 
     # Google: the browser comes back from Google to "/" with no session cookie guaranteed, so the one-use state proves it
