@@ -56,6 +56,8 @@
 <p>With Docker Compose, put these in your shell or in a <code>.env</code> file next to <code>compose.yaml</code>. Compose passes <code>CALSYNC_TZ</code>, <code>CALSYNC_HOSTS</code>, <code>CALSYNC_PUBLIC_URL</code> and <code>CALSYNC_PORT</code> through.</p>
 <h2>Reaching it from other machines</h2>
 <p>By default only the machine running calsync can reach the page. Before you expose it to the internet, put it behind your own HTTPS proxy. Then set <code>CALSYNC_PUBLIC_URL</code> to the proxy's https address and <code>CALSYNC_HOSTS</code> to its host name. Sign-ins and tokens are on that machine, so treat it like a password manager.</p>
+<p>Through a proxy, the first visit always asks for the setup code, even though the proxy runs on the same machine. Wrong passwords and setup codes are limited to a few a minute, so the page can't be guessed, and someone hammering it can lock it for a minute at a time. A private network such as a VPN is safer than the open internet.</p>
+<p>Lost a laptop that was signed in? Settings has <b>Sign out on every device</b>, which ends every session at once.</p>
 <h2>Optional notes features</h2>
 <p>Three extras are switched on in <code>config.json</code> inside the calsync folder. They are all optional.</p>
 <dl class="kv">
