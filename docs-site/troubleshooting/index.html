@@ -83,7 +83,9 @@
 <dt>The page at localhost:8484 will not open</dt>
 <dd>Run <code>docker compose ps</code> to see if it is up, and <code>docker compose logs calsync</code> to see why not. Another program may be using port 8484. You can change the port with <code>CALSYNC_PORT</code>.</dd>
 <dt>I lost the setup code</dt>
-<dd>Run <code>docker compose logs calsync</code> and look for the first-time setup code.</dd>
+<dd>Run <code>docker compose logs calsync</code> and look for the first-time setup code. It changes each time calsync starts until you choose a password, so use the newest one.</dd>
+<dt>The page says "Too many tries"</dt>
+<dd>Too many wrong passwords or setup codes came in the last minute, from you or from someone else. Wait a minute. If it keeps happening, someone else can reach the page: move it off the open internet.</dd>
 <dt>The page says "This host name isn't allowed"</dt>
 <dd>You are reaching it by a name it does not know. Add the name to <code>CALSYNC_HOSTS</code>.</dd>
 <dt>The timer runs but nothing happens</dt>
