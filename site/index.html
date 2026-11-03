@@ -8,17 +8,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>calsync: every meeting, in every calendar</title>
+<title>calsync: every calendar, always in sync</title>
 <meta name="description" content="calsync is a free, open source, self-hosted tool that keeps your Google and Microsoft 365 calendars in two-way sync. Your sign-ins and calendar data stay on your machine.">
-<meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#0d1024">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#050505">
 <link rel="canonical" href="https://getcalsync.app/">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/inter-600.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="calsync">
-<meta property="og:title" content="calsync: every meeting, in every calendar">
+<meta property="og:title" content="calsync: every calendar, always in sync">
 <meta property="og:description" content="calsync is a free, open source, self-hosted tool that keeps your Google and Microsoft 365 calendars in two-way sync. Your sign-ins and calendar data stay on your machine.">
 <meta property="og:url" content="https://getcalsync.app/">
 </head>
@@ -27,161 +27,163 @@
 
 <header class="top">
 <div class="wrap">
-<a class="brand" href="/"><img src="/logo.svg" alt="" width="30" height="30">calsync</a>
+<a class="brand" href="/"><img src="/logo.svg" alt="" width="28" height="28">calsync</a>
 <nav aria-label="Main">
 <a class="sec" href="#how">How it works</a>
 <a class="sec" href="#careful">Safety</a>
 <a class="sec" href="#compare">Compare</a>
-<a href="https://docs.getcalsync.app/">Docs</a>
-<a href="https://github.com/jakescalesAI/calsync">GitHub</a>
+<a class="sec" href="https://docs.getcalsync.app/">Docs</a>
+<a class="gh" href="https://github.com/jakescalesAI/calsync">GitHub</a>
 </nav>
 </div>
 </header>
 
 <main id="main">
 <section class="hero">
-<div class="wrap hero-grid">
-<div class="pitch">
-<p class="kicker">Open source calendar sync</p>
-<h1>Every meeting.<br>Every calendar.</h1>
-<p class="lede">calsync keeps your Google and Microsoft 365 calendars in two-way sync. Put something on one and it shows up on the other, so nobody books over a meeting they couldn't see.</p>
-<div class="btns"><a class="btn primary" href="#install">Install calsync</a><a class="btn quiet" href="#how">How it works</a></div>
-</div>
-
-<figure class="day" aria-label="Two calendars on the same Thursday. Each one shows its own events and calsync's copies of the other's.">
-<div class="day-head"><span class="mono">Thursday</span><span class="sync-badge"><i></i>In sync</span></div>
-<div class="day-grid">
-<span class="cal-name c1"><i class="dot a"></i>personal <em>Google</em></span>
-<span class="cal-name c2"><i class="dot s"></i>work <em>Outlook</em></span>
-<span class="hr h9 mono">9:00</span>
-<span class="hr h10 mono">10:00</span>
-<span class="hr h11 mono">11:00</span>
-<span class="hr h12 mono">12:00</span>
-<span class="hr h13 mono">13:00</span>
-<span class="line l1"></span><span class="line l2"></span><span class="line l3"></span><span class="line l4"></span><span class="line l5"></span>
-<div class="ev own amber c1 e-dentist"><b>Dentist</b><span class="mono">9:00</span></div>
-<div class="ev copy amber c2 e-dentist k1"><b>Busy</b><span class="mono">copy</span></div>
-<div class="ev own sky c2 e-standup"><b>Standup</b><span class="mono">10:00</span></div>
-<div class="ev copy sky c1 e-standup k2"><b>Standup</b><span class="mono">copy</span></div>
-<div class="ev own amber c1 e-gym"><b>Gym</b><span class="mono">12:00</span></div>
-<div class="ev copy amber c2 e-gym k3"><b>Busy</b><span class="mono">copy</span></div>
-<div class="ev own sky c2 e-call"><b>Client call</b><span class="mono">13:00</span></div>
-<div class="ev copy sky c1 e-call k4"><b>Client call</b><span class="mono">copy</span></div>
-</div>
-<figcaption class="legend"><span><i class="sw own"></i>Your event</span><span><i class="sw copy"></i>calsync's copy</span><span><i class="sw busy"></i>Work copies say only Busy</span></figcaption>
-</figure>
-</div>
-</section>
-
-<section class="works">
 <div class="wrap">
-<p>Works with</p>
-<ul><li>Google Calendar</li><li>Outlook</li><li>Microsoft 365</li><li>Any published .ics link</li></ul>
+<p class="pill"><b>MIT</b>Free, open source, runs on your machine</p>
+<h1>Every calendar.<span class="dim">Always in sync.</span></h1>
+<p class="lede">A meeting on your work calendar shows up on your personal one, and the other way round. Google, Microsoft 365 and any .ics feed. Nothing hosted, nothing to pay.</p>
+<div class="btns"><a class="btn primary" href="#install">Install calsync</a><a class="btn" href="#how">See how it works</a></div>
 </div>
+
+<div class="stage" aria-hidden="true">
+<div class="glow"></div>
+<div class="arc"></div>
+<div class="win">
+<div class="bar"><i></i><i></i><i></i><span class="url">localhost:8484</span></div>
+<div class="app">
+<div>
+<p class="h">Your calendars</p>
+<div class="cal"><span class="mark">G</span><div><b>Personal</b><span>Google</span></div><span class="tag live">Syncing</span></div>
+<div class="cal"><span class="mark">M</span><div><b>Work</b><span>Microsoft 365 · copies say Busy</span></div><span class="tag live">Syncing</span></div>
+<div class="cal"><span class="mark">ics</span><div><b>Team holidays</b><span>Published .ics link</span></div><span class="tag">Read only</span></div>
+</div>
+<div class="pv">
+<p class="h">Preview</p>
+<div class="nums"><div><b>12</b><span>to add</span></div><div><b>3</b><span>to update</span></div><div><b>0</b><span>to remove</span></div></div>
+<p class="row"><span>09:00 Dentist</span><em>→ Work · Busy</em></p>
+<p class="row"><span>10:00 Standup</span><em>→ Personal</em></p>
+<p class="row"><span>12:30 Gym</span><em>→ Work · Busy</em></p>
+<div class="go"><span>Sync now</span><span>Pause</span></div>
+</div>
+</div>
+</div>
+<div class="fade"></div>
+</div>
+
+<div class="works wrap"><span>Works with</span><b>Google Calendar</b><b>Microsoft 365</b><b>Outlook.com</b><b>Any .ics feed</b></div>
 </section>
 
 <section class="band" id="why">
 <div class="wrap">
-<p class="eyebrow">The problem</p>
-<h2>A meeting on one calendar is a double-booking on the other.</h2>
-<p class="sub">Your dentist is on your personal calendar. Your standup is on work. A coworker looks at work, sees an open hour, and books it.</p>
-<div class="pair">
-<div class="mini bad">
-<p class="mini-label">Without calsync</p>
-<div class="mini-cal"><span class="mono">9:00</span><div class="mini-ev clash"><b>Design review</b><span>Booked over your dentist</span></div></div>
-<div class="mini-cal"><span class="mono">10:00</span><div class="mini-ev sky-solid"><b>Standup</b><span>work</span></div></div>
+<p class="eyebrow">Why calsync</p>
+<h2>A meeting on one calendar <span class="dim">is a double-booking on the other.</span></h2>
+<div class="ba">
+<div class="side">
+<p class="side-h"><b>Without calsync</b><span>Thursday</span></p>
+<div class="cols">
+<div class="col"><span class="col-h">Personal</span><div class="e own clash">Dentist<span>10:00</span></div></div>
+<div class="col"><span class="col-h">Work</span><div class="e own clash">Client call<span>10:00</span></div></div>
 </div>
-<div class="mini good">
-<p class="mini-label">With calsync</p>
-<div class="mini-cal"><span class="mono">9:00</span><div class="mini-ev amber-copy"><b>Busy</b><span>Copy of your dentist</span></div></div>
-<div class="mini-cal"><span class="mono">10:00</span><div class="mini-ev sky-solid"><b>Standup</b><span>work</span></div></div>
+<p class="verdict bad">A colleague booked over the dentist. They couldn't see it.</p>
+</div>
+<div class="side">
+<p class="side-h"><b>With calsync</b><span>Thursday</span></p>
+<div class="cols">
+<div class="col"><span class="col-h">Personal</span><div class="e own">Dentist<span>10:00</span></div><div class="e copy">Client call<span>11:00 · copy</span></div></div>
+<div class="col"><span class="col-h">Work</span><div class="e copy">Busy<span>10:00 · copy</span></div><div class="e own">Client call<span>11:00</span></div></div>
+</div>
+<p class="verdict">Work saw Busy at 10:00 and picked 11:00 instead.</p>
 </div>
 </div>
 </div>
 </section>
 
-<section class="band" id="how">
-<div class="wrap split">
+<section class="band" id="sync">
+<div class="wrap orbit-sec">
 <div>
-<p class="eyebrow">How it works</p>
-<h2>About 25 minutes, once. Then it runs itself.</h2>
-<ol class="timeline">
-<li><span class="t mono">9:00</span><div><b>Install</b><p>One Docker command, or one pipx install. No database, no account to make.</p></div></li>
-<li><span class="t mono">9:05</span><div><b>Connect your calendars</b><p>Open <code>localhost:8484</code> and sign in to each one. Google and Microsoft each need a free sign-in app of your own; the page walks you through it.</p></div></li>
-<li><span class="t mono">9:25</span><div><b>Preview</b><p>See exactly what would be added, updated and removed. Nothing changes yet.</p></div></li>
-<li><span class="t mono">9:26</span><div><b>Apply</b><p>From then on calsync keeps every calendar in step, every few minutes.</p></div></li>
-</ol>
+<p class="eyebrow">Two-way sync</p>
+<h2>One schedule. <span class="dim">However many calendars.</span></h2>
+<p class="sub">Each writable calendar gets one tagged copy of every real event from the others. Move the meeting once and every copy follows. A published .ics link can join in too, one way.</p>
 </div>
-<figure class="panel" aria-label="The Preview list on calsync's setup page">
-<div class="panel-bar"><i></i><i></i><i></i><span class="mono">localhost:8484</span></div>
-<div class="panel-body">
-<p class="panel-title">Preview</p>
-<p class="counts"><span class="n add">3 to add</span><span class="n upd">1 to update</span><span class="n del">0 to remove</span></p>
-<p class="muted">Nothing has changed yet.</p>
-<ul class="changes">
-<li><span class="tag add">add</span>Team lunch to personal, Thursday 12:00</li>
-<li><span class="tag add">add</span>Dentist to work, Friday 9:00</li>
-<li><span class="tag add">add</span>Flight to work, Monday 15:30</li>
-<li><span class="tag upd">update</span>Gym on work, now 18:30</li>
-</ul>
-<span class="btn primary small">Apply and keep syncing</span>
+<div class="orbit" aria-hidden="true">
+<div class="ring"></div><div class="ring r2"></div><div class="ring r3"></div>
+<div class="spin"><i></i></div><div class="spin rev"><i></i></div>
+<img class="core" src="/logo.svg" alt="" width="92" height="92">
+<span class="node n1"><span class="mark">G</span>Google</span>
+<span class="node n2"><span class="mark">M</span>Microsoft 365</span>
+<span class="node n3"><span class="mark">O</span>Outlook.com</span>
+<span class="node n4"><span class="mark">ics</span>.ics feed</span>
 </div>
-</figure>
 </div>
 </section>
 
 <section class="band" id="careful">
 <div class="wrap">
 <p class="eyebrow">Safety</p>
-<h2>It only touches what it made.</h2>
-<p class="sub">Every copy carries a private tag. That tag is the only thing calsync remembers, so there is nothing to migrate or lose.</p>
-<div class="rules">
-<article class="rule"><h3>Preview first</h3><p>You see what would be added, updated and removed. Nothing changes until you apply.</p></article>
-<article class="rule"><h3>Only its own copies</h3><p>calsync edits and deletes only events it created. Your own events are never touched.</p></article>
-<article class="rule"><h3>Busy only, per calendar</h3><p>Copies can say just Busy, with no title or location. Private events always do.</p></article>
-<article class="rule"><h3>Stops before a big delete</h3><p>If a run would remove more than half of a calendar's copies, it stops and waits. A calendar that won't load is left alone.</p></article>
-<article class="rule"><h3>No double invites</h3><p>A meeting already there through a shared invite isn't copied again. Declined and cancelled events are skipped.</p></article>
-<article class="rule"><h3>One-button undo</h3><p>Copies carry no reminders. One button, or <code>calsync purge</code>, removes every copy it made.</p></article>
+<h2>It only touches what it made. <span class="dim">Nothing else.</span></h2>
+<div class="bento">
+<article class="card w3"><div class="demo" aria-hidden="true"><div class="ev"><div class="e own">Dentist<span>Personal · 09:00</span></div><div class="e copy">Busy<span>Work · 09:00</span></div></div></div>
+<h3>Busy only, per calendar</h3><p>Copies can say just Busy, with no title or location. Private events always do.</p></article>
+<article class="card w3"><div class="demo" aria-hidden="true"><div class="warn"><b>Stopped before a big delete</b><span>This run wanted to remove more than half of a calendar's copies. It's waiting for you.</span></div></div>
+<h3>Stops before a big delete</h3><p>Nothing large disappears until you've looked. A calendar that won't load is left alone.</p></article>
+<article class="card"><div class="demo" aria-hidden="true"><div class="tags"><span>yours</span><span>yours</span><span class="mine">calsync copy</span><span>yours</span></div></div>
+<h3>Only its own copies</h3><p>calsync edits and deletes only events it created. Yours are never touched.</p></article>
+<article class="card"><div class="demo" aria-hidden="true"><div class="invite"><span>Team sync</span><em>already on both · skipped</em></div></div>
+<h3>No double invites</h3><p>A meeting already there through a shared invite isn't copied again.</p></article>
+<article class="card"><div class="demo" aria-hidden="true"><span class="purge">Delete the copies calsync made here</span></div>
+<h3>One-button undo</h3><p>One button, or <code>calsync purge</code>, removes every copy it made.</p></article>
 </div>
+</div>
+</section>
+
+<section class="band" id="how">
+<div class="wrap">
+<p class="eyebrow">How it works</p>
+<h2>Connect. Preview. <span class="dim">Then it runs itself.</span></h2>
+<div class="steps">
+<article class="step"><span class="k">01</span><h3>Connect</h3><p>Add each calendar on one page. Google and Microsoft each need a free sign-in app of your own, about 10 minutes each.</p>
+<div class="ui" aria-hidden="true"><p>Personal · Google<em>connected</em></p><p>Work · Microsoft 365<em>connected</em></p><p>Holidays · .ics<span>read only</span></p></div></article>
+<article class="step"><span class="k">02</span><h3>Preview</h3><p>See what would be added, updated and removed on each calendar. Nothing changes until you start it.</p>
+<div class="ui" aria-hidden="true"><p>to add<em>12</em></p><p>to update<em>3</em></p><p>to remove<em>0</em></p></div></article>
+<article class="step"><span class="k">03</span><h3>Sync</h3><p>Press Sync now. After that it runs in the background, every 5 minutes unless you pick another interval.</p>
+<div class="ui" aria-hidden="true"><p>Running every<em>5 minutes</em></p><p>Last run<em>OK</em></p><p>Window<em>next 120 days</em></p></div></article>
+</div>
+</div>
+</section>
+
+<section class="band" id="private">
+<div class="wrap">
+<p class="eyebrow">Private</p>
+<h2>Your calendars. <span class="dim">On your own machine.</span></h2>
+<div class="ledger">
+<div><b>0</b><span>accounts to make</span></div>
+<div><b>0</b><span>databases to run</span></div>
+<div><b>1</b><span>process or container</span></div>
+<div><b>$0</b><span>MIT licensed</span></div>
+</div>
+<dl class="facts">
+<div><dt>Your sign-ins</dt><dd>Files on the machine that runs calsync</dd></div>
+<div><dt>Who can reach it</dt><dd>This machine, until you change that</dd></div>
+<div><dt>Who it talks to</dt><dd>Your calendars, and nothing else</dd></div>
+<div><dt>Before the internet</dt><dd>Put it behind your own HTTPS proxy</dd></div>
+</dl>
 </div>
 </section>
 
 <section class="band" id="compare">
 <div class="wrap">
-<p class="eyebrow">Compared</p>
-<h2>Keeping your own calendars in step shouldn't cost a subscription.</h2>
-<div class="table-wrap">
-<table class="cmp">
-<thead><tr><th scope="col"><span class="sr">Feature</span></th><th scope="col" class="us"><img src="/logo.svg" alt="" width="22" height="22">calsync</th><th scope="col">Hosted sync services</th></tr></thead>
-<tbody>
-<tr><th scope="row">Price</th><td class="us">Free</td><td>About $4 to $30 a month</td></tr>
-<tr><th scope="row">Two-way sync</th><td class="us">Yes</td><td>On most</td></tr>
-<tr><th scope="row">Where your sign-ins live</th><td class="us">On your machine</td><td>On their servers</td></tr>
-<tr><th scope="row">Who can read your events</th><td class="us">Only you</td><td>You and the service</td></tr>
-<tr><th scope="row">Busy-only copies</th><td class="us">Per calendar</td><td>Some plans</td></tr>
-<tr><th scope="row">Source code</th><td class="us">Open, MIT</td><td>Closed</td></tr>
-</tbody>
-</table>
+<p class="eyebrow">Compare</p>
+<h2>Same sync. <span class="dim">No subscription.</span></h2>
+<div class="cmp" role="table" aria-label="calsync compared with hosted calendar sync services">
+<div class="r h" role="row"><span role="columnheader">Tool</span><span role="columnheader">Per year</span><span role="columnheader">Two-way</span><span role="columnheader">Busy only</span><span role="columnheader">Your sign-ins</span></div>
+<div class="r us" role="row"><b role="cell">calsync</b><b role="cell">$0</b><span role="cell">Yes</span><span role="cell">Per calendar</span><span role="cell">Stay on your machine</span></div>
+<div class="r" role="row"><span role="cell">OneCal</span><span role="cell">$60</span><span role="cell">Yes</span><span role="cell">Yes</span><span role="cell">On their servers</span></div>
+<div class="r" role="row"><span role="cell">Reclaim.ai</span><span role="cell">$96</span><span role="cell">Yes</span><span role="cell">Hides details</span><span role="cell">On their servers</span></div>
+<div class="r" role="row"><span role="cell">CalendarBridge</span><span role="cell">about $48</span><span role="cell">Yes</span><span role="cell">Yes</span><span role="cell">On their servers</span></div>
 </div>
-<p class="note">Prices from public pricing pages, November 2026.</p>
-</div>
-</section>
-
-<section class="band" id="machine">
-<div class="wrap split">
-<div>
-<p class="eyebrow">Private</p>
-<h2>Your calendars. On your own machine.</h2>
-<p class="sub">calsync has no accounts and no cloud of its own. Your sign-ins are files on the machine that runs it, and it talks only to your calendars.</p>
-</div>
-<dl class="facts">
-<div><dt>Account</dt><dd>None needed</dd></div>
-<div><dt>Who can reach it</dt><dd>This machine, until you change that</dd></div>
-<div><dt>Your sign-ins</dt><dd>Files on your machine</dd></div>
-<div><dt>What calsync can delete</dt><dd>Only copies it made</dd></div>
-<div><dt>Price</dt><dd>Free. MIT licensed</dd></div>
-<div><dt>Before the internet</dt><dd>Put it behind your own HTTPS proxy</dd></div>
-</dl>
+<p class="sub">Cheapest paid plan for one person, at list prices seen on 3 November 2026.</p>
 </div>
 </section>
 
@@ -201,10 +203,10 @@
 <section class="band" id="install">
 <div class="wrap">
 <p class="eyebrow">Install</p>
-<h2>Pick one.</h2>
+<h2>Pick one. <span class="dim">Both take a minute.</span></h2>
 <div class="codes">
 <div class="code">
-<p class="code-title">With Docker</p>
+<p class="code-h">With Docker</p>
 <pre><code>git clone https://github.com/jakescalesAI/calsync
 cd calsync
 docker compose up -d
@@ -212,7 +214,7 @@ docker compose logs calsync</code></pre>
 <p>Open <code>http://localhost:8484</code>. The first visit asks for the setup code from those logs. Then you choose a password.</p>
 </div>
 <div class="code">
-<p class="code-title">With Python 3.10 or newer</p>
+<p class="code-h">With Python 3.10 or newer</p>
 <pre><code>pipx install git+https://github.com/jakescalesAI/calsync
 calsync web</code></pre>
 <p>The same page opens at <code>http://localhost:8484</code>.</p>
@@ -222,19 +224,20 @@ calsync web</code></pre>
 </section>
 
 <section class="closing">
+<div class="glow"></div>
+<div class="arc"></div>
 <div class="wrap">
-<img src="/logo.svg" alt="" width="72" height="72">
-<h2>Every meeting. Every calendar.</h2>
-<div class="btns"><a class="btn primary" href="https://docs.getcalsync.app/">Read the docs</a><a class="btn quiet" href="https://github.com/jakescalesAI/calsync">Source on GitHub</a></div>
+<h2>Your calendars,<br>finally on speaking terms.</h2>
+<div class="btns"><a class="btn primary" href="#install">Install calsync</a><a class="btn" href="https://docs.getcalsync.app/">Read the docs</a></div>
 </div>
 </section>
 </main>
 
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg" alt="" width="26" height="26">calsync</a>
+<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg" alt="" width="24" height="24">calsync</a>
 <nav aria-label="Footer"><a href="https://docs.getcalsync.app/">Docs</a><a href="https://docs.getcalsync.app/faq/">FAQ</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav>
-<p>This page has no trackers, analytics or cookies.</p>
+<p>MIT licence. This page has no trackers, analytics or cookies.</p>
 </div>
 </footer>
 </body>
