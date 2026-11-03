@@ -27,5 +27,5 @@ First public release.
 - Wrong passwords and setup codes are capped per address and across all addresses.
 - Sign out on every device. Strict content policy: the page has no JavaScript and no outside files.
 
-[Unreleased]: https://github.com/calsync-co/calsync/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/calsync-co/calsync/releases/tag/v0.1.0
+[Unreleased]: https://github.com/jakescalesAI/calsync/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/jakescalesAI/calsync/releases/tag/v0.1.0
