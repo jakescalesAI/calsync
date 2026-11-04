@@ -9,6 +9,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Two-way CalDAV calendars: Apple iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server, signed in
   with an app password. Basic and Digest sign-in, server discovery, event calendars only (Reminders lists are skipped).
 - `.ics` sources now honour RDATE, and keep calsync's own tag so a published copy is never copied again.
+- Windows: the engine no longer needs `fcntl`, reads the time zone from the system, and prints any event title.
+- The connect page explains how booking apps such as Calendly and Cal.com work with calsync.
 
 ## [0.1.0] - 2026-11-03
 

@@ -24,8 +24,13 @@ Markdown agenda and refreshes daily notes' Calendar sections; export writes one 
 Python stdlib + python-dateutil (for repeating events in .ics links) + tzdata where the system has none.
 Config and tokens live in $CALSYNC_HOME, default ~/.calsync (0700).
 """
-import base64, contextlib, datetime as dt, fcntl, getpass, hashlib, ipaddress, json, os, re, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
+import base64, contextlib, datetime as dt, getpass, hashlib, ipaddress, json, os, re, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
 import xml.etree.ElementTree as ET
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
+    import msvcrt
 
 HOME = os.environ.get("CALSYNC_HOME") or os.path.expanduser("~/.calsync")
 SECRETS = os.path.join(HOME, "secrets")
@@ -52,13 +57,32 @@ def now_utc():
 def file_lock(name, blocking=True):
     """Holds a lock across processes and threads. Yields False when blocking=False and someone else has it."""
     ensure_home()
-    with open(os.path.join(HOME, name), "w") as f:
+    with open(os.path.join(HOME, name), "a") as f:
         try:
-            fcntl.flock(f, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+            _take_lock(f, blocking)
         except BlockingIOError:
             yield False
             return
-        yield True
+        try:
+            yield True
+        finally:
+            if not fcntl:
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+
+
+def _take_lock(f, blocking):
+    if fcntl:
+        fcntl.flock(f, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+        return
+    f.seek(0)
+    while True:
+        try:
+            return msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            if not blocking:
+                raise BlockingIOError from None
+            time.sleep(.1)
 
 
 def ensure_home():
@@ -68,7 +92,7 @@ def ensure_home():
 
 def load_json(path, default):
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
         return default
@@ -318,6 +342,28 @@ WINDOWS_TZ = {  # Outlook writes Windows zone names into published calendars
 }
 
 
+# The Windows zone names people are most likely to have. Anyone else sets their zone on the settings page.
+WINDOWS_ZONES = {
+    "Eastern Standard Time": "America/New_York", "Central Standard Time": "America/Chicago",
+    "Mountain Standard Time": "America/Denver", "US Mountain Standard Time": "America/Phoenix",
+    "Pacific Standard Time": "America/Los_Angeles", "Alaskan Standard Time": "America/Anchorage",
+    "Hawaiian Standard Time": "Pacific/Honolulu", "Atlantic Standard Time": "America/Halifax",
+    "GMT Standard Time": "Europe/London", "W. Europe Standard Time": "Europe/Berlin",
+    "Romance Standard Time": "Europe/Paris", "Central Europe Standard Time": "Europe/Budapest",
+    "India Standard Time": "Asia/Kolkata", "Tokyo Standard Time": "Asia/Tokyo",
+    "AUS Eastern Standard Time": "Australia/Sydney", "New Zealand Standard Time": "Pacific/Auckland",
+}
+
+
+def windows_zone():
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\TimeZoneInformation") as key:
+            return WINDOWS_ZONES.get(winreg.QueryValueEx(key, "TimeZoneKeyName")[0], "")
+    except (ImportError, OSError):
+        return ""
+
+
 def tz_name():
     """The zone for quick-add text, agendas and .ics times that name none: CALSYNC_TZ, then config, then the system."""
     name = os.environ.get("CALSYNC_TZ") or load_json(CONFIG, {}).get("timezone")
@@ -327,7 +373,7 @@ def tz_name():
                 name = f.read().strip()
         except OSError:
             link = os.path.realpath("/etc/localtime")
-            name = link.split("zoneinfo/", 1)[1] if "zoneinfo/" in link else ""
+            name = link.split("zoneinfo/", 1)[1] if "zoneinfo/" in link else windows_zone()
     return name or "UTC"
 
 
@@ -1561,6 +1607,8 @@ def main(argv):
 
 
 def cli():
+    for stream in (sys.stdout, sys.stderr):  # a Windows console can't print every event title
+        stream.reconfigure(errors="replace")
     sys.exit(main(sys.argv[1:]))
 
 
