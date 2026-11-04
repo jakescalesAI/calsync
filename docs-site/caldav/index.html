@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iCloud and CalDAV | calsync docs</title>
+<meta name="description" content="Connect Apple iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud or any CalDAV server to calsync with an app password, for two-way sync.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#050505">
+<link rel="canonical" href="https://docs.getcalsync.app/caldav/">
+<link rel="icon" href="/favicon.svg?v=31" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="iCloud and CalDAV | calsync docs">
+<meta property="og:description" content="Connect Apple iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud or any CalDAV server to calsync with an app password, for two-way sync.">
+<meta property="og:url" content="https://docs.getcalsync.app/caldav/">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap bar hd">
+<a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="40" height="40">calsync docs</a>
+<nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
+</header>
+<nav class="menu" id="menu" aria-label="Menu">
+<div class="menu-top"><a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<a href="/">Overview</a>
+<a href="/docker/">Install with Docker</a>
+<a href="/python/">Install without Docker</a>
+<a href="/google/">Google sign-in app</a>
+<a href="/microsoft/">Microsoft sign-in app</a>
+<a href="/caldav/">iCloud and CalDAV</a>
+<a href="/ics/">Published .ics feeds</a>
+<a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/settings/">Settings and environment</a>
+<a href="/faq/">FAQ</a>
+<a href="/troubleshooting/">Troubleshooting</a>
+<a href="https://getcalsync.app/">getcalsync.app</a>
+<a href="https://github.com/jakescalesAI/calsync">GitHub</a>
+</nav>
+<div class="wrap docs">
+<nav class="side" aria-label="Docs"><p>Docs</p><ul>
+<li><a href="/">Overview</a></li>
+<li><a href="/docker/">Install with Docker</a></li>
+<li><a href="/python/">Install without Docker</a></li>
+<li><a href="/google/">Google sign-in app</a></li>
+<li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/caldav/" aria-current="page">iCloud and CalDAV</a></li>
+<li><a href="/ics/">Published .ics feeds</a></li>
+<li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/settings/">Settings and environment</a></li>
+<li><a href="/faq/">FAQ</a></li>
+<li><a href="/troubleshooting/">Troubleshooting</a></li>
+</ul></nav>
+<main id="main" class="doc">
+
+<h1>iCloud and CalDAV</h1>
+<p class="lede">CalDAV is the open standard most calendars speak. calsync reads and writes these calendars both ways, and they only need an app password, not a sign-in app.</p>
+<h2>Connect one</h2>
+<ol>
+<li>Make an app password with your provider, using the list below.</li>
+<li>On the calsync page, add a calendar and pick your provider.</li>
+<li>Give it a short name, then enter your username and the app password.</li>
+<li>Press Check and save, then choose which calendars to sync.</li>
+</ol>
+<p>With the command line, run <code>calsync auth caldav LABEL icloud</code>. The other names are <code>fastmail</code>, <code>yahoo</code>, <code>aol</code>, <code>zoho</code> and <code>nextcloud</code>, or give a server address.</p>
+<h2>Where the password comes from</h2>
+<dl class="q">
+<dt>Apple iCloud</dt>
+<dd>Go to account.apple.com, then Sign-In and Security, then App-Specific Passwords. Your username is your Apple Account email. Your normal Apple password won't work.</dd>
+<dt>Fastmail</dt>
+<dd>Settings, Privacy &amp; Security, then make an app password with Calendars (CalDAV) access. Your username is your Fastmail address.</dd>
+<dt>Yahoo and AOL</dt>
+<dd>Account Security, then generate an app password. Your username is your email address.</dd>
+<dt>Zoho</dt>
+<dd>accounts.zoho.com, Security, App Passwords. Accounts outside the US pick Another CalDAV server and use their own address, such as <code>calendar.zoho.eu</code>.</dd>
+<dt>Nextcloud</dt>
+<dd>Personal settings, Security, Devices &amp; sessions. Enter your Nextcloud address as the server.</dd>
+</dl>
+<h2>Your own server</h2>
+<p>Pick Another CalDAV server and enter its address. calsync finds your calendars from there. If it can't, try the full CalDAV address:</p>
+<dl class="q">
+<dt>Nextcloud</dt><dd><code>https://cloud.example.com/remote.php/dav</code></dd>
+<dt>Radicale</dt><dd><code>https://radicale.example.com:5232/</code></dd>
+<dt>Baikal</dt><dd><code>https://baikal.example.com/dav.php</code></dd>
+<dt>SOGo</dt><dd><code>https://sogo.example.com/SOGo/dav/</code></dd>
+<dt>Synology</dt><dd><code>https://nas.example.com:5001/caldav/</code></dd>
+</dl>
+<div class="callout"><p>calsync only sends a password over https, except to a server on your own network. It also won't follow a redirect to another site with your password.</p></div>
+<h2>Calendars with no way in</h2>
+<p>Proton Calendar has no CalDAV, and an Exchange server you run yourself doesn't speak it. Publish those as a <a href="/ics/">published .ics link</a>, which works one way.</p>
+<h2>Good to know</h2>
+<ul>
+<li>Events are copied two ways, the same as Google and Microsoft. Copies carry a hidden tag, and calsync only edits or deletes tagged events.</li>
+<li>A calendar you can only read comes through as a source. calsync won't try to write to it.</li>
+<li>Reminders lists are left out, since they hold tasks and not events.</li>
+<li>If a server throws away calsync's tag, calsync stops writing to that calendar and says so. Turn on Never write to this calendar to keep it as a source.</li>
+<li>The app password is stored in the data folder, readable only by its owner. Sign out in calsync, then revoke the app password with your provider, to cut access.</li>
+</ul>
+
+<div class="pager"><a href="/microsoft/">Back: Microsoft sign-in app</a><a href="/ics/">Next: Published .ics feeds</a></div>
+</main>
+</div>
+<footer class="foot">
+<div class="wrap">
+<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg?v=31" alt="" width="30" height="30">calsync</a>
+<p>This page has no trackers, analytics or cookies.</p>
+</div>
+</footer>
+</body>
+</html>

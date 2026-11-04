@@ -18,9 +18,25 @@
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap bar hd">
-<a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="30" height="30">calsync docs</a>
-<nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav>
+<a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="40" height="40">calsync docs</a>
+<nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
 </header>
+<nav class="menu" id="menu" aria-label="Menu">
+<div class="menu-top"><a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<a href="/">Overview</a>
+<a href="/docker/">Install with Docker</a>
+<a href="/python/">Install without Docker</a>
+<a href="/google/">Google sign-in app</a>
+<a href="/microsoft/">Microsoft sign-in app</a>
+<a href="/caldav/">iCloud and CalDAV</a>
+<a href="/ics/">Published .ics feeds</a>
+<a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/settings/">Settings and environment</a>
+<a href="/faq/">FAQ</a>
+<a href="/troubleshooting/">Troubleshooting</a>
+<a href="https://getcalsync.app/">getcalsync.app</a>
+<a href="https://github.com/jakescalesAI/calsync">GitHub</a>
+</nav>
 <div class="wrap docs">
 <nav class="side" aria-label="Docs"><p>Docs</p><ul>
 <li><a href="/">Overview</a></li>
@@ -28,6 +44,7 @@
 <li><a href="/python/">Install without Docker</a></li>
 <li><a href="/google/">Google sign-in app</a></li>
 <li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/caldav/">iCloud and CalDAV</a></li>
 <li><a href="/ics/" aria-current="page">Published .ics feeds</a></li>
 <li><a href="/how-a-sync-decides/">How a sync decides</a></li>
 <li><a href="/settings/">Settings and environment</a></li>
@@ -42,7 +59,7 @@
 <ul>
 <li>Your school or work Microsoft tenant blocks outside apps.</li>
 <li>You only need to see someone else's calendar on yours.</li>
-<li>The calendar comes from a service with no sign-in route, such as a team schedule or a holiday list.</li>
+<li>The calendar comes from a service with no sign-in route, such as Proton Calendar, a team schedule or a holiday list.</li>
 </ul>
 <p>The flow is one way. Events on the feed are copied onto your writable calendars. Nothing is copied back.</p>
 <h2>Get the link</h2>
@@ -51,6 +68,8 @@
 <dd>Settings, Calendar, Shared calendars, Publish a calendar. Pick the calendar and the level of detail, click Publish, and copy the ICS link.</dd>
 <dt>Google Calendar</dt>
 <dd>Settings, pick the calendar, Integrate calendar, then copy the Secret address in iCal format.</dd>
+<dt>Proton Calendar</dt>
+<dd>Settings, All settings, Calendars, pick the calendar, then Create link under Share with anyone. Proton has no way to write in, so this is the only route.</dd>
 </dl>
 <div class="callout"><p>Anyone with the link can read the calendar. Treat it like a password. If it leaks, publish it again to get a new one.</p></div>
 <h2>Add it to calsync</h2>
@@ -62,7 +81,7 @@
 <li>calsync only sees the level of detail you published.</li>
 </ul>
 
-<div class="pager"><a href="/microsoft/">Back: Microsoft sign-in app</a><a href="/how-a-sync-decides/">Next: How a sync decides</a></div>
+<div class="pager"><a href="/caldav/">Back: iCloud and CalDAV</a><a href="/how-a-sync-decides/">Next: How a sync decides</a></div>
 </main>
 </div>
 <footer class="foot">
