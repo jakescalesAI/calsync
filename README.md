@@ -27,6 +27,18 @@ pipx install git+https://github.com/jakescalesAI/calsync.git
 calsync web
 ```
 
+On Windows, get pipx first, then open a new terminal and run the two lines above:
+
+```powershell
+py -m pip install --user pipx
+py -m pipx ensurepath
+```
+
+## Booking apps
+
+Calendly, Cal.com and other booking apps need nothing extra. Connect the app to any calendar calsync keeps in sync. It
+sees your busy times from every other calendar, and each new booking is copied out to the rest.
+
 ## What keeps your calendars safe
 
 - It only edits or deletes events it created. Each copy carries a private tag.

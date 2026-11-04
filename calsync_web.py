@@ -231,7 +231,8 @@ def connect_page(csrf, flash=None):
 <div class="row"><div><b>Google Calendar</b></div><a class="button" href="/connect/google">Connect</a></div>
 <div class="row"><div><b>Outlook or Microsoft 365</b></div><a class="button" href="/connect/microsoft">Connect</a></div>
 {caldav}
-<div class="row"><div><b>Published .ics link</b><br><span class="soft">Read-only: its events are copied out, nothing is written back. For Proton Calendar, an Exchange server, or an organization that blocks outside apps.</span></div><a class="button" href="/connect/ics">Add link</a></div>''', True, flash)
+<div class="row"><div><b>Published .ics link</b><br><span class="soft">Read-only: its events are copied out, nothing is written back. For Proton Calendar, an Exchange server, or an organization that blocks outside apps.</span></div><a class="button" href="/connect/ics">Add link</a></div>
+<div class="row"><div><b>Calendly, Cal.com or another booking app</b><br><span class="soft">Nothing to add here. Connect the booking app to any calendar above. calsync keeps that calendar showing your busy times from all the others.</span></div><a class="button" href="https://docs.getcalsync.app/booking-apps/">How it works</a></div>''', True, flash)
 
 
 def google_page(csrf, flash=None):

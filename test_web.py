@@ -85,6 +85,7 @@ class WebTests(unittest.TestCase):
     def test_connect_lists_every_calendar_service(self):
         self.start()
         text = self.req("GET", "/connect")[1]
+        self.assertIn("Calendly, Cal.com or another booking app", text)
         for name in ("Apple iCloud", "Fastmail", "Yahoo Calendar", "AOL Calendar", "Zoho Calendar", "Nextcloud", "Another CalDAV server", "Proton Calendar"):
             self.assertIn(name, text)
 
