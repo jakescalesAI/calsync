@@ -270,6 +270,8 @@ code { font-size: .9em; background: rgba(255, 255, 255, .06); padding: 1px 6px; 
   .facts, .limits { grid-template-columns: 1fr 1fr; gap: 24px 28px; }
 }
 @media (max-width: 720px) {
+  .setup span { flex-basis: 100%; margin: 0; text-align: center; }
+  .setup a { padding: 8px 12px; }
   .top .wrap, .menu-top { height: 72px; }
   .top nav { display: none; }
   .top .brand img, .menu .brand img { width: 36px; height: 36px; }
