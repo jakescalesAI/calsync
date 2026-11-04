@@ -2,3 +2,4 @@ User-agent: *
 Allow: /
 
 Sitemap: https://getcalsync.app/sitemap.xml
+Sitemap: https://docs.getcalsync.app/sitemap.xml
