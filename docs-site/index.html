@@ -18,9 +18,25 @@
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap bar hd">
-<a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="30" height="30">calsync docs</a>
-<nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav>
+<a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="40" height="40">calsync docs</a>
+<nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
 </header>
+<nav class="menu" id="menu" aria-label="Menu">
+<div class="menu-top"><a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<a href="/">Overview</a>
+<a href="/docker/">Install with Docker</a>
+<a href="/python/">Install without Docker</a>
+<a href="/google/">Google sign-in app</a>
+<a href="/microsoft/">Microsoft sign-in app</a>
+<a href="/caldav/">iCloud and CalDAV</a>
+<a href="/ics/">Published .ics feeds</a>
+<a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/settings/">Settings and environment</a>
+<a href="/faq/">FAQ</a>
+<a href="/troubleshooting/">Troubleshooting</a>
+<a href="https://getcalsync.app/">getcalsync.app</a>
+<a href="https://github.com/jakescalesAI/calsync">GitHub</a>
+</nav>
 <div class="wrap docs">
 <nav class="side" aria-label="Docs"><p>Docs</p><ul>
 <li><a href="/" aria-current="page">Overview</a></li>
@@ -28,6 +44,7 @@
 <li><a href="/python/">Install without Docker</a></li>
 <li><a href="/google/">Google sign-in app</a></li>
 <li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/caldav/">iCloud and CalDAV</a></li>
 <li><a href="/ics/">Published .ics feeds</a></li>
 <li><a href="/how-a-sync-decides/">How a sync decides</a></li>
 <li><a href="/settings/">Settings and environment</a></li>
@@ -37,11 +54,11 @@
 <main id="main" class="doc">
 
 <h1>calsync docs</h1>
-<p class="lede">calsync keeps your Google and Microsoft 365 calendars showing the same events. You run it yourself. These pages cover everything from install to troubleshooting.</p>
+<p class="lede">calsync keeps your Google, Microsoft 365, iCloud and other CalDAV calendars showing the same events. You run it yourself. These pages cover everything from install to troubleshooting.</p>
 <h2>The order to do things in</h2>
 <ol>
 <li>Install calsync, with or without Docker.</li>
-<li>Make a free sign-in app for each provider you use: Google, Microsoft, or both.</li>
+<li>Make a free sign-in app for Google or Microsoft if you use them. iCloud and other CalDAV calendars only need an app password.</li>
 <li>Open the page at <code>http://localhost:8484</code>, add your calendars and sign in.</li>
 <li>Press Preview changes. Read the plan.</li>
 <li>Press Apply and keep syncing.</li>
@@ -52,6 +69,7 @@
 <li><a href="/python/">Install without Docker</a><span>pipx, the command line and a timer.</span></li>
 <li><a href="/google/">Google sign-in app</a><span>Create your own app in Google Cloud and sign in.</span></li>
 <li><a href="/microsoft/">Microsoft sign-in app</a><span>Register an app in Entra and sign in with a device code.</span></li>
+<li><a href="/caldav/">iCloud and CalDAV</a><span>Two-way sync for iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and other CalDAV servers.</span></li>
 <li><a href="/ics/">Published .ics feeds</a><span>A read-only source, for calendars that block outside apps.</span></li>
 <li><a href="/how-a-sync-decides/">How a sync decides</a><span>What gets copied, updated and deleted, and what stops a run.</span></li>
 <li><a href="/settings/">Settings and environment</a><span>Port, time zone, hosts, and putting it behind HTTPS.</span></li>
@@ -62,7 +80,7 @@
 <ul>
 <li>A machine that stays on, such as a home server, a spare computer or a small VPS.</li>
 <li>Docker with Compose, or Python 3.10 or newer.</li>
-<li>About 10 minutes to make a sign-in app for each of Google and Microsoft.</li>
+<li>About 10 minutes to make a sign-in app for each of Google and Microsoft, or a minute for an app password on iCloud and CalDAV.</li>
 </ul>
 <p>There is no hosted version of calsync. There is no account with us.</p>
 

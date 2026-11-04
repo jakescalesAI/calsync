@@ -155,17 +155,27 @@ def page(title, description, path, main, *, noindex=False, article=None):
 
 <header class="top">
 <div class="wrap">
-<a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="28" height="28">calsync</a>
+<a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="40" height="40">calsync</a>
 <nav aria-label="Main">
-<a class="sec" href="/#how">How it works</a>
-<a class="sec" href="/#careful">Safety</a>
-<a class="sec" href="/#compare">Compare</a>
+<a href="/#how">How it works</a>
+<a href="/#careful">Safety</a>
+<a href="/#compare">Compare</a>
 <a href="/blog/" aria-current="page">Blog</a>
 <a href="{DOCS_URL}/">Docs</a>
 <a class="gh" href="https://github.com/{OWNER}/calsync">GitHub</a>
 </nav>
+<a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
 </div>
 </header>
+<nav class="menu" id="menu" aria-label="Menu">
+<div class="menu-top"><a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="40" height="40">calsync</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<a href="/#how">How it works</a>
+<a href="/#careful">Safety</a>
+<a href="/#compare">Compare</a>
+<a href="/blog/" aria-current="page">Blog</a>
+<a href="{DOCS_URL}/">Docs</a>
+<a href="https://github.com/{OWNER}/calsync">GitHub</a>
+</nav>
 
 <main id="main">
 {main}

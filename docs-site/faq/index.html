@@ -18,9 +18,25 @@
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap bar hd">
-<a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="30" height="30">calsync docs</a>
-<nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav>
+<a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="40" height="40">calsync docs</a>
+<nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
 </header>
+<nav class="menu" id="menu" aria-label="Menu">
+<div class="menu-top"><a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<a href="/">Overview</a>
+<a href="/docker/">Install with Docker</a>
+<a href="/python/">Install without Docker</a>
+<a href="/google/">Google sign-in app</a>
+<a href="/microsoft/">Microsoft sign-in app</a>
+<a href="/caldav/">iCloud and CalDAV</a>
+<a href="/ics/">Published .ics feeds</a>
+<a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/settings/">Settings and environment</a>
+<a href="/faq/">FAQ</a>
+<a href="/troubleshooting/">Troubleshooting</a>
+<a href="https://getcalsync.app/">getcalsync.app</a>
+<a href="https://github.com/jakescalesAI/calsync">GitHub</a>
+</nav>
 <div class="wrap docs">
 <nav class="side" aria-label="Docs"><p>Docs</p><ul>
 <li><a href="/">Overview</a></li>
@@ -28,6 +44,7 @@
 <li><a href="/python/">Install without Docker</a></li>
 <li><a href="/google/">Google sign-in app</a></li>
 <li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/caldav/">iCloud and CalDAV</a></li>
 <li><a href="/ics/">Published .ics feeds</a></li>
 <li><a href="/how-a-sync-decides/">How a sync decides</a></li>
 <li><a href="/settings/">Settings and environment</a></li>
@@ -39,9 +56,9 @@
 <h1>FAQ</h1>
 <h2>The basics</h2>
 <details><summary>Is there a hosted version?</summary><p>No. You run calsync yourself. There is no calsync cloud and no account with us.</p></details>
-<details><summary>Does anyone else see my calendar?</summary><p>No. calsync runs on your machine and talks to Google and Microsoft directly. Sign-ins and calendar data stay with you.</p></details>
+<details><summary>Does anyone else see my calendar?</summary><p>No. calsync runs on your machine and talks to your calendar providers directly. Sign-ins and calendar data stay with you.</p></details>
 <details><summary>What does it cost?</summary><p>Nothing. It is open source under the MIT license. It was built because paid sync tools charge monthly to copy events between your own calendars.</p></details>
-<details><summary>Which calendars work?</summary><p>Google Calendar and Outlook or Microsoft 365 calendars, plus read-only published .ics feeds as sources. You can connect more than two. Each writable calendar gets a copy of every real event from the others.</p></details>
+<details><summary>Which calendars work?</summary><p>Google Calendar, Outlook or Microsoft 365, Apple iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server, all two-way. Anything else that can publish an .ics link, such as Proton Calendar or an Exchange server, works as a read-only source. You can connect more than two. Each writable calendar gets a copy of every real event from the others.</p></details>
 <details><summary>Why do I have to make my own sign-in app?</summary><p>Because there is no calsync cloud to hold one. Your sign-in app belongs to you, and so do the tokens it makes. See the <a href="/google/">Google</a> and <a href="/microsoft/">Microsoft</a> steps. Each takes about 10 minutes.</p></details>
 <details><summary>My work or school blocks outside apps. Now what?</summary><p>Publish the calendar as an .ics link and add it as a source. It works one way and is read only. See <a href="/ics/">Published .ics feeds</a>.</p></details>
 <h2>Safety</h2>
