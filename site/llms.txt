@@ -1,0 +1,17 @@
+# calsync
+
+> A free, open source, self-hosted tool that keeps Google and Microsoft 365 calendars in two-way sync.
+> There is no hosted version. It runs on your own machine.
+
+## Docs
+
+- [https://docs.getcalsync.app/](https://docs.getcalsync.app/)
+- [https://docs.getcalsync.app/docker/](https://docs.getcalsync.app/docker/)
+- [https://docs.getcalsync.app/faq/](https://docs.getcalsync.app/faq/)
+- [https://docs.getcalsync.app/google/](https://docs.getcalsync.app/google/)
+- [https://docs.getcalsync.app/how-a-sync-decides/](https://docs.getcalsync.app/how-a-sync-decides/)
+- [https://docs.getcalsync.app/ics/](https://docs.getcalsync.app/ics/)
+- [https://docs.getcalsync.app/microsoft/](https://docs.getcalsync.app/microsoft/)
+- [https://docs.getcalsync.app/python/](https://docs.getcalsync.app/python/)
+- [https://docs.getcalsync.app/settings/](https://docs.getcalsync.app/settings/)
+- [https://docs.getcalsync.app/troubleshooting/](https://docs.getcalsync.app/troubleshooting/)

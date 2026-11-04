@@ -10,3 +10,4 @@ export/
 dist/
 build/
 *.egg-info/
+site/blog/drafts/
