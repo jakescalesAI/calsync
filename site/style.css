@@ -56,6 +56,11 @@ code { font-size: .9em; background: rgba(255, 255, 255, .06); padding: 1px 6px; 
 .btn.primary:hover { background: #fff; }
 
 /* hero */
+.setup { display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 20px; color: var(--dim); font-size: 15px; }
+.setup span { margin-right: 4px; }
+.setup a { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid #2a2a2a; border-radius: 999px; color: var(--text); font-weight: 600; transition: background .2s, border-color .2s; }
+.setup a:hover { background: #161616; border-color: #444; }
+.setup img { filter: brightness(0) invert(1); }
 .hero { position: relative; text-align: center; padding-top: 76px; overflow: hidden; }
 .hero::before { content: ""; position: absolute; left: 0; right: 0; top: -260px; height: 760px; background: radial-gradient(600px 300px at 50% 0, rgba(255, 255, 255, .07), transparent 70%); pointer-events: none; }
 .pill { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--dim); padding: 6px 14px 6px 6px; border: 1px solid var(--line2); border-radius: 999px; background: rgba(255, 255, 255, .03); }

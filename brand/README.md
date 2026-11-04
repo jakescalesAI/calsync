@@ -1,13 +1,13 @@
 # calsync mark
 
-A sync ring around a watch face showing 31: every calendar, always on time. Black, white and grey only.
+A square calendar page with two rings, the sync arrows and 31. Black, white and grey only.
 
 | File | Use |
 |---|---|
-| `mark-white.svg` / `mark-black.svg` | Full mark (ticks, crown, 31), no panel. 48 px and up. |
-| `mark-small-white.svg` / `mark-small-black.svg` | No ticks, heavier lines, bigger 31. Under 48 px: site header, footers. |
-| `panel-dark.svg` / `panel-light.svg` | Full mark on its own tile. App icons, social images. |
-| `panel-dark-small.svg` | Small mark on the dark tile. Browser favicon. |
+| `mark-white.svg` / `mark-black.svg` | The calendar with rings, sync arrows and 31 in Inter SemiBold. 24 px and up. |
+| `mark-small-white.svg` / `mark-small-black.svg` | The same with a slightly heavier 31. Browser tabs and other small uses. |
+| `panel-dark.svg` / `panel-light.svg` | The calendar on its own tile. App icons, social images. |
+| `panel-dark-small.svg` | The small mark on the dark tile. |
 | `*-1024.png`, `panel-dark-512.png` | PNG exports, transparent outside the tile. |
 
-The 31 is drawn as strokes, not set in a font, so the files need nothing else to render.
+The 31 is Inter SemiBold, the font of the wordmark and headlines, converted to outlines so the files need nothing else to render.

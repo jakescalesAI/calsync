@@ -139,7 +139,7 @@ def page(title, description, path, main, *, noindex=False, article=None):
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#050505">
 {chr(10).join(meta)}
-<link rel="icon" href="/favicon.svg?v=31" type="image/svg+xml">
+<link rel="icon" href="/favicon.svg?v=32" type="image/svg+xml">
 <link rel="alternate" type="application/rss+xml" title="calsync blog" href="/blog/feed.xml">
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="{kind}">
@@ -155,7 +155,7 @@ def page(title, description, path, main, *, noindex=False, article=None):
 
 <header class="top">
 <div class="wrap">
-<a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="40" height="40">calsync</a>
+<a class="brand" href="/"><img src="/logo.svg?v=32" alt="" width="40" height="40">calsync</a>
 <nav aria-label="Main">
 <a href="/#how">How it works</a>
 <a href="/#careful">Safety</a>
@@ -169,7 +169,7 @@ def page(title, description, path, main, *, noindex=False, article=None):
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img src="/logo.svg?v=31" alt="" width="40" height="40">calsync</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img src="/logo.svg?v=32" alt="" width="40" height="40">calsync</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="/#how">How it works</a>
 <a href="/#careful">Safety</a>
 <a href="/#compare">Compare</a>
@@ -184,7 +184,7 @@ def page(title, description, path, main, *, noindex=False, article=None):
 
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg?v=31" alt="" width="24" height="24">calsync</a>
+<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg?v=32" alt="" width="24" height="24">calsync</a>
 <nav aria-label="Footer"><a href="/blog/">Blog</a><a href="{DOCS_URL}/">Docs</a><a href="{DOCS_URL}/faq/">FAQ</a><a href="https://github.com/{OWNER}/calsync">GitHub</a></nav>
 <p>MIT licence. This page has no trackers, analytics or cookies.</p>
 </div>

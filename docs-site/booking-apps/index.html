@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Booking apps | calsync docs</title>
+<meta name="description" content="Use Calendly, Cal.com and other booking apps with calsync. Connect one synced calendar and the app sees your busy times from all of them.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#050505">
+<link rel="canonical" href="https://docs.getcalsync.app/booking-apps/">
+<link rel="icon" href="/favicon.svg?v=32" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Booking apps | calsync docs">
+<meta property="og:description" content="Use Calendly, Cal.com and other booking apps with calsync. Connect one synced calendar and the app sees your busy times from all of them.">
+<meta property="og:url" content="https://docs.getcalsync.app/booking-apps/">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap bar hd">
+<a class="brand" href="/"><img src="/logo.svg?v=32" alt="" width="40" height="40">calsync docs</a>
+<nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
+</header>
+<span id="shut" hidden></span>
+<nav class="menu" id="menu" aria-label="Menu">
+<div class="menu-top"><a class="brand" href="/"><img src="/logo.svg?v=32" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<a href="/">Overview</a>
+<a href="/docker/">Install with Docker</a>
+<a href="/python/">Install without Docker</a>
+<a href="/google/">Google sign-in app</a>
+<a href="/microsoft/">Microsoft sign-in app</a>
+<a href="/caldav/">iCloud and CalDAV</a>
+<a href="/ics/">Published .ics feeds</a>
+<a href="/booking-apps/">Booking apps</a>
+<a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/settings/">Settings and environment</a>
+<a href="/faq/">FAQ</a>
+<a href="/troubleshooting/">Troubleshooting</a>
+<a href="https://getcalsync.app/">getcalsync.app</a>
+<a href="https://github.com/jakescalesAI/calsync">GitHub</a>
+</nav>
+<div class="wrap docs">
+<nav class="side" aria-label="Docs"><p>Docs</p><ul>
+<li><a href="/">Overview</a></li>
+<li><a href="/docker/">Install with Docker</a></li>
+<li><a href="/python/">Install without Docker</a></li>
+<li><a href="/google/">Google sign-in app</a></li>
+<li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/caldav/">iCloud and CalDAV</a></li>
+<li><a href="/ics/">Published .ics feeds</a></li>
+<li><a href="/booking-apps/" aria-current="page">Booking apps</a></li>
+<li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/settings/">Settings and environment</a></li>
+<li><a href="/faq/">FAQ</a></li>
+<li><a href="/troubleshooting/">Troubleshooting</a></li>
+</ul></nav>
+<main id="main" class="doc">
+
+<h1>Booking apps</h1>
+<p class="lede">Calendly, Cal.com and other booking apps work with calsync. There is nothing to install and no key to paste.</p>
+<h2>Plug one in</h2>
+<ol>
+<li>Add your calendars to calsync and start syncing.</li>
+<li>In your booking app, connect one of those calendars.</li>
+<li>Let the app check that calendar for conflicts, and send new bookings to it.</li>
+</ol>
+<p>Pick a calendar calsync can write to. A published .ics link won't work here, because copies can't be written to it.</p>
+<h2>What happens next</h2>
+<dl class="kv">
+<div><dt>Your busy times</dt><dd>A meeting on any calendar is copied to the one your booking app checks, so that time stops being offered.</dd></div>
+<div><dt>New bookings</dt><dd>A booking lands on the connected calendar, and calsync copies it to the others on its next sync.</dd></div>
+<div><dt>Free time</dt><dd>A copy keeps its busy or free status. An event marked free stays free, so it won't block a booking.</dd></div>
+<div><dt>Private details</dt><dd>If that calendar's option Copies here only say Busy is on, the booking app sees Busy and no title.</dd></div>
+</dl>
+<h2>Which calendars each app takes</h2>
+<dl class="kv">
+<div><dt>Calendly</dt><dd>Google Calendar, Office 365, Outlook and Exchange.</dd></div>
+<div><dt>Cal.com</dt><dd>Google Calendar, Outlook, Apple Calendar and CalDAV.</dd></div>
+<div><dt>Anything else</dt><dd>Any booking app that connects to a calendar calsync syncs works the same way.</dd></div>
+</dl>
+<h2>One thing to know</h2>
+<p>Copies are made on each sync, every 5 minutes unless you change it. A slot can still be booked in the minutes before a new meeting reaches that calendar. You can shorten that with How often to sync in Settings.</p>
+<div class="pager"><a href="/ics/">Back: Published .ics feeds</a><a href="/how-a-sync-decides/">Next: How a sync decides</a></div>
+</main>
+</div>
+<footer class="foot">
+<div class="wrap">
+<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg?v=32" alt="" width="30" height="30">calsync</a>
+<p>This page has no trackers, analytics or cookies.</p>
+</div>
+</footer>
+</body>
+</html>
