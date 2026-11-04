@@ -6,6 +6,7 @@
 ## Docs
 
 - [https://docs.getcalsync.app/](https://docs.getcalsync.app/)
+- [https://docs.getcalsync.app/booking-apps/](https://docs.getcalsync.app/booking-apps/)
 - [https://docs.getcalsync.app/caldav/](https://docs.getcalsync.app/caldav/)
 - [https://docs.getcalsync.app/docker/](https://docs.getcalsync.app/docker/)
 - [https://docs.getcalsync.app/faq/](https://docs.getcalsync.app/faq/)
