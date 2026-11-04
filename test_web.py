@@ -80,6 +80,42 @@ class WebTests(unittest.TestCase):
     def post(self, path, **form):
         return self.req("POST", path, dict(form, csrf=self.csrf()))
 
+    # --- CalDAV
+
+    def test_connect_lists_every_calendar_service(self):
+        self.start()
+        text = self.req("GET", "/connect")[1]
+        for name in ("Apple iCloud", "Fastmail", "Yahoo Calendar", "AOL Calendar", "Zoho Calendar", "Nextcloud", "Another CalDAV server", "Proton Calendar"):
+            self.assertIn(name, text)
+
+    def test_caldav_sign_in_is_saved_and_the_password_never_comes_back(self):
+        self.start()
+        found = [{"id": "https://dav.example.com/cals/home/", "name": "Home", "writable": True}]
+
+        def connect(label, server, username, password, service=""):
+            self.assertEqual((server, service), ("https://caldav.icloud.com/", "Apple iCloud"))
+            calsync._save_account(label, {"provider": "caldav", "service": service, "server": server, "username": username, "password": password, "homes": []})
+            return found
+        with mock.patch.object(calsync, "caldav_connect", connect):
+            self.post("/connect/caldav/save", kind="icloud", label="apple", username="me@example.com", password="SECRET-APP-PASS")
+        with mock.patch.object(calsync, "account_calendars", return_value=found):
+            for path in ("/", "/connect", "/connect/caldav?p=icloud", "/account?label=apple"):
+                self.assertNotIn("SECRET-APP-PASS", self.req("GET", path)[1])
+            self.assertIn("Apple iCloud", self.req("GET", "/connect")[1])
+            self.assertIn("Home", self.req("GET", "/account?label=apple")[1])
+
+    def test_a_bad_caldav_sign_in_shows_why_and_saves_nothing(self):
+        self.start()
+        with mock.patch.object(calsync, "caldav_connect", side_effect=RuntimeError("the server turned down that username or password")):
+            _, text = self.post("/connect/caldav/save", kind="fastmail", label="mail", username="me", password="x")
+        self.assertIn("turned down", text)
+        self.assertNotIn("mail", calsync._accounts())
+
+    def test_own_caldav_server_asks_for_an_address(self):
+        self.start()
+        self.assertIn('name="server"', self.req("GET", "/connect/caldav?p=other")[1])
+        self.assertNotIn('name="server"', self.req("GET", "/connect/caldav?p=icloud")[1])
+
     # --- who gets in
 
     def test_first_run_sets_password_and_files_are_private(self):

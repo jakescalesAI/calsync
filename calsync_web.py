@@ -2,7 +2,7 @@
 """The web setup page and background sync: `calsync web`, or the Docker image.
 
 No JavaScript and no outside files, so a strict content policy holds. Everything a page shows goes
-through esc(). Tokens, client secrets and .ics links are stored by the engine and never sent to a page.
+through esc(). Tokens, client secrets, CalDAV passwords and .ics links are stored by the engine and never sent to a page.
 
   CALSYNC_BIND        address to listen on (default 127.0.0.1; the Docker image uses 0.0.0.0)
   CALSYNC_PORT        port (default 8484)
@@ -221,14 +221,17 @@ def connect_page(csrf, flash=None):
     accounts = engine._accounts()
     rows = []
     for label, a in accounts.items():
-        kind = {"google": "Google", "outlook": "Microsoft", "ics": ".ics link"}.get(a["provider"], "")
+        kind = a.get("service") or {"google": "Google", "outlook": "Microsoft", "caldav": "CalDAV", "ics": ".ics link"}.get(a["provider"], "")
         rows.append(f'''<div class="row"><div><b>{esc(label)}</b> <span class="soft">{kind}</span></div><div class="actions flat"><a class="button" href="/account?label={urllib.parse.quote(label)}">Choose calendars</a>
 <form class="inline" method="post" action="/account/remove"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="label" value="{esc(label)}"><button class="plain">Sign out</button></form></div></div>''')
     existing = ("<h2>Signed in</h2>" + "".join(rows)) if rows else ""
+    caldav = "".join(f'''<div class="row"><div><b>{"Another CalDAV server" if k == "other" else v[0]}</b></div><a class="button" href="/connect/caldav?p={k}">Connect</a></div>'''
+                     for k, v in engine.CALDAV_SERVERS.items())
     return page("Add a calendar", f'''<h1>Add a calendar</h1>{existing}<h2>Connect an account</h2>
 <div class="row"><div><b>Google Calendar</b></div><a class="button" href="/connect/google">Connect</a></div>
 <div class="row"><div><b>Outlook or Microsoft 365</b></div><a class="button" href="/connect/microsoft">Connect</a></div>
-<div class="row"><div><b>Published .ics link</b><br><span class="soft">Read-only: its events are copied out, nothing is written back. Works when an organization blocks outside apps.</span></div><a class="button" href="/connect/ics">Add link</a></div>''', True, flash)
+{caldav}
+<div class="row"><div><b>Published .ics link</b><br><span class="soft">Read-only: its events are copied out, nothing is written back. For Proton Calendar, an Exchange server, or an organization that blocks outside apps.</span></div><a class="button" href="/connect/ics">Add link</a></div>''', True, flash)
 
 
 def google_page(csrf, flash=None):
@@ -262,6 +265,17 @@ def ics_page(csrf, flash=None):
 <form method="post" action="/connect/ics/save" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
 <label for="label">A short name</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="classes">
 <label for="url">Calendar link</label><input type="password" id="url" name="url" required>
+<div class="actions"><button>Check and save</button></div></form></section>''', True, flash)
+
+
+def caldav_page(kind, csrf, flash=None):
+    name, server, note = engine.CALDAV_SERVERS[kind]
+    address = "" if server else '<label for="server">Server address</label><input type="text" id="server" name="server" required placeholder="https://cloud.example.com">'
+    return page(f"Connect {name}", f'''<h1>Connect {name}</h1><section><p>{note}</p><p>calsync saves this password on this machine and never shows it again.</p>
+<form method="post" action="/connect/caldav/save" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="kind" value="{kind}">
+<label for="label">A short name</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="personal">
+{address}<label for="username">Username</label><input type="text" id="username" name="username" required>
+<label for="password">Password</label><input type="password" id="password" name="password" required autocomplete="new-password">
 <div class="actions"><button>Check and save</button></div></form></section>''', True, flash)
 
 
@@ -448,6 +462,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send(200, microsoft_page(csrf, flash))
         if url.path == "/connect/microsoft/wait":
             return self.microsoft_wait(q.get("flow", [""])[0])
+        if url.path == "/connect/caldav" and q.get("p", [""])[0] in engine.CALDAV_SERVERS:
+            return self.send(200, caldav_page(q["p"][0], csrf, flash))
         if url.path == "/connect/ics":
             return self.send(200, ics_page(csrf, flash))
         if url.path == "/account" and q.get("label", [""])[0] in engine._accounts():
@@ -512,6 +528,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                     "expires": time.time() + int(r.get("expires_in", 900)), "interval": int(r.get("interval", 5)), "status": "waiting"}
             threading.Thread(target=poll_microsoft, args=(flow,), daemon=True).start()
             return self.redirect("/connect/microsoft/wait?flow=" + flow)
+        if url == "/connect/caldav/save" and get("kind") in engine.CALDAV_SERVERS:
+            kind, label = get("kind"), get("label").strip()
+            name, server, _ = engine.CALDAV_SERVERS[kind]
+            if not engine.NAME_OK.fullmatch(label):
+                return self.send(200, caldav_page(kind, csrf, "Use letters, numbers, - and _ for the name."))
+            try:
+                engine.caldav_connect(label, server or get("server"), get("username").strip(), get("password"), "" if kind == "other" else name)
+            except Exception as e:
+                return self.send(200, caldav_page(kind, csrf, short_error(e)))
+            return self.redirect("/account?label=" + urllib.parse.quote(label))
         if url == "/connect/ics/save":
             label = get("label").strip()
             if not engine.NAME_OK.fullmatch(label):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""calsync: keep your calendars (Google, Outlook, .ics feeds) showing the same events.
+"""calsync: keep your calendars (Google, Outlook, iCloud and other CalDAV, .ics feeds) showing the same events.
 
 Every run lists each calendar in a window, then makes every writable calendar
 hold one tagged copy of every real event from every other calendar. Copies are
@@ -10,6 +10,7 @@ edits or deletes an event it did not create. Stateless: the tags are the state.
   calsync setup google|microsoft     store your OAuth client (hidden prompts)
   calsync auth google LABEL          sign in a Google account (paste-back flow)
   calsync auth outlook LABEL [TENANT] sign in a Microsoft account (device code)
+  calsync auth caldav LABEL [SERVER] iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud or any CalDAV address (hidden prompt)
   calsync auth ics LABEL             a published .ics link (read-only source)
   calsync calendars                  list calendars on every signed-in account
   calsync add NAME ACCOUNT CAL_ID [--busy-only] [--read-only] [--skip OTHER_NAME ...]
@@ -23,13 +24,16 @@ Markdown agenda and refreshes daily notes' Calendar sections; export writes one 
 Python stdlib + python-dateutil (for repeating events in .ics links) + tzdata where the system has none.
 Config and tokens live in $CALSYNC_HOME, default ~/.calsync (0700).
 """
-import contextlib, datetime as dt, fcntl, getpass, hashlib, json, os, re, sys, threading, time, urllib.error, urllib.parse, urllib.request
+import base64, contextlib, datetime as dt, fcntl, getpass, hashlib, ipaddress, json, os, re, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
+import xml.etree.ElementTree as ET
 
 HOME = os.environ.get("CALSYNC_HOME") or os.path.expanduser("~/.calsync")
 SECRETS = os.path.join(HOME, "secrets")
 CONFIG = os.path.join(HOME, "config.json")
 LASTRUN = os.path.join(HOME, "last-run.json")
 TAG = "calsync"                      # Google private extended property key
+ICS_TAG = "X-CALSYNC"                # the same tag on a CalDAV event
+COPY_UID = "calsync-"                # every CalDAV copy's UID starts with this, so a copy is known even if a server drops ICS_TAG
 MS_PROP = "String {6f8f3c3e-7a51-4d0b-9a8e-2c1f5b7d9e44} Name calsync"  # Graph extended property id
 PAST_DAYS, FUTURE_DAYS = 0, 120  # events that already ended are neither copied nor cleaned up
 GOOGLE_REDIRECT = "http://127.0.0.1:8765/"
@@ -371,7 +375,7 @@ def _ics_time(params, value):
     t = dt.datetime.strptime(value[:15], "%Y%m%dT%H%M%S")
     if value.endswith("Z"):
         return t.replace(tzinfo=dt.timezone.utc), False
-    tzid = params.get("TZID", "")
+    tzid = params.get("TZID", "").rsplit("/freeassociation.sourceforge.net/", 1)[-1]
     try:
         return t.replace(tzinfo=ZoneInfo(WINDOWS_TZ.get(tzid.lower(), tzid))), False
     except Exception:
@@ -388,8 +392,9 @@ def _ics_duration(v):
     return -td if sign == "-" else td
 
 
-def ics_events(text, tmin, tmax):
-    """Expand a calendar's VEVENTs into normalised instances inside [tmin, tmax] (UTC 'Z' strings)."""
+def ics_events(text, tmin, tmax, me=()):
+    """Expand a calendar's VEVENTs into normalised instances inside [tmin, tmax] (UTC 'Z' strings).
+    me: this account's own addresses, so a meeting it declined can be left out."""
     from dateutil.rrule import rruleset, rrulestr
     lo = dt.datetime.fromisoformat(tmin.replace("Z", "+00:00"))
     hi = dt.datetime.fromisoformat(tmax.replace("Z", "+00:00"))
@@ -425,23 +430,30 @@ def ics_events(text, tmin, tmax):
             fs = start.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             fe = end.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         busy = first(ev, "X-MICROSOFT-CDO-BUSYSTATUS")[1].upper() not in ("FREE", "WORKINGELSEWHERE") and first(ev, "TRANSP")[1].upper() != "TRANSPARENT"
+        tag = _unescape(first(ev, ICS_TAG)[1]) or (f"?|{uid}" if uid.startswith(COPY_UID) else None)
+        declined = any(p.get("PARTSTAT", "").upper() == "DECLINED" and v.lower().removeprefix("mailto:") in me for p, v in ev.get("ATTENDEE", []))
         return {"uid": f"{uid}|{orig}", "ical": uid, "title": _unescape(first(ev, "SUMMARY")[1]),
                 "start": fs, "end": fe, "all_day": all_day, "busy": busy,
                 "location": _unescape(first(ev, "LOCATION")[1]),
                 "private": first(ev, "CLASS")[1].upper() in ("PRIVATE", "CONFIDENTIAL"),
-                "declined": False, "copy_of": None}
+                "declined": declined, "copy_of": tag}
 
     out = []
     for ev in masters:
         uid = first(ev, "UID")[1]
         start, all_day = _ics_time(*first(ev, "DTSTART"))
-        if "RRULE" not in ev:
+        if "RRULE" not in ev and "RDATE" not in ev:
             inst = instance(overrides.pop((uid, start.isoformat()), ev), start, all_day, start.isoformat())
             if inst:
                 out.append(inst)
             continue
         rs = rruleset()
-        for _, rule in ev["RRULE"]:
+        if "RRULE" not in ev:
+            rs.rdate(start)
+        for params, val in ev.get("RDATE", []):
+            for v in val.split(","):
+                rs.rdate(_ics_time(params, v)[0])
+        for _, rule in ev.get("RRULE", []):
             if all_day:  # dateutil wants UNTIL to match DTSTART's (naive) kind
                 rule = ";".join(p[:14] if p.startswith("UNTIL=") else p for p in rule.split(";"))
             elif "UNTIL=" in rule and not rule.split("UNTIL=")[1].split(";")[0].endswith("Z"):
@@ -497,12 +509,284 @@ class IcsCalendar:
         return ics_events(text, tmin, tmax)
 
 
+# ---------- CalDAV: iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and anything else that speaks it ----------
+
+CALDAV_SERVERS = {  # name, server (None: you type your own), where the password comes from
+    "icloud": ("Apple iCloud", "https://caldav.icloud.com/", "Use your Apple Account email, and an app-specific password from account.apple.com, under Sign-In and Security. Your normal Apple password won't work."),
+    "fastmail": ("Fastmail", "https://caldav.fastmail.com/", "Use your Fastmail address, and an app password from Settings, Privacy &amp; Security, with Calendars (CalDAV) access."),
+    "yahoo": ("Yahoo Calendar", "https://caldav.calendar.yahoo.com/", "Use your Yahoo address, and an app password from Account Security."),
+    "aol": ("AOL Calendar", "https://caldav.aol.com/", "Use your AOL address, and an app password from Account Security."),
+    "zoho": ("Zoho Calendar", "https://calendar.zoho.com/", "Use your Zoho address, and an app password from accounts.zoho.com, under Security. Accounts outside the US use Another CalDAV server with their own address, such as calendar.zoho.eu."),
+    "nextcloud": ("Nextcloud", None, "Use your Nextcloud address, and an app password from Personal settings, Security."),
+    "other": ("CalDAV server", None, "Use the address, username and password your calendar provider gives for CalDAV. Most providers ask for an app password."),
+}
+DAV, CALNS = "{DAV:}", "{urn:ietf:params:xml:ns:caldav}"
+_XML = {"Content-Type": "application/xml; charset=utf-8"}
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args):  # DavClient follows redirects itself, and checks each one before sending a password
+        return None
+
+
+def _local_host(host):
+    if "." not in host or host.endswith(".local"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
+def clean_dav_url(url):
+    url = url.strip()
+    if "://" not in url:
+        url = "https://" + url
+    p = urllib.parse.urlparse(url)
+    if p.scheme.lower() not in ("http", "https") or not p.hostname:
+        raise RuntimeError("that doesn't look like a server address")
+    if p.scheme.lower() == "http" and not _local_host(p.hostname):
+        raise RuntimeError("a password only goes over https://; http:// is for a server on your own network")
+    return url
+
+
+class DavClient:
+    MAX_BYTES = 50 * 1024 * 1024
+
+    def __init__(self, server, username, password):
+        self.server = clean_dav_url(server)
+        self.username, self.password = username, password
+        self.digest, self.count = None, 0
+        self.opener = urllib.request.build_opener(_NoRedirect)
+
+    def _trusted(self, url):
+        """A password only goes back to the site it was typed for: iCloud moves you to pNN-caldav.icloud.com, and nothing else moves."""
+        a, b = urllib.parse.urlparse(self.server), urllib.parse.urlparse(url)
+        tail = lambda p: (p.hostname or "").lower().split(".")[-2:]
+        return tail(a) == tail(b) and (b.scheme.lower() == "https" or a.scheme.lower() == "http")
+
+    def _authorization(self, method, url):
+        if not self.digest:
+            return "Basic " + base64.b64encode(f"{self.username}:{self.password}".encode()).decode()
+        d = self.digest
+        md5 = lambda s: hashlib.md5(s.encode()).hexdigest()
+        p = urllib.parse.urlparse(url)
+        path = p.path + (f"?{p.query}" if p.query else "") or "/"
+        ha1, ha2 = md5(f"{self.username}:{d['realm']}:{self.password}"), md5(f"{method}:{path}")
+        self.count += 1
+        nc, cnonce = f"{self.count:08x}", os.urandom(8).hex()
+        nonce, realm = d["nonce"], d["realm"]
+        head = f'username="{self.username}", realm="{realm}", nonce="{nonce}", uri="{path}"'
+        if d.get("opaque"):
+            head += ', opaque="%s"' % d["opaque"]
+        if "auth" in d.get("qop", "").replace(" ", "").split(","):
+            answer = md5(f"{ha1}:{nonce}:{nc}:{cnonce}:auth:{ha2}")
+            return f'Digest {head}, qop=auth, nc={nc}, cnonce="{cnonce}", response="{answer}"'
+        answer = md5(f"{ha1}:{nonce}:{ha2}")
+        return f'Digest {head}, response="{answer}"'
+
+    def _challenge(self, headers):
+        """Some servers (Baikal by default) only take Digest. Returns True if a new challenge was picked up."""
+        for value in headers.get_all("WWW-Authenticate") or []:
+            if value.lower().startswith("digest "):
+                d = {k.lower(): v.strip('"') for k, v in re.findall(r'(\w+)=("[^"]*"|[^\s,]+)', value)}
+                if d.get("nonce") and d.get("nonce") != (self.digest or {}).get("nonce"):
+                    self.digest, self.count = d, 0
+                    return True
+        return False
+
+    def request(self, method, url, body=None, headers=None, depth=None):
+        """-> (status, raw bytes, final url). Never raises for an HTTP status, and never puts the password in a message."""
+        h = {"User-Agent": "calsync", **(headers or {})}
+        if depth is not None:
+            h["Depth"] = depth
+        data = body.encode() if body is not None else None
+        hops = retries = 0
+        while True:
+            if not self._trusted(url):
+                raise RuntimeError("the server sent calsync to another site, so it stopped to keep your password safe")
+            h["Authorization"] = self._authorization(method, url)
+            try:
+                with self.opener.open(urllib.request.Request(url, data=data, method=method, headers=h), timeout=60) as r:
+                    return r.status, r.read(self.MAX_BYTES), url
+            except urllib.error.HTTPError as e:
+                raw = e.read(self.MAX_BYTES)
+                if e.code in (301, 302, 303, 307, 308) and e.headers.get("Location") and hops < 5:
+                    url, hops = urllib.parse.urljoin(url, e.headers["Location"]), hops + 1
+                elif e.code == 401 and self._challenge(e.headers):
+                    continue
+                elif e.code in (429, 500, 502, 503) and retries < 3:
+                    time.sleep(2 ** retries * 2)
+                    retries += 1
+                else:
+                    return e.code, raw, url
+
+    def propfind(self, url, props, depth="0"):
+        body = ('<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+                f"<d:prop>{props}</d:prop></d:propfind>")
+        status, raw, final = self.request("PROPFIND", url, body, _XML, depth)
+        if status == 401:
+            raise RuntimeError("the server turned down that username or password")
+        return (_multistatus(raw) if status == 207 else None), final
+
+
+def _multistatus(raw):
+    """-> [(href, {property tag: element})], keeping only the properties the server actually has."""
+    out = []
+    for r in ET.fromstring(raw).iter(DAV + "response"):
+        props = {}
+        for ps in r.findall(DAV + "propstat"):
+            prop = ps.find(DAV + "prop")
+            if prop is not None and " 200 " in (ps.findtext(DAV + "status") or " 200 ") + " ":
+                props.update((p.tag, p) for p in prop)
+        out.append(((r.findtext(DAV + "href") or "").strip(), props))
+    return out
+
+
+def caldav_discover(client):
+    """-> (urls to list calendars from, this account's addresses). Follows RFC 6764: the address, /.well-known/caldav, the site root."""
+    p = urllib.parse.urlparse(client.server)
+    origin = f"{p.scheme}://{p.netloc}"
+    for url in dict.fromkeys((client.server, origin + "/.well-known/caldav", origin + "/")):
+        rows, final = client.propfind(url, "<d:current-user-principal/><d:resourcetype/>")
+        if not rows:
+            continue
+        principal = rows[0][1].get(DAV + "current-user-principal")
+        href = principal.findtext(DAV + "href") if principal is not None else None
+        if href:
+            break
+        kinds = rows[0][1].get(DAV + "resourcetype")
+        if kinds is not None and kinds.find(CALNS + "calendar") is not None:  # a calendar's own address, on a server with no principals
+            return [final], []
+    else:
+        raise RuntimeError("no calendar server answered at that address")
+    rows, final = client.propfind(urllib.parse.urljoin(final, href), "<c:calendar-home-set/><c:calendar-user-address-set/>")
+    if not rows:
+        raise RuntimeError("the server didn't say where your calendars are")
+    props = rows[0][1]
+    hrefs = lambda tag: [(e.text or "").strip() for e in (props[tag].iter(DAV + "href") if tag in props else [])]
+    homes = [urllib.parse.urljoin(final, h) for h in hrefs(CALNS + "calendar-home-set")]
+    if not homes:
+        raise RuntimeError("the server didn't say where your calendars are")
+    return homes, [a.lower().removeprefix("mailto:") for a in hrefs(CALNS + "calendar-user-address-set")]
+
+
+def caldav_calendars(client, homes):
+    """-> [{id, name, writable}]: event calendars only, so a Reminders list never shows up."""
+    out = []
+    for home in homes:
+        rows, final = client.propfind(home, "<d:resourcetype/><d:displayname/><c:supported-calendar-component-set/><d:current-user-privilege-set/>", "1")
+        for href, props in rows or []:
+            kinds, comps, rights = (props.get(k) for k in (DAV + "resourcetype", CALNS + "supported-calendar-component-set", DAV + "current-user-privilege-set"))
+            if kinds is None or kinds.find(CALNS + "calendar") is None:
+                continue
+            if comps is not None and "VEVENT" not in [c.get("name") for c in comps]:
+                continue
+            url = urllib.parse.urljoin(final, href)
+            name = props[DAV + "displayname"].text if DAV + "displayname" in props else None
+            can = {e.tag for e in rights.iter()} if rights is not None else None
+            out.append({"id": url, "name": name or url.rstrip("/").rsplit("/", 1)[-1],
+                        "writable": can is None or bool(can & {DAV + "write", DAV + "write-content", DAV + "all"})})
+    return out
+
+
+def caldav_connect(label, server, username, password, service=""):
+    """Check the sign-in by finding the calendars, then store it. Returns the calendars."""
+    client = DavClient(server, username, password)
+    homes, addresses = caldav_discover(client)
+    found = caldav_calendars(client, homes)
+    if not found:
+        raise RuntimeError("signed in, but this account has no calendars")
+    _save_account(label, {"provider": "caldav", "service": service, "server": client.server, "username": username,
+                          "password": password, "homes": homes, "addresses": addresses})
+    return found
+
+
+class CalDavCalendar:
+    def __init__(self, acct, cal_url):
+        self.client = DavClient(acct["server"], acct["username"], acct["password"])
+        self.url = cal_url.rstrip("/") + "/"
+        self.me = set(acct.get("addresses") or []) | {acct["username"].lower()}
+        self.tag_checked = False
+
+    def list(self, tmin, tmax):
+        z = lambda s: s.replace("-", "").replace(":", "")
+        body = ('<?xml version="1.0" encoding="utf-8"?><c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+                '<d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">'
+                f'<c:time-range start="{z(tmin)}" end="{z(tmax)}"/></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>')
+        status, raw, final = self.client.request("REPORT", self.url, body, _XML, "1")
+        if status != 207:
+            raise RuntimeError(f"reading this calendar -> {status}")
+        out = []
+        for href, props in _multistatus(raw):
+            data = props.get(CALNS + "calendar-data")
+            if data is None or not data.text:
+                continue
+            for ev in ics_events(data.text, tmin, tmax, self.me):
+                if ev["copy_of"]:
+                    ev["uid"] = urllib.parse.urljoin(final, href)  # what update and delete need
+                out.append(ev)
+        return out
+
+    def _put(self, href, lines):
+        stamp = now_utc().strftime("%Y%m%dT%H%M%SZ")
+        lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//calsync//sync//EN", "CALSCALE:GREGORIAN", "BEGIN:VEVENT", "DTSTAMP:" + stamp, *lines, "END:VEVENT", "END:VCALENDAR"]
+        body = "".join(part + "\r\n" for line in lines for part in _ics_fold(line))
+        status, raw, _ = self.client.request("PUT", href, body, {"Content-Type": "text/calendar; charset=utf-8"})
+        if status not in (200, 201, 204):
+            raise RuntimeError(f"writing to this calendar -> {status} {raw[:200].decode(errors='replace')}")
+
+    def _copy(self, href, fields, copy_of, src_label):
+        lines = [f"UID:{self._copy_uid(copy_of)}", _ics_when("DTSTART", fields["start"], fields["all_day"]), _ics_when("DTEND", fields["end"], fields["all_day"]),
+                 "SUMMARY:" + _ics_escape(fields["title"]), "TRANSP:" + ("OPAQUE" if fields["busy"] else "TRANSPARENT"),
+                 "DESCRIPTION:" + _ics_escape(f"Synced from {src_label} by calsync. Edit the original there; changes here are overwritten."),
+                 f"{ICS_TAG}:{_ics_escape(copy_of)}"]
+        if fields["location"]:
+            lines.append("LOCATION:" + _ics_escape(fields["location"]))
+        self._put(href, lines)
+
+    @staticmethod
+    def _copy_uid(copy_of):
+        return COPY_UID + hashlib.sha256(copy_of.encode()).hexdigest()[:32]
+
+    def create(self, fields, copy_of, src_label):
+        href = f"{self.url}{self._copy_uid(copy_of)}.ics"
+        self._copy(href, fields, copy_of, src_label)
+        if not self.tag_checked:  # without the tag a copy can't be matched to its original, so stop before making any more
+            status, raw, _ = self.client.request("GET", href)
+            if status == 200 and ICS_TAG.encode() not in raw.upper():
+                self.delete(href)
+                raise RuntimeError("this server drops calsync's tag, so calsync can read this calendar but not write to it; turn on Never write to this calendar")
+            self.tag_checked = True
+        return href
+
+    def update(self, uid, fields, copy_of, src_label):
+        self._copy(uid, fields, copy_of, src_label)
+
+    def create_native(self, ev):
+        """A real event (from quick add), not a copy: untagged, so the next sync copies it everywhere."""
+        z = lambda t: t.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        when = (lambda v: v) if ev["all_day"] else z
+        uid = f"quick-{uuid.uuid4().hex}@calsync"
+        href = f"{self.url}{uid.split('@')[0]}.ics"
+        self._put(href, [f"UID:{uid}", _ics_when("DTSTART", when(ev["start"]), ev["all_day"]), _ics_when("DTEND", when(ev["end"]), ev["all_day"]),
+                         "SUMMARY:" + _ics_escape(ev["title"]), "DESCRIPTION:Added with calsync quick add."])
+        return href
+
+    def delete(self, uid):
+        status, raw, _ = self.client.request("DELETE", uid)
+        if status not in (200, 202, 204, 404, 410):
+            raise RuntimeError(f"deleting from this calendar -> {status} {raw[:200].decode(errors='replace')}")
+
+
 def make_adapter(cfg):
     acct = load_json(os.path.join(SECRETS, "accounts.json"), {}).get(cfg["account"])
     if not acct:
         raise RuntimeError(f"account {cfg['account']!r} is not signed in")
     if acct["provider"] == "ics":
         return IcsCalendar(acct["url"])
+    if acct["provider"] == "caldav":
+        return CalDavCalendar(acct, cfg["calendar_id"])
     cls = {"google": GoogleCalendar, "outlook": OutlookCalendar}[acct["provider"]]
     return cls(cfg["account"], cfg["calendar_id"])
 
@@ -712,6 +996,8 @@ def account_calendars(label):
     acct = _accounts()[label]
     if acct["provider"] == "ics":
         return [{"id": "ics", "name": label, "writable": False}]
+    if acct["provider"] == "caldav":
+        return caldav_calendars(DavClient(acct["server"], acct["username"], acct["password"]), acct["homes"])
     if acct["provider"] == "google":
         out, page = [], None
         while True:
@@ -764,6 +1050,16 @@ def cmd_auth_outlook(label, tenant="common"):
             _print_calendars(label)
             return
     raise SystemExit("Timed out waiting for the Microsoft sign-in.")
+
+
+def cmd_auth_caldav(label, server=None):
+    ensure_home()
+    service, preset, note = CALDAV_SERVERS.get(server, ("", None, CALDAV_SERVERS["other"][2]))
+    print(note.replace("&amp;", "&"))
+    server = preset or (None if server in CALDAV_SERVERS else server) or input("Server address: ").strip()
+    username = input("Username: ").strip()
+    caldav_connect(label, server, username, getpass.getpass("Password (hidden): "), service)
+    _print_calendars(label)
 
 
 def _print_calendars(label):
@@ -1206,6 +1502,8 @@ def main(argv):
         cmd_auth_google(rest[1])
     elif cmd == "auth" and len(rest) >= 2 and rest[0] == "outlook":
         cmd_auth_outlook(rest[1], rest[2] if len(rest) > 2 else "common")
+    elif cmd == "auth" and len(rest) >= 2 and rest[0] == "caldav":
+        cmd_auth_caldav(rest[1], rest[2] if len(rest) > 2 else None)
     elif cmd == "auth" and len(rest) >= 2 and rest[0] == "ics":
         url = getpass.getpass("Published calendar link (.ics, hidden): ").strip()
         IcsCalendar(url).list(now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"), (now_utc() + dt.timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ"))

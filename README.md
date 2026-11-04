@@ -1,8 +1,8 @@
 # calsync
 
-Keep your Google and Outlook calendars showing the same events. You run it yourself, and your sign-ins stay on your machine.
+Keep your Google, Outlook, iCloud and other CalDAV calendars showing the same events. You run it yourself, and your sign-ins stay on your machine.
 
-Every run makes each writable calendar hold one tagged copy of every real event from your other calendars. Published `.ics` links work as read-only sources.
+Every run makes each writable calendar hold one tagged copy of every real event from your other calendars. Published `.ics` links work as read-only sources, for calendars like Proton that have no way in.
 
 - **Website:** https://getcalsync.app
 - **Docs:** https://docs.getcalsync.app
@@ -18,7 +18,7 @@ docker compose logs calsync
 
 Open http://localhost:8484 and enter the setup code from the logs. Choose a password, add your calendars, press **Preview changes**, then **Apply and keep syncing**.
 
-Google and Microsoft each need a free sign-in app of your own. The page walks you through it in about 10 minutes.
+Google and Microsoft each need a free sign-in app of your own. The page walks you through it in about 10 minutes. iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server only need an app password.
 
 Without Docker, using Python 3.10 or newer:
 
@@ -53,6 +53,7 @@ Limits: it looks 120 days ahead, and repeating events are copied as individual o
 calsync web                          web page and background sync
 calsync setup google|microsoft       store your sign-in app
 calsync auth google|outlook|ics NAME sign in an account
+calsync auth caldav NAME [SERVER]    iCloud, Fastmail or any CalDAV server (icloud, fastmail, yahoo, aol, zoho, or an address)
 calsync calendars                    list calendars on your accounts
 calsync add NAME ACCOUNT CAL_ID [--busy-only] [--read-only] [--skip OTHER]
 calsync remove NAME

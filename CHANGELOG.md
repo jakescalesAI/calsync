@@ -5,6 +5,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Two-way CalDAV calendars: Apple iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server, signed in
+  with an app password. Basic and Digest sign-in, server discovery, event calendars only (Reminders lists are skipped).
+- `.ics` sources now honour RDATE, and keep calsync's own tag so a published copy is never copied again.
+
 ## [0.1.0] - 2026-11-03
 
 First public release.

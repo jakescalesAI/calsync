@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "calsync"
 version = "0.1.0"
-description = "Keep your Google and Outlook calendars showing the same events. Self-hosted."
+description = "Keep your Google, Outlook, iCloud and other CalDAV calendars showing the same events. Self-hosted."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
