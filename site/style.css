@@ -199,8 +199,8 @@ code { font-size: .9em; background: rgba(255, 255, 255, .06); padding: 1px 6px; 
 .code-h { font-weight: 600; }
 .code pre { margin-top: 14px; background: #030303; border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; overflow-x: auto; }
 .code pre code { background: none; padding: 0; font-size: 13.5px; line-height: 1.85; color: #d6d6d6; }
-.code > p:last-child { color: var(--dim); font-size: 15px; margin-top: 14px; }
-.code > p:last-child code { word-break: break-all; }
+.code > p:not(.code-h) { color: var(--dim); font-size: 15px; margin-top: 14px; }
+.code > p:not(.code-h) code { word-break: break-all; }
 
 /* closing */
 .closing { position: relative; text-align: center; margin-top: 140px; padding: 110px 0 300px; overflow: hidden; }
