@@ -69,7 +69,7 @@
 <div><dt><code>calsync_add_event</code></dt><dd>Add an event. If syncing is on, it's copied to your other calendars straight away. If syncing is paused or was never started, it stays on one calendar until the next sync. Only with <code>--allow-write</code>.</dd></div>
 <div><dt><code>calsync_sync_now</code></dt><dd>Run a sync now, if syncing is on. Only with <code>--allow-write</code>.</dd></div>
 </dl>
-<p>No tool can sign in, remove a calendar, start or resume syncing, or allow a mass delete. A sync run by a tool can remove a few copies whose original is gone, as any sync does. No tool returns a calendar ID, an account name, a token, a .ics link or a server's reply. When something fails, the reason stays on the calsync page.</p>
+<p>No tool can sign in, remove a calendar, start or resume syncing, or allow a mass delete. A sync run by a tool can remove a few copies whose original is gone, as any sync does. No tool returns a calendar ID, an account name, a token, a .ics link or a server's reply. When something fails, the tool gives one of a few fixed reasons, such as "not signed in" or "refused", and <code>calsync run --dry-run</code> shows you the rest.</p>
 <p>"Syncing is on" means you pressed <strong>Apply and keep syncing</strong> on the page. If you run calsync from cron or your own timer instead, <code>calsync_sync_now</code> refuses, and an added event is copied at the next run.</p>
 <h2>An agent on this machine</h2>
 <p>The agent starts <code>calsync mcp</code> itself and talks to it directly. No port, no token. For <a href="https://github.com/NousResearch/hermes-agent">Hermes</a>, an open source agent that runs on your own computer:</p>
@@ -77,7 +77,7 @@
 <p>For Claude Code:</p>
 <pre><code>claude mcp add calsync -- calsync mcp</code></pre>
 <p>Any other agent that takes an MCP command works the same way. With Docker, the command is <code>docker exec -i calsync python calsync.py mcp</code>.</p>
-<p>Hermes doesn't pass your environment to the tools it starts. If you set <code>CALSYNC_HOME</code> or <code>CALSYNC_TZ</code>, add it to the command, before <code>--args</code>: <code>--env CALSYNC_HOME=/your/folder</code>. Without it the agent reads the wrong calendars, or none.</p>
+<p>Hermes doesn't pass your environment to the tools it starts. If you set <code>CALSYNC_HOME</code> or <code>CALSYNC_TZ</code>, add it to the command, before <code>--args</code>: <code>--env CALSYNC_HOME=/your/folder CALSYNC_TZ=Area/City</code>. Use one <code>--env</code> for all of them, because Hermes keeps only the last one. Without it the agent reads the wrong calendars, or none.</p>
 <h2>Let Hermes set it up</h2>
 <p>A skill teaches Hermes how to install calsync, open the setup page with you, connect these tools and use them. You still sign in yourself, and you start syncing yourself, on the page. The skill tells Hermes this, but Hermes can also run commands, so see the note below.</p>
 <pre><code>hermes skills install https://docs.getcalsync.app/hermes/SKILL.md</code></pre>

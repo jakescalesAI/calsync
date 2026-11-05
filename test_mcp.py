@@ -153,7 +153,7 @@ class Reading(Base):
         self.cals["home"].fail = "GET https://cal.example/private-feed.ics -> 500"
         self.cals["work"].events = [event("Standup")]
         out = self.ok("calsync_agenda")
-        self.assertEqual(out["could_not_read"], ["home"])
+        self.assertEqual([c["calendar"] for c in out["could_not_read"]], ["home"])
         self.assertIs(out["complete"], False)
         self.assertNotIn("private-feed", json.dumps(out))
 
@@ -427,7 +427,8 @@ class TesterFindings(Base):
         self.cals["work"].events = [event("Fine")]
         with mock.patch.object(calsync, "make_adapter", adapter):
             out = self.ok("calsync_agenda", {"start": self.day, "days": 1})
-        self.assertEqual(out["could_not_read"], ["home"])
+        self.assertEqual([c["calendar"] for c in out["could_not_read"]], ["home"])
+        self.assertEqual(out["could_not_read"][0]["why"], calsync_mcp.SIGNED_OUT)
         self.assertFalse(out["complete"])
 
     def test_events_the_parser_skipped_make_it_incomplete(self):
@@ -524,3 +525,63 @@ class TesterFindings(Base):
         self.assertIn("Fine", [r["title"] for r in out["events"]])
         self.assertFalse(out["complete"])
         self.assertGreaterEqual(out["events_not_read"], 1)
+
+    def test_failures_say_what_kind_without_the_words(self):
+        import urllib.error
+        for err, want in ((RuntimeError("account 'me@secret.example' is not signed in"), calsync_mcp.SIGNED_OUT),
+                          (SystemExit("No google OAuth client yet: run setup"), calsync_mcp.SIGNED_OUT),
+                          (RuntimeError("the server turned down that username or password"), calsync_mcp.SIGNED_OUT),
+                          (RuntimeError("POST https://x/token -> 400 invalid_grant"), calsync_mcp.SIGNED_OUT),
+                          (RuntimeError("GET https://x/ -> 401 no"), calsync_mcp.SIGNED_OUT),
+                          (RuntimeError("writing to this calendar -> 403 secret-calendar-id"), calsync_mcp.REFUSED),
+                          (RuntimeError("reading this calendar -> 404"), calsync_mcp.GONE),
+                          (RuntimeError("GET https://x/ -> 429 slow"), calsync_mcp.SERVER),
+                          (RuntimeError("GET https://x/ -> 503 down"), calsync_mcp.SERVER),
+                          (urllib.error.URLError("no route"), calsync_mcp.NETWORK), (TimeoutError(), calsync_mcp.NETWORK),
+                          (PermissionError("/secret/path"), calsync_mcp.FILES), (json.JSONDecodeError("bad", "x", 0), calsync_mcp.FILES),
+                          (RuntimeError("nonnumeric port: 'PW@x'"), calsync_mcp.UNKNOWN)):
+            self.assertEqual(calsync_mcp.failure(err), want, err)
+
+    def test_a_refused_add_says_refused(self):
+        self.cals["work"].create_native = mock.Mock(side_effect=RuntimeError("writing to this calendar -> 403 secret-calendar-id"))
+        self.assertEqual(self.failed("calsync_add_event", {"text": self.words}, WRITE), calsync_mcp.REFUSED)
+
+    def test_events_with_no_uid_or_start_are_counted(self):
+        day = SOON.strftime("%Y%m%d")
+        text = ("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nDTSTART:" + day + "T160000Z\r\nSUMMARY:No uid\r\nEND:VEVENT\r\n"
+                "BEGIN:VEVENT\r\nUID:n@x\r\nSUMMARY:No start\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+        self.cals["work"].list = lambda tmin, tmax: calsync.ics_events(text, tmin, tmax)
+        with mock.patch("sys.stderr", io.StringIO()):
+            out = self.ok("calsync_agenda", {"start": self.day, "days": 1})
+        self.assertEqual(out["events_not_read"], 2)
+        self.assertFalse(out["complete"])
+
+    def test_a_name_spelling_out_an_address_is_not_shown(self):
+        cfg = calsync.load_json(calsync.CONFIG, {})
+        cfg["calendars"][0].update(name="work-jake-real-gmail-com", calendar_id="jake.real@gmail.com")
+        calsync.save_json(calsync.CONFIG, cfg)
+        self.cals["work-jake-real-gmail-com"] = Fake(event("Fine"))
+        status = json.dumps(self.ok("calsync_status"))
+        agenda = json.dumps(self.ok("calsync_agenda", {"start": self.day, "days": 1}))
+        check = self.ok("calsync_check_event", {"text": self.words})
+        self.assertEqual(check["calendar"], "calendar-1")
+        for text in (status, agenda):
+            self.assertNotIn("jake", text)
+            self.assertIn("calendar-1", text)
+
+    def test_ordinary_names_are_kept(self):
+        self.assertEqual(calsync_mcp.public_names(), {"work": "work", "home": "home"})
+
+    def test_a_date_that_does_not_exist_is_refused(self):
+        for words in ("X 2030-13-45 3pm", "Y 2/30 3pm"):
+            self.assertIn("doesn't exist", self.failed("calsync_check_event", {"text": words}))
+            self.assertIn("doesn't exist", self.failed("calsync_add_event", {"text": words}, WRITE))
+        self.assertEqual(self.cals["work"].created, [])
+
+    def test_a_date_far_away_is_refused(self):
+        for words in ("Old 0001-01-05 3pm", "Far 2999-01-05 3pm"):
+            self.assertIn("too far", self.failed("calsync_add_event", {"text": words}, WRITE))
+        self.assertEqual(self.cals["work"].created, [])
+
+    def test_the_reply_shows_the_whole_date(self):
+        self.assertEqual(self.ok("calsync_check_event", {"text": self.words})["date"], self.day)

@@ -454,6 +454,7 @@ def ics_events(text, tmin, tmax, me=(), deadline=None):
     masters, overrides = [], {}
     for ev in parse_ics(text):
         if "DTSTART" not in ev or "UID" not in ev:
+            skipped += 1
             continue
         if "RECURRENCE-ID" in ev:
             try:
@@ -840,6 +841,7 @@ class CalDavCalendar:
         for href, props in _multistatus(raw):
             data = props.get(CALNS + "calendar-data")
             if data is None or not data.text:
+                _skipped.count = getattr(_skipped, "count", 0) + 1
                 continue
             for ev in ics_events(data.text, tmin, tmax, self.me, deadline):
                 if ev["copy_of"]:

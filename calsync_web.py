@@ -294,7 +294,9 @@ def account_page(label, csrf, flash=None):
     used = {(c.get("account"), c.get("calendar_id")) for c in engine.load_json(engine.CONFIG, {"calendars": []})["calendars"]}
     rows = []
     for i, c in enumerate(found):
-        slug = re.sub(r"[^A-Za-z0-9_-]+", "-", f"{label}-{c['name']}" if len(found) > 1 else label).strip("-_")[:40] or f"{label}-{i}"
+        # a Google calendar is often named after its address, and a name goes to anything that shows your calendars
+        part = "main" if "@" in c["name"] else c["name"]
+        slug = re.sub(r"[^A-Za-z0-9_-]+", "-", f"{label.split('@')[0]}-{part}" if len(found) > 1 else label.split("@")[0]).strip("-_")[:40] or f"calendar-{i + 1}"
         if (label, c["id"]) in used:
             rows.append(f'<div class="row"><div><b>{esc(c["name"])}</b> <span class="soft">already syncing</span></div></div>')
             continue
