@@ -13,7 +13,7 @@ edits or deletes an event it did not create. Stateless: the tags are the state.
   calsync auth caldav LABEL [SERVER] iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud or any CalDAV address (hidden prompt)
   calsync auth ics LABEL             a published .ics link (read-only source)
   calsync calendars                  list calendars on every signed-in account
-  calsync add NAME ACCOUNT CAL_ID [--busy-only] [--read-only] [--skip OTHER_NAME ...]
+  calsync add NAME ACCOUNT CAL_ID [--busy-only] [--read-only] [--free] [--only TEXT] [--skip OTHER_NAME ...]
   calsync remove NAME
   calsync run [--dry-run] [--force]  one sync pass
   calsync purge [NAME] [--dry-run]   delete every copy calsync made (on one calendar, or all)
@@ -538,13 +538,37 @@ def clean_ics_url(url):
     return url
 
 
+DUE_LENGTH = dt.timedelta(minutes=30)
+
+
+def due_items(evs, tmin, tmax, only=None, free=False):
+    """Shape a due-date feed, such as Canvas assignments. --only keeps items whose UID holds that text; --free stops
+    them marking anyone busy, since a due date isn't a meeting. A due time with no length ends at the deadline, so it
+    can be seen. All-day items are held to what Google will list back: it hides one once its day is over and doesn't
+    reach one just past the window, and ics_events keeps both, which would make a new copy on every run."""
+    lo = dt.datetime.fromisoformat(tmin.replace("Z", "+00:00"))
+    last = dt.datetime.fromisoformat(tmax.replace("Z", "+00:00")).date() - dt.timedelta(days=2)
+    out = []
+    for ev in evs:
+        if only and only not in (ev.get("ical") or ""):
+            continue
+        if ev["all_day"]:
+            if dt.datetime.fromisoformat(ev["end"]).replace(tzinfo=local_tz()) <= lo or dt.date.fromisoformat(ev["start"]) >= last:
+                continue
+        elif ev["start"] == ev["end"]:
+            due = dt.datetime.fromisoformat(ev["end"].replace("Z", "+00:00"))
+            ev = {**ev, "start": (due - DUE_LENGTH).strftime("%Y-%m-%dT%H:%M:%SZ")}
+        out.append({**ev, "busy": False} if free else ev)
+    return out
+
+
 class IcsCalendar:
     read_only = True
 
     MAX_BYTES = 50 * 1024 * 1024
 
-    def __init__(self, url):
-        self.url = clean_ics_url(url)
+    def __init__(self, url, only=None, free=False):
+        self.url, self.only, self.free = clean_ics_url(url), only, free
 
     def list(self, tmin, tmax):
         req = urllib.request.Request(self.url, headers={"User-Agent": "calsync"})
@@ -552,7 +576,8 @@ class IcsCalendar:
             text = r.read(self.MAX_BYTES).decode("utf-8", errors="replace")
         if "BEGIN:VCALENDAR" not in text:
             raise RuntimeError("link did not return a calendar")
-        return ics_events(text, tmin, tmax)
+        evs = ics_events(text, tmin, tmax)
+        return due_items(evs, tmin, tmax, self.only, self.free) if self.only or self.free else evs
 
 
 # ---------- CalDAV: iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and anything else that speaks it ----------
@@ -830,7 +855,7 @@ def make_adapter(cfg):
     if not acct:
         raise RuntimeError(f"account {cfg['account']!r} is not signed in")
     if acct["provider"] == "ics":
-        return IcsCalendar(acct["url"])
+        return IcsCalendar(acct["url"], cfg.get("only"), cfg.get("free", False))
     if acct["provider"] == "caldav":
         return CalDavCalendar(acct, cfg["calendar_id"])
     cls = {"google": GoogleCalendar, "outlook": OutlookCalendar}[acct["provider"]]
@@ -1567,9 +1592,11 @@ def main(argv):
             raise SystemExit(f"account {rest[1]!r} is not signed in")
         if not NAME_OK.fullmatch(rest[0]):
             raise SystemExit("A calendar name uses letters, numbers, - and _ (up to 40).")
+        only = [rest[i + 1] for i, x in enumerate(rest[:-1]) if x == "--only"]
         update_config(lambda cfg: cfg.update(calendars=[c for c in cfg["calendars"] if c["name"] != rest[0]] + [{
             "name": rest[0], "label": rest[0], "account": rest[1], "calendar_id": rest[2],
             "busy_only": "--busy-only" in rest, "read_only": "--read-only" in rest,
+            "free": "--free" in rest, "only": only[0] if only else None,
             "skip_sources": [rest[i + 1] for i, x in enumerate(rest[:-1]) if x == "--skip"]}]))
         print(f"Added {rest[0]}.")
     elif cmd == "remove" and rest:
@@ -1597,7 +1624,7 @@ def main(argv):
         return cmd_run(False, False)  # copy it everywhere now instead of at the next timer run
     elif cmd == "status":
         for c in load_json(CONFIG, {"calendars": []})["calendars"]:
-            flags = ", ".join([f for f in ("busy_only", "read_only") if c.get(f)] + [f"skips {x}" for x in c.get("skip_sources", [])])
+            flags = ", ".join([f for f in ("busy_only", "read_only", "free") if c.get(f)] + [f"skips {x}" for x in c.get("skip_sources", [])])
             print(f"  {c['name']}: {c['account']} / {c['calendar_id']}" + (f" ({flags})" if flags else ""))
         print("last run:", json.dumps(load_json(LASTRUN, None)))
     else:

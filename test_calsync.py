@@ -252,6 +252,49 @@ ICS = "\r\n".join([
     "END:VCALENDAR", ""])
 
 
+class DueItemsTests(unittest.TestCase):
+    LO, HI = "2026-11-04T15:00:00Z", "2027-03-04T15:00:00Z"
+
+    def item(self, start, end, uid="feed-homework-1", all_day=True):
+        return {"uid": uid, "ical": uid, "title": "HW", "start": start, "end": end, "all_day": all_day,
+                "busy": True, "location": "", "private": False, "declined": False, "copy_of": None}
+
+    def shape(self, *evs, **kw):
+        return calsync.due_items(list(evs), kw.pop("lo", self.LO), self.HI, kw.get("only"), kw.get("free", False))
+
+    def test_only_keeps_matching_uids(self):
+        keep, drop = self.item("2026-11-09", "2026-11-10"), self.item("2026-11-09", "2026-11-10", "feed-meeting-2")
+        self.assertEqual(self.shape(keep, drop, only="homework"), [keep])
+
+    def test_free_never_marks_busy(self):
+        self.assertFalse(self.shape(self.item("2026-11-09", "2026-11-10"), free=True)[0]["busy"])
+
+    def test_all_day_item_goes_when_its_day_is_over_here(self):
+        ev = self.item("2026-11-09", "2026-11-10")
+        self.assertEqual(len(self.shape(ev, lo="2026-11-10T04:59:00Z")), 1)   # still 11:59 PM on the 9th
+        self.assertEqual(self.shape(ev, lo="2026-11-10T05:00:00Z"), [])                        # midnight in Indianapolis
+
+    def test_item_due_yesterday_is_dropped(self):
+        self.assertEqual(self.shape(self.item("2026-11-03", "2026-11-04")), [])
+
+    def test_all_day_item_at_the_far_edge_waits(self):
+        self.assertEqual(self.shape(self.item("2027-03-03", "2027-03-04")), [])
+        self.assertEqual(len(self.shape(self.item("2027-03-01", "2027-03-02"))), 1)
+
+    def test_due_time_gets_a_length_ending_at_the_deadline(self):
+        ev = self.shape(self.item("2026-11-10T22:30:00Z", "2026-11-10T22:30:00Z", all_day=False))[0]
+        self.assertEqual((ev["start"], ev["end"]), ("2026-11-10T22:00:00Z", "2026-11-10T22:30:00Z"))
+
+    def test_plain_feed_is_untouched(self):
+        class Reply:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, *a): return ICS.encode()
+        with mock.patch.object(calsync.urllib.request, "urlopen", lambda *a, **k: Reply()):
+            self.assertEqual(calsync.IcsCalendar("https://feed.test/x.ics").list("2026-10-31T12:00:00Z", "2026-12-31T00:00:00Z"),
+                             calsync.ics_events(ICS, "2026-10-31T12:00:00Z", "2026-12-31T00:00:00Z"))
+
+
 class IcsTests(unittest.TestCase):
     def setUp(self):
         self.evs = calsync.ics_events(ICS, "2026-10-31T12:00:00Z", "2026-12-31T00:00:00Z")
