@@ -67,7 +67,7 @@ calsync setup google|microsoft       store your sign-in app
 calsync auth google|outlook|ics NAME sign in an account
 calsync auth caldav NAME [SERVER]    iCloud, Fastmail or any CalDAV server (icloud, fastmail, yahoo, aol, zoho, or an address)
 calsync calendars                    list calendars on your accounts
-calsync add NAME ACCOUNT CAL_ID [--busy-only] [--read-only] [--skip OTHER]
+calsync add NAME ACCOUNT CAL_ID [--busy-only] [--read-only] [--free] [--only TEXT] [--skip OTHER]
 calsync remove NAME
 calsync run [--dry-run] [--force]    one sync pass, for cron or a systemd timer
 calsync purge [NAME] [--dry-run]     delete the copies calsync made
