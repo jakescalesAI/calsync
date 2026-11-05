@@ -93,7 +93,7 @@ calsync add main personal primary
 calsync add work work CALENDAR_ID --busy-only --skip main
 calsync add school school ics --read-only
 calsync status</code></pre>
-<p>The arguments are <code>NAME ACCOUNT CALENDAR_ID</code>, then any flags. <code>--busy-only</code>, <code>--read-only</code> and <code>--skip OTHER_NAME</code> match the three options on the web page. A .ics link is a single calendar with the ID <code>ics</code>. <code>calsync remove NAME</code> takes a calendar out.</p>
+<p>The arguments are <code>NAME ACCOUNT CALENDAR_ID</code>, then any flags. <code>--busy-only</code>, <code>--read-only</code> and <code>--skip OTHER_NAME</code> match the three options on the web page. A .ics link is a single calendar with the ID <code>ics</code>. For a feed of due dates, such as school assignments, <code>--free</code> stops its items marking you busy, and <code>--only TEXT</code> keeps only items whose UID holds that text. <code>calsync remove NAME</code> takes a calendar out.</p>
 <h2>Preview, then sync</h2>
 <pre><code>calsync run --dry-run    # show what would change. Changes nothing.
 calsync run              # one sync pass</code></pre>
