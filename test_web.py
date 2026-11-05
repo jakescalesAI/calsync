@@ -1,5 +1,5 @@
 """Web page tests against a real local server and in-memory calendars: python3 -m unittest test_web"""
-import http.client, json, os, re, stat, tempfile, threading, time, unittest, urllib.parse
+import http.client, json, os, re, socket, stat, tempfile, threading, time, unittest, urllib.parse
 from unittest import mock
 
 home = os.environ.setdefault("CALSYNC_HOME", tempfile.mkdtemp())    # never your real one
@@ -313,7 +313,7 @@ class WebTests(unittest.TestCase):
         self.cals["b"].events["n"] = native("Native on b")
         with mock.patch.object(calsync, "make_adapter", self.adapter):
             _, text = self.post("/purge", name="b")
-            self.assertIn("Delete 1 copies", text)
+            self.assertIn("Delete 1 copy from b", text)
             self.assertEqual(len(self.cals["b"].events), 2)
             _, text = self.post("/purge", name="b", confirm="1")
         self.assertEqual([e["title"] for e in self.cals["b"].events.values()], ["Native on b"])
@@ -395,6 +395,30 @@ class WebTests(unittest.TestCase):
         self.assertIsNone(calsync_web.web_config())
         self.assertNotIn("Setup code", self.req("GET", "/")[1])     # plain local visit: no code needed
 
+    def test_guessing_the_old_password_on_settings_hits_the_cap(self):
+        self.start()
+        for _ in range(calsync_web.ATTEMPTS_PER_MINUTE):
+            self.assertIn("isn&#x27;t right", self.post("/settings/password", old="wrong", new="new password long")[1])
+        r, text = self.req("POST", "/settings/password", dict(old="correct horse battery", new="new password long", csrf=self.csrf()))
+        self.assertEqual(r.status, 429)
+        self.assertIn("Too many tries", text)
+
+    def test_a_right_old_password_does_not_use_up_a_try(self):
+        self.start()
+        self.post("/settings/password", old="correct horse battery", new="correct horse battery")
+        self.assertEqual(calsync_web.failed_logins.get(("login", "127.0.0.1"), []), [])
+
+    def test_a_strange_csrf_value_is_refused_with_a_reply(self):
+        self.start()
+        r, text = self.req("POST", "/run", {"csrf": "\u00e9\u00e9"})
+        self.assertEqual(r.status, 400)
+        self.assertIn("expired", text)
+
+    def test_one_copy_is_not_called_copies(self):
+        self.assertEqual(calsync_web.copies(1), "1 copy")
+        self.assertEqual(calsync_web.copies(0), "0 copies")
+        self.assertEqual(calsync_web.copies(2), "2 copies")
+
     def test_parallel_wrong_passwords_respect_the_cap(self):
         self.start()
         self.cookie = None
@@ -430,6 +454,59 @@ class WebTests(unittest.TestCase):
 
     def test_health_needs_nothing(self):
         self.assertEqual(self.req("GET", "/healthz", host="anything.example")[1], "ok")
+
+
+class HostileConnectionTests(unittest.TestCase):
+    def serve(self, **attrs):
+        handler = type("H", (calsync_web.Handler,), attrs.pop("handler", {}))
+        server = type("S", (calsync_web.Server,), attrs)(("127.0.0.1", 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return server.server_address[1]
+
+    def connect(self, port):
+        sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+        self.addCleanup(sock.close)
+        return sock
+
+    def test_a_connection_that_goes_quiet_is_dropped(self):
+        self.assertTrue(0 < calsync_web.Handler.timeout <= 60)     # the real page has a limit; the rest shortens it to test it
+        for sent in (b"", b"GET / HT", b"POST /login HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\n"):
+            sock = self.connect(self.serve(handler={"timeout": 0.2}))
+            sock.sendall(sent)
+            self.assertEqual(sock.recv(100), b"", sent)     # closed by the server, not this test's 5 second timeout
+
+    def test_connections_past_the_cap_are_turned_away_and_the_page_recovers(self):
+        port = self.serve(MAX_CONNECTIONS=2)
+        held = [self.connect(port), self.connect(port)]
+        time.sleep(.1)
+        sock = self.connect(port)
+        sock.sendall(b"GET /healthz HTTP/1.0\r\n\r\n")
+        try:
+            self.assertEqual(sock.recv(100), b"")
+        except ConnectionResetError:
+            pass
+        for s in held:
+            s.close()
+        for _ in range(50):
+            time.sleep(.05)
+            sock = self.connect(port)
+            sock.sendall(b"GET /healthz HTTP/1.0\r\n\r\n")
+            try:
+                if sock.recv(100).startswith(b"HTTP/1.0 200"):
+                    return
+            except ConnectionResetError:
+                pass
+        self.fail("the page never came back")
+
+    def test_strange_cookies_are_just_not_a_session(self):
+        cfg = {"key": "ab" * 32}
+        good = calsync_web.make_session(cfg)
+        self.assertTrue(calsync_web.session_ok(cfg, good))
+        expires = good.split(".")[0]
+        for cookie in (None, "", ".", "x.y", "\u00b2.abc", "\u0663.abc", "9" * 5000 + ".abc", f"{expires}.\u00e9", f"{expires}.", f"-{expires}.abc", good + "0"):
+            self.assertFalse(calsync_web.session_ok(cfg, cookie), cookie)
 
 
 if __name__ == "__main__":

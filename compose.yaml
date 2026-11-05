@@ -13,7 +13,7 @@ services:
       - calsync-data:/data
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
     cap_drop:
       - ALL
     security_opt:

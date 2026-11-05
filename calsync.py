@@ -13,7 +13,7 @@ edits or deletes an event it did not create. Stateless: the tags are the state.
   calsync auth caldav LABEL [SERVER] iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud or any CalDAV address (hidden prompt)
   calsync auth ics LABEL             a published .ics link (read-only source)
   calsync calendars                  list calendars on every signed-in account
-  calsync add NAME ACCOUNT CAL_ID [--busy-only] [--read-only] [--skip OTHER_NAME ...]
+  calsync add NAME ACCOUNT CAL_ID [--busy-only] [--read-only] [--free] [--only TEXT] [--skip OTHER_NAME ...]
   calsync remove NAME
   calsync run [--dry-run] [--force]  one sync pass
   calsync purge [NAME] [--dry-run]   delete every copy calsync made (on one calendar, or all)
@@ -392,13 +392,9 @@ def _unescape(v):
 
 def parse_ics(text):
     """-> list of VEVENT dicts: NAME -> [(params, value), ...]. Unfolds lines; ignores VTIMEZONE etc."""
-    lines, events, cur, depth = [], [], None, 0
-    for raw in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        if raw[:1] in (" ", "\t") and lines:
-            lines[-1] += raw[1:]
-        else:
-            lines.append(raw)
-    for line in lines:
+    events, cur = [], None
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n ", "").replace("\n\t", "")  # joined in one go: a line folded millions of times can't slow this down
+    for line in text.split("\n"):
         if line == "BEGIN:VEVENT":
             cur = {}
         elif line == "END:VEVENT" and cur is not None:
@@ -438,10 +434,18 @@ def _ics_duration(v):
     return -td if sign == "-" else td
 
 
-def ics_events(text, tmin, tmax, me=()):
+ICS_SECONDS = 60     # a calendar that takes longer to expand is reported, and its copies are left alone
+_UNREADABLE = (ValueError, TypeError, OverflowError, KeyError, IndexError)   # what bad dates, rules and lengths raise
+
+
+def ics_events(text, tmin, tmax, me=(), deadline=None):
     """Expand a calendar's VEVENTs into normalised instances inside [tmin, tmax] (UTC 'Z' strings).
-    me: this account's own addresses, so a meeting it declined can be left out."""
+    me: this account's own addresses, so a meeting it declined can be left out. Anyone can put an event on a calendar
+    by sending an invite, so one that can't be read is skipped rather than stopping the whole calendar, and a rule that
+    repeats every minute or second is skipped because expanding it from years back would hang the run."""
     from dateutil.rrule import rruleset, rrulestr
+    deadline = deadline or time.monotonic() + ICS_SECONDS
+    skipped = 0
     lo = dt.datetime.fromisoformat(tmin.replace("Z", "+00:00"))
     hi = dt.datetime.fromisoformat(tmax.replace("Z", "+00:00"))
     first = lambda ev, k: ev[k][0] if k in ev else ({}, "")
@@ -450,7 +454,11 @@ def ics_events(text, tmin, tmax, me=()):
         if "DTSTART" not in ev or "UID" not in ev:
             continue
         if "RECURRENCE-ID" in ev:
-            rid, _ = _ics_time(*first(ev, "RECURRENCE-ID"))
+            try:
+                rid, _ = _ics_time(*first(ev, "RECURRENCE-ID"))
+            except _UNREADABLE:
+                skipped += 1
+                continue
             overrides[(first(ev, "UID")[1], rid.isoformat())] = ev
         else:
             masters.append(ev)
@@ -484,15 +492,11 @@ def ics_events(text, tmin, tmax, me=()):
                 "private": first(ev, "CLASS")[1].upper() in ("PRIVATE", "CONFIDENTIAL"),
                 "declined": declined, "copy_of": tag}
 
-    out = []
-    for ev in masters:
+    def expand(ev):
         uid = first(ev, "UID")[1]
         start, all_day = _ics_time(*first(ev, "DTSTART"))
         if "RRULE" not in ev and "RDATE" not in ev:
-            inst = instance(overrides.pop((uid, start.isoformat()), ev), start, all_day, start.isoformat())
-            if inst:
-                out.append(inst)
-            continue
+            return [instance(overrides.pop((uid, start.isoformat()), ev), start, all_day, start.isoformat())]
         rs = rruleset()
         if "RRULE" not in ev:
             rs.rdate(start)
@@ -500,6 +504,8 @@ def ics_events(text, tmin, tmax, me=()):
             for v in val.split(","):
                 rs.rdate(_ics_time(params, v)[0])
         for _, rule in ev.get("RRULE", []):
+            if re.search(r"FREQ\s*=\s*(SECONDLY|MINUTELY)", rule, re.I):
+                raise ValueError("repeats too often")
             if all_day:  # dateutil wants UNTIL to match DTSTART's (naive) kind
                 rule = ";".join(p[:14] if p.startswith("UNTIL=") else p for p in rule.split(";"))
             elif "UNTIL=" in rule and not rule.split("UNTIL=")[1].split(";")[0].endswith("Z"):
@@ -511,21 +517,36 @@ def ics_events(text, tmin, tmax, me=()):
                 rs.exdate(ex)
         span_lo = (lo - dt.timedelta(days=2)).replace(tzinfo=None) if all_day else lo - dt.timedelta(days=2)
         span_hi = hi.replace(tzinfo=None) if all_day else hi
+        found = []
         for occ in rs.between(span_lo, span_hi, inc=True):
             key = occ.isoformat()
             src = overrides.pop((uid, key), None)
             if src is not None:
                 s2, ad2 = _ics_time(*first(src, "DTSTART"))
-                inst = instance(src, s2, ad2, key)
+                found.append(instance(src, s2, ad2, key))
             else:
-                inst = instance(ev, occ, all_day, key)
-            if inst:
-                out.append(inst)
+                found.append(instance(ev, occ, all_day, key))
+        return found
+
+    out = []
+    for ev in masters:
+        if time.monotonic() > deadline:
+            raise RuntimeError("this calendar has too many repeating events to read")
+        try:
+            out += [inst for inst in expand(ev) if inst]
+        except _UNREADABLE:
+            skipped += 1
     for (uid, key), ev in overrides.items():  # moved occurrences whose original slot fell outside the window
-        s2, ad2 = _ics_time(*first(ev, "DTSTART"))
-        inst = instance(ev, s2, ad2, key)
+        try:
+            s2, ad2 = _ics_time(*first(ev, "DTSTART"))
+            inst = instance(ev, s2, ad2, key)
+        except _UNREADABLE:
+            skipped += 1
+            continue
         if inst:
             out.append(inst)
+    if skipped:
+        print(f"calsync: skipped {skipped} event(s) on a calendar because they couldn't be read", file=sys.stderr)
     return out
 
 
@@ -535,7 +556,33 @@ def clean_ics_url(url):
         url = "https://" + url[9:]
     if urllib.parse.urlparse(url).scheme.lower() not in ("http", "https"):
         raise RuntimeError("a calendar link has to start with https://")
+    if re.search(r"[\s\x00-\x1f\x7f]", url):  # urllib would quote the whole link, secret part included, in its error
+        raise RuntimeError("a calendar link can't have spaces in it")
     return url
+
+
+DUE_LENGTH = dt.timedelta(minutes=30)
+
+
+def due_items(evs, tmin, tmax, only=None, free=False):
+    """Shape a due-date feed, such as Canvas assignments. --only keeps items whose UID holds that text; --free stops
+    them marking anyone busy, since a due date isn't a meeting. A due time with no length ends at the deadline, so it
+    can be seen. All-day items are held to what Google will list back: it hides one once its day is over and doesn't
+    reach one just past the window, and ics_events keeps both, which would make a new copy on every run."""
+    lo = dt.datetime.fromisoformat(tmin.replace("Z", "+00:00"))
+    last = dt.datetime.fromisoformat(tmax.replace("Z", "+00:00")).date() - dt.timedelta(days=2)
+    out = []
+    for ev in evs:
+        if only and only not in (ev.get("ical") or ""):
+            continue
+        if ev["all_day"]:
+            if dt.datetime.fromisoformat(ev["end"]).replace(tzinfo=local_tz()) <= lo or dt.date.fromisoformat(ev["start"]) >= last:
+                continue
+        elif ev["start"] == ev["end"]:
+            due = dt.datetime.fromisoformat(ev["end"].replace("Z", "+00:00"))
+            ev = {**ev, "start": (due - DUE_LENGTH).strftime("%Y-%m-%dT%H:%M:%SZ")}
+        out.append({**ev, "busy": False} if free else ev)
+    return out
 
 
 class IcsCalendar:
@@ -543,16 +590,20 @@ class IcsCalendar:
 
     MAX_BYTES = 50 * 1024 * 1024
 
-    def __init__(self, url):
-        self.url = clean_ics_url(url)
+    def __init__(self, url, only=None, free=False):
+        self.url, self.only, self.free = clean_ics_url(url), only, free
 
     def list(self, tmin, tmax):
         req = urllib.request.Request(self.url, headers={"User-Agent": "calsync"})
         with urllib.request.urlopen(req, timeout=60) as r:
-            text = r.read(self.MAX_BYTES).decode("utf-8", errors="replace")
+            raw = r.read(self.MAX_BYTES + 1)
+        if len(raw) > self.MAX_BYTES:  # reading only part would look like the rest of the events were deleted
+            raise RuntimeError("this calendar is over 50 MB, so calsync didn't read it")
+        text = raw.decode("utf-8", errors="replace")
         if "BEGIN:VCALENDAR" not in text:
             raise RuntimeError("link did not return a calendar")
-        return ics_events(text, tmin, tmax)
+        evs = ics_events(text, tmin, tmax)
+        return due_items(evs, tmin, tmax, self.only, self.free) if self.only or self.free else evs
 
 
 # ---------- CalDAV: iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and anything else that speaks it ----------
@@ -584,6 +635,16 @@ def _local_host(host):
         return False
 
 
+def _same_site(typed, other):
+    """Where a password may follow: the host it was typed for, or a host under it. Sharing a last two labels isn't
+    enough, since that's also true of strangers on co.uk, duckdns.org or a private network. Only the built-in providers
+    move you between their own hosts, as iCloud does to pNN-caldav.icloud.com."""
+    if other == typed or other.endswith("." + typed):
+        return True
+    site = typed.split(".")[-2:]
+    return site == other.split(".")[-2:] and ".".join(site) in {".".join(urllib.parse.urlparse(c[1]).hostname.split(".")[-2:]) for c in CALDAV_SERVERS.values() if c[1]}
+
+
 def clean_dav_url(url):
     url = url.strip()
     if "://" not in url:
@@ -606,10 +667,9 @@ class DavClient:
         self.opener = urllib.request.build_opener(_NoRedirect)
 
     def _trusted(self, url):
-        """A password only goes back to the site it was typed for: iCloud moves you to pNN-caldav.icloud.com, and nothing else moves."""
+        """A password only goes back to the site it was typed for, and never from https:// down to http://."""
         a, b = urllib.parse.urlparse(self.server), urllib.parse.urlparse(url)
-        tail = lambda p: (p.hostname or "").lower().split(".")[-2:]
-        return tail(a) == tail(b) and (b.scheme.lower() == "https" or a.scheme.lower() == "http")
+        return _same_site(a.hostname or "", b.hostname or "") and (b.scheme.lower() == "https" or a.scheme.lower() == "http")
 
     def _authorization(self, method, url):
         if not self.digest:
@@ -763,12 +823,12 @@ class CalDavCalendar:
         status, raw, final = self.client.request("REPORT", self.url, body, _XML, "1")
         if status != 207:
             raise RuntimeError(f"reading this calendar -> {status}")
-        out = []
+        out, deadline = [], time.monotonic() + ICS_SECONDS
         for href, props in _multistatus(raw):
             data = props.get(CALNS + "calendar-data")
             if data is None or not data.text:
                 continue
-            for ev in ics_events(data.text, tmin, tmax, self.me):
+            for ev in ics_events(data.text, tmin, tmax, self.me, deadline):
                 if ev["copy_of"]:
                     ev["uid"] = urllib.parse.urljoin(final, href)  # what update and delete need
                 out.append(ev)
@@ -830,7 +890,7 @@ def make_adapter(cfg):
     if not acct:
         raise RuntimeError(f"account {cfg['account']!r} is not signed in")
     if acct["provider"] == "ics":
-        return IcsCalendar(acct["url"])
+        return IcsCalendar(acct["url"], cfg.get("only"), cfg.get("free", False))
     if acct["provider"] == "caldav":
         return CalDavCalendar(acct, cfg["calendar_id"])
     cls = {"google": GoogleCalendar, "outlook": OutlookCalendar}[acct["provider"]]
@@ -874,7 +934,8 @@ def sync(cals, adapters, dry_run=False, force=False, log=print, now=None):
             for ev in evs:
                 if ev.get("ical") and ev["ical"] in native:
                     continue
-                desired[f"{src}|{ev['uid']}"] = (render(ev, src, dst), src)
+                hide = dst.get("busy_only") or ev["private"]   # a Busy copy doesn't say which calendar it came from either
+                desired[f"{src}|{ev['uid']}"] = (render(ev, src, dst), "another calendar" if hide else labels[src])
         existing = {}
         dupes = []
         for ev in listed[name]:
@@ -891,18 +952,18 @@ def sync(cals, adapters, dry_run=False, force=False, log=print, now=None):
             summary["skipped_deletes"] += len(to_delete)
             to_delete = []
 
-        for key, (fields, src) in desired.items():
+        for key, (fields, label) in desired.items():
             have = existing.get(key)
             try:
                 if have is None:
                     log(f"+ {name}: {fields['title']} {fields['start']}")
                     if not dry_run:
-                        ad.create(fields, key, labels[src])
+                        ad.create(fields, key, label)
                     summary["created"] += 1
                 elif comparable(have) != fields:
                     log(f"~ {name}: {fields['title']} {fields['start']}")
                     if not dry_run:
-                        ad.update(have["uid"], fields, key, labels[src])
+                        ad.update(have["uid"], fields, key, label)
                     summary["updated"] += 1
             except Exception as e:
                 summary["errors"] += 1
@@ -1567,9 +1628,11 @@ def main(argv):
             raise SystemExit(f"account {rest[1]!r} is not signed in")
         if not NAME_OK.fullmatch(rest[0]):
             raise SystemExit("A calendar name uses letters, numbers, - and _ (up to 40).")
+        only = [rest[i + 1] for i, x in enumerate(rest[:-1]) if x == "--only"]
         update_config(lambda cfg: cfg.update(calendars=[c for c in cfg["calendars"] if c["name"] != rest[0]] + [{
             "name": rest[0], "label": rest[0], "account": rest[1], "calendar_id": rest[2],
             "busy_only": "--busy-only" in rest, "read_only": "--read-only" in rest,
+            "free": "--free" in rest, "only": only[0] if only else None,
             "skip_sources": [rest[i + 1] for i, x in enumerate(rest[:-1]) if x == "--skip"]}]))
         print(f"Added {rest[0]}.")
     elif cmd == "remove" and rest:
@@ -1597,7 +1660,7 @@ def main(argv):
         return cmd_run(False, False)  # copy it everywhere now instead of at the next timer run
     elif cmd == "status":
         for c in load_json(CONFIG, {"calendars": []})["calendars"]:
-            flags = ", ".join([f for f in ("busy_only", "read_only") if c.get(f)] + [f"skips {x}" for x in c.get("skip_sources", [])])
+            flags = ", ".join([f for f in ("busy_only", "read_only", "free") if c.get(f)] + [f"skips {x}" for x in c.get("skip_sources", [])])
             print(f"  {c['name']}: {c['account']} / {c['calendar_id']}" + (f" ({flags})" if flags else ""))
         print("last run:", json.dumps(load_json(LASTRUN, None)))
     else:

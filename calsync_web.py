@@ -37,6 +37,10 @@ def esc(v):
     return html.escape(str(v), quote=True)
 
 
+def copies(n):
+    return f"{esc(n)} {'copy' if n == 1 else 'copies'}"
+
+
 def web_file():
     return os.path.join(engine.SECRETS, "web.json")
 
@@ -66,7 +70,9 @@ def make_session(cfg):
 
 def session_ok(cfg, cookie):
     expires, _, mac = (cookie or "").partition(".")
-    return bool(cfg and expires.isdigit() and int(expires) > time.time() and hmac.compare_digest(mac, sign(cfg["key"], "session." + expires)))
+    if not cfg or not re.fullmatch(r"[0-9]{1,12}", expires):     # anyone can send any cookie, so nothing here may raise
+        return False
+    return int(expires) > time.time() and hmac.compare_digest(mac.encode(), sign(cfg["key"], "session." + expires).encode())
 
 
 def host_allowed(host):
@@ -380,6 +386,7 @@ def poll_microsoft(flow_id):
 class Handler(http.server.BaseHTTPRequestHandler):
     server_version = "calsync"
     sys_version = ""
+    timeout = 30        # a connection that goes quiet is dropped, so it can't hold a thread forever
 
     def log_message(self, *a):      # the query string can hold a sign-in code; keep it out of the logs
         pass
@@ -491,7 +498,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.login(cfg, get)
         if not session_ok(cfg, self.cookie()):
             return self.redirect("/")
-        if not hmac.compare_digest(get("csrf"), self.csrf()):
+        if not hmac.compare_digest(get("csrf").encode(), self.csrf().encode()):
             return self.send(400, "This page expired. Go back and reload it.", "text/plain")
         try:
             return self.action(url, get, form, cfg)
@@ -584,10 +591,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             cals = [c for c in engine.load_json(engine.CONFIG, {"calendars": []})["calendars"] if c["name"] == get("name")]
             if not get("confirm"):
                 count = engine.purge(cals, {c["name"]: engine.make_adapter(c) for c in cals}, dry_run=True, log=lambda *_: None)["deleted"]
-                return self.send(200, page("Delete copies", f'''<h1>Delete {esc(count)} copies from {esc(get("name"))}?</h1><section><p>This removes only events calsync made. If syncing is still on, the next run makes them again, so stop syncing this calendar too if you're done with it.</p>
-<form method="post" action="/purge"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(get("name"))}"><input type="hidden" name="confirm" value="1"><div class="actions"><button class="danger">Delete {esc(count)} copies</button><a class="button plain" href="/">Keep them</a></div></form></section>''', True))
+                return self.send(200, page("Delete copies", f'''<h1>Delete {copies(count)} from {esc(get("name"))}?</h1><section><p>This removes only events calsync made. If syncing is still on, the next run makes them again, so stop syncing this calendar too if you're done with it.</p>
+<form method="post" action="/purge"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(get("name"))}"><input type="hidden" name="confirm" value="1"><div class="actions"><button class="danger">Delete {copies(count)}</button><a class="button plain" href="/">Keep them</a></div></form></section>''', True))
             s = engine.purge(cals, {c["name"]: engine.make_adapter(c) for c in cals}, log=lambda *_: None)
-            return self.send(200, page("Copies deleted", f'<h1>Deleted {esc(s["deleted"])} copies</h1><section>{esc(s["errors"])} problems.</section><a class="button plain" href="/">Back</a>', True))
+            return self.send(200, page("Copies deleted", f'<h1>Deleted {copies(s["deleted"])}</h1><section>{esc(s["errors"])} problems.</section><a class="button plain" href="/">Back</a>', True))
         if url == "/preview":
             lines = []
             s = engine.run_once(dry_run=True, log=lines.append)
@@ -617,8 +624,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             engine.update_config(lambda c: c.update(interval_minutes=int(minutes), timezone=zone))
             return self.redirect("/settings?m=saved")
         if url == "/settings/password":
+            ip = self.client_address[0]
+            stamp = take_try("login", ip)    # a borrowed session shouldn't get to guess the password here
+            if stamp is None:
+                return self.send(429, settings_page(csrf, "Too many tries. Wait a minute and try again."))
             if not hmac.compare_digest(hash_password(get("old"), cfg["salt"]), cfg["hash"]):
                 return self.send(200, settings_page(csrf, "The current password isn't right."))
+            give_back("login", ip, stamp)
             if len(get("new")) < 10:
                 return self.send(200, settings_page(csrf, "Use at least 10 characters."))
             set_password(get("new"))
@@ -743,6 +755,23 @@ def login_page(flash=None):
 
 class Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
+    MAX_CONNECTIONS = 64    # one person uses this page, so more at once than this is someone leaning on it
+
+    def __init__(self, *args, **kwargs):
+        self.slots = threading.BoundedSemaphore(self.MAX_CONNECTIONS)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        if self.slots.acquire(blocking=False):
+            super().process_request(request, client_address)
+        else:
+            self.shutdown_request(request)
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.slots.release()
 
 
 def serve():
