@@ -1220,7 +1220,10 @@ QUICK_HINT = 'add a day and time, e.g. "fri 3pm"'
 
 def _clock(s):
     """'3pm' -> (3, 0, 'pm'); '15:00' -> (15, 0, None); 'noon' -> (12, 0, 'pm')."""
-    s = s.replace(" ", "").lower()
+    s = s.replace(" ", "")
+    if re.search(r"\d[AP]$", s):   # "at 4A" is a room
+        return None
+    s = s.lower()
     if s in ("noon", "midnight"):
         return (12, 0, "pm") if s == "noon" else (12, 0, "am")
     m = re.fullmatch(r"(\d{1,2})(?::(\d{2}))?([ap])?m?", s)

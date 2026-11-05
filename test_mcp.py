@@ -696,7 +696,9 @@ class TesterFindings(Base):
             self.assertEqual(calsync.take_skipped(), want, hrefs)
 
     def test_a_capital_letter_after_a_number_is_not_a_time(self):
-        for words, title, hour in (("Interview Room 4A tomorrow 3pm", "Interview Room 4A", 15), ("Gate 3A pickup tomorrow 6:30pm", "Gate 3A pickup", 18), ("Apt 3P inspection fri 10am", "Apt 3P inspection", 10),
+        for words, title, hour in (("Meet at 4A tomorrow 3pm", "Meet at 4A", 15), ("Pickup at 5A fri 6pm", "Pickup at 5A", 18), ("Meet @4A tomorrow 3pm", "Meet @4A", 15),
+                                   ("Rooms from 4A to 5A tomorrow 7pm", "Rooms from 4A to 5A", 19), ("Dentist tomorrow at 3PM", "Dentist", 15), ("gym at 6a fri", "gym", 6),
+                                   ("Interview Room 4A tomorrow 3pm", "Interview Room 4A", 15), ("Gate 3A pickup tomorrow 6:30pm", "Gate 3A pickup", 18), ("Apt 3P inspection fri 10am", "Apt 3P inspection", 10),
                                    ("Midnight Run movie fri 8pm", "Midnight Run movie", 20), ("Noon yoga fri 6pm", "Noon yoga", 18)):
             ev, _ = calsync.quick_parse(words)
             self.assertEqual((ev["title"], ev["start"].hour), (title, hour), words)
@@ -713,7 +715,7 @@ class TesterFindings(Base):
 
     def test_names_ending_like_an_address_are_hidden(self):
         cfg = calsync.load_json(calsync.CONFIG, {})
-        for name, hidden in (("work-other-person-gmail-com", True), ("work-boss-corp-com", True), ("fm-sam-fastmail-com", True), ("icloud-sam-icloud-com", True),
+        for name, hidden in (("work-other-person-gmail-com", True), ("work-boss-corp-com", True), ("work-boss-corp-com-2", True), ("fm-sam-fastmail-com", True), ("icloud-sam-icloud-com", True),
                              ("work-Home", False), ("work-about-me", False), ("team-plans", False)):
             cfg["calendars"][0].update(name=name, calendar_id="opaque-id")
             calsync.save_json(calsync.CONFIG, cfg)
