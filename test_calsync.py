@@ -1,5 +1,5 @@
 """Engine tests against in-memory calendars: python3 -m unittest test_calsync"""
-import contextlib, datetime as dt, io, itertools, json, os, stat, tempfile, unittest
+import contextlib, datetime as dt, io, itertools, json, os, stat, tempfile, time, unittest
 from unittest import mock
 
 os.environ.setdefault("CALSYNC_HOME", tempfile.mkdtemp())    # never your real one
@@ -626,6 +626,88 @@ class AgendaTests(unittest.TestCase):
         calsync.write_agenda(self.cfg, self.cal, SUN_11AM)
         self.assertIn("- 4:00–5:00 PM · Dentist\n\n## ✅ Tasks\n- [ ] mine", self.read("Daily/2026-11-02.md"))
         self.assertFalse(os.path.exists(os.path.join(self.vault, "Daily", "2026-11-03.md")))   # never creates daily notes
+
+
+class HostileCalendarTests(unittest.TestCase):
+    """Anyone can put an event on a calendar by sending an invite, and a feed can be anyone's."""
+    TMIN, TMAX = "2030-01-01T00:00:00Z", "2030-03-01T00:00:00Z"
+    GOOD = "BEGIN:VEVENT\r\nUID:good\r\nDTSTART:20300110T150000Z\r\nDTEND:20300110T160000Z\r\nSUMMARY:Good\r\nEND:VEVENT\r\n"
+
+    def titles(self, *events, **kw):
+        text = "BEGIN:VCALENDAR\r\n" + "".join(events) + "END:VCALENDAR\r\n"
+        with contextlib.redirect_stderr(io.StringIO()):
+            return [e["title"] for e in calsync.ics_events(text, self.TMIN, self.TMAX, **kw)]
+
+    def bad(self, *lines):
+        return "BEGIN:VEVENT\r\nUID:bad\r\nSUMMARY:Bad\r\n" + "".join(l + "\r\n" for l in lines) + "END:VEVENT\r\n"
+
+    def test_one_unreadable_event_does_not_stop_the_calendar(self):
+        for lines in (["DTSTART:notadate"], ["DTSTART:20300110T150000Z", "RRULE:FREQ=NOPE"],
+                      ["DTSTART:20300110T150000Z", "DURATION:P99999999999W"], ["DTSTART:20300110T150000Z", "RDATE:notadate"],
+                      ["DTSTART:20300110T150000Z", "RECURRENCE-ID:notadate"]):
+            self.assertEqual(self.titles(self.GOOD, self.bad(*lines)), ["Good"], lines)
+
+    def test_a_rule_repeating_every_minute_or_second_is_left_out_quickly(self):
+        started = time.monotonic()
+        for rule in ("FREQ=SECONDLY", "FREQ=MINUTELY", "freq=minutely;interval=1", "INTERVAL=1;FREQ=SECONDLY"):
+            self.assertEqual(self.titles(self.GOOD, self.bad("DTSTART:20000101T000000Z", "RRULE:" + rule)), ["Good"])
+        self.assertLess(time.monotonic() - started, 5)
+
+    def test_hourly_repeats_still_work(self):
+        self.assertEqual(len(self.titles(self.bad("DTSTART:20300110T150000Z", "RRULE:FREQ=HOURLY;COUNT=3"))), 3)
+
+    def test_a_calendar_past_its_time_limit_is_reported_not_half_read(self):
+        with self.assertRaisesRegex(RuntimeError, "too many repeating"):
+            self.titles(self.GOOD, deadline=time.monotonic() - 1)
+
+    def test_a_line_folded_millions_of_times_is_read_in_a_moment(self):
+        started = time.monotonic()
+        text = "BEGIN:VEVENT\r\nUID:u\r\nSUMMARY:x" + "\r\n y" * 2_000_000 + "\r\nDTSTART:20300110T150000Z\r\nEND:VEVENT\r\n"
+        self.assertEqual(len(calsync.parse_ics(text)[0]["SUMMARY"][0][1]), 2_000_001)
+        self.assertLess(time.monotonic() - started, 5)
+
+    def test_folding_rules_are_unchanged(self):
+        ev = calsync.parse_ics("BEGIN:VEVENT\nSUMMARY:a\n b\n\tc\n  d\r\n e\rUID:u\nEND:VEVENT\n")[0]
+        self.assertEqual(ev["SUMMARY"][0][1], "abc de")
+        self.assertEqual(ev["UID"][0][1], "u")
+
+    def test_a_feed_too_big_to_read_whole_is_an_error_not_a_shorter_calendar(self):
+        class Reply(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+        with mock.patch.object(calsync.IcsCalendar, "MAX_BYTES", 40), mock.patch("urllib.request.urlopen", lambda *a, **k: Reply(b"BEGIN:VCALENDAR" + b"x" * 40)):
+            with self.assertRaisesRegex(RuntimeError, "over 50 MB"):
+                calsync.IcsCalendar("https://example.com/a.ics").list(self.TMIN, self.TMAX)
+
+    def test_a_link_with_a_space_never_lands_in_an_error_with_its_secret(self):
+        with self.assertRaises(RuntimeError) as seen:
+            calsync.IcsCalendar("https://example.com/feed token=SECRETPART")
+        self.assertNotIn("SECRETPART", str(seen.exception))
+
+    def test_a_busy_or_private_copy_does_not_name_its_source(self):
+        class Dst:
+            read_only = False
+
+            def __init__(self):
+                self.labels = {}
+
+            def list(self, a, b):
+                return []
+
+            def create(self, fields, key, label):
+                self.labels[fields["title"]] = label
+        ev = dict(uid="1", ical="1", title="Open", start="2030-01-10T15:00:00Z", end="2030-01-10T16:00:00Z", all_day=False,
+                  busy=True, location="", private=False, declined=False, copy_of=None)
+        class Src(Dst):
+            def list(self, a, b):
+                return [ev, dict(ev, uid="2", ical="2", title="Secret", private=True)]
+        for busy_only, want in ((False, {"Open": "Therapy", "Busy": "another calendar"}), (True, {"Busy": "another calendar"})):
+            dst = Dst()
+            calsync.sync([{"name": "a", "label": "Therapy", "read_only": True}, {"name": "b", "busy_only": busy_only}], {"a": Src(), "b": dst}, log=lambda *_: None)
+            self.assertEqual(dst.labels, want)
 
 
 if __name__ == "__main__":

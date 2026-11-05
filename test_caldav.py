@@ -173,9 +173,23 @@ class ConnectTests(Base):
 
     def test_https_cannot_be_redirected_down_to_http(self):
         client = calsync.DavClient("https://caldav.example.com/", USER, PASSWORD)
-        self.assertTrue(client._trusted("https://p12-caldav.example.com:443/1/calendars/"))
+        self.assertTrue(client._trusted("https://caldav.example.com:443/1/calendars/"))
         self.assertFalse(client._trusted("http://caldav.example.com/"))
         self.assertFalse(client._trusted("https://caldav.example.org/"))
+
+    def test_a_password_follows_only_its_own_host_or_a_built_in_provider(self):
+        for typed, there in (("https://caldav.icloud.com/", "https://p12-caldav.icloud.com:443/1/"),
+                             ("https://caldav.fastmail.com/", "https://d9.caldav.fastmail.com/"),
+                             ("https://example.com/", "https://dav.example.com/"),
+                             ("http://192.168.1.5:5232/", "http://192.168.1.5:5232/cal/")):
+            self.assertTrue(calsync.DavClient(typed, USER, PASSWORD)._trusted(there), there)
+        for typed, there in (("https://cal.example.co.uk/", "https://evil.co.uk/"),
+                             ("https://me.duckdns.org/", "https://evil.duckdns.org/"),
+                             ("https://cloud.example.com/", "https://other.example.com/"),
+                             ("https://caldav.icloud.com/", "https://icloud.com.example.org/"),
+                             ("https://caldav.icloud.com/", "https://notricloud.com/"),
+                             ("http://192.168.1.5/", "http://10.0.1.5/")):
+            self.assertFalse(calsync.DavClient(typed, USER, PASSWORD)._trusted(there), there)
 
     def test_errors_never_hold_the_password(self):
         self.dav.items[MAIN + "a.ics"] = "not a calendar"
