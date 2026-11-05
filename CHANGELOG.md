@@ -13,6 +13,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - The connect page explains how booking apps such as Calendly and Cal.com work with calsync.
 - `calsync add --free` stops a feed's items marking you busy, and `--only TEXT` keeps only items whose UID holds that
   text. Both are for due-date feeds such as school assignments. A due time with no length now shows as 30 minutes.
+- `calsync mcp`: tools for AI agents over MCP, on stdin and stdout or over HTTP with a bearer token. Read only unless you
+  add `--allow-write`; `--busy-only` hides titles and places. No tool can sign in, purge, remove a calendar or force a mass delete.
 
 ### Fixed
 - The delete page says "1 copy" instead of "1 copies".

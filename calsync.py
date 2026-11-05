@@ -19,6 +19,8 @@ edits or deletes an event it did not create. Stateless: the tags are the state.
   calsync purge [NAME] [--dry-run]   delete every copy calsync made (on one calendar, or all)
   calsync status                     configured calendars + last run
   calsync new TEXT... [--check]      add an event ("Dentist tomorrow 3pm 1h") to the main calendar, then sync
+  calsync mcp [--http] [--allow-write] [--busy-only]   tools for AI agents (read only unless you ask)
+  calsync mcp token [--new]          print the --http token, or replace it
 Optional, in config.json: quick_add turns new "- " lines of a Markdown note into events; agenda writes a
 Markdown agenda and refreshes daily notes' Calendar sections; export writes one .ics per source calendar.
 Python stdlib + python-dateutil (for repeating events in .ics links) + tzdata where the system has none.
@@ -1605,6 +1607,9 @@ def main(argv):
     elif cmd == "web":
         import calsync_web
         return calsync_web.serve()
+    elif cmd == "mcp":
+        import calsync_mcp
+        return calsync_mcp.main(rest)
     elif cmd == "auth" and len(rest) >= 2 and rest[0] == "google":
         cmd_auth_google(rest[1])
     elif cmd == "auth" and len(rest) >= 2 and rest[0] == "outlook":

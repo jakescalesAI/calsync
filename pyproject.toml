@@ -22,4 +22,4 @@ Issues = "https://github.com/jakescalesAI/calsync/issues"
 calsync = "calsync:cli"
 
 [tool.setuptools]
-py-modules = ["calsync", "calsync_web"]
+py-modules = ["calsync", "calsync_web", "calsync_mcp"]

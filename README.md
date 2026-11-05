@@ -39,6 +39,10 @@ py -m pipx ensurepath
 Calendly, Cal.com and other booking apps need nothing extra. Connect the app to any calendar calsync keeps in sync. It
 sees your busy times from every other calendar, and each new booking is copied out to the rest.
 
+## AI agents
+
+calsync has no AI in it, but any agent that speaks MCP can use it: Claude Code, Hermes and others. `calsync mcp` lets an agent see all your calendars as one list. It's read only unless you add `--allow-write`, and no tool can sign in, delete copies or allow a mass delete. Setup is in the [docs](https://docs.getcalsync.app/agents/).
+
 ## What keeps your calendars safe
 
 - It only edits or deletes events it created. Each copy carries a private tag.
@@ -73,6 +77,8 @@ calsync run [--dry-run] [--force]    one sync pass, for cron or a systemd timer
 calsync purge [NAME] [--dry-run]     delete the copies calsync made
 calsync status
 calsync new TEXT [--check]
+calsync mcp [--http] [--allow-write] [--busy-only]   tools for AI agents
+calsync mcp token [--new]            print the --http token, or replace it
 ```
 
 Settings live in `$CALSYNC_HOME`, by default `~/.calsync`. A sample systemd timer is in [`deploy/`](deploy/). Optional notes features are described in the [docs](https://docs.getcalsync.app).

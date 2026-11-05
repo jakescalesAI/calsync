@@ -19,5 +19,29 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  calsync-agents:       # tools for AI agents, read only: docker compose --profile agents up -d
+    build: .
+    container_name: calsync-agents
+    profiles: [agents]
+    restart: unless-stopped
+    command: ["python", "calsync.py", "mcp", "--http"]
+    ports:
+      - "127.0.0.1:${CALSYNC_MCP_PORT:-8485}:8485"   # this machine only; see the docs before opening it up
+    environment:
+      CALSYNC_TZ: ${CALSYNC_TZ:-}
+      CALSYNC_HOSTS: ${CALSYNC_HOSTS:-}
+      CALSYNC_MCP_BIND: 0.0.0.0
+    volumes:
+      - calsync-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      disable: true
+
 volumes:
   calsync-data:
