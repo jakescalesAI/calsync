@@ -5,6 +5,24 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `calsync add --free` stops a feed's items marking you busy, and `--only TEXT` keeps only items whose UID holds that
+  text. Both are for due-date feeds such as school assignments. A due time with no length now shows as 30 minutes.
+
+### Fixed
+- The delete page says "1 copy" instead of "1 copies".
+
+### Security
+- A CalDAV password follows only the host it was typed for, a host under it, or a built-in provider's own hosts.
+  Before, any host sharing the last two parts of the name counted, such as another name on `co.uk`.
+- A hostile invite or feed can't hang or stop a run: rules repeating every minute or second are left out, an event
+  that can't be read is skipped, and a calendar that's too slow or over 50 MB is reported with its copies left alone.
+- A calendar link with a space is refused, so its secret part can't land in an error message.
+- Busy and private copies no longer name the calendar they came from.
+- The web page drops connections that go quiet for 30 seconds, allows 64 at once, and caps guesses at the current
+  password in Settings.
+- CI actions are pinned to exact commits.
+
 ## [0.1.0] - 2026-11-03
 
 First public release.
