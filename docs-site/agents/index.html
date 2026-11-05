@@ -71,14 +71,14 @@
 </dl>
 <p>No tool can sign in, remove a calendar, delete copies or allow a mass delete. No tool returns a calendar ID, an account name, a token or a .ics link.</p>
 <h2>An agent on this machine</h2>
-<p>The agent starts <code>calsync mcp</code> itself and talks to it directly. No port, no token. For Claude Code:</p>
+<p>The agent starts <code>calsync mcp</code> itself and talks to it directly. No port, no token. For <a href="https://github.com/NousResearch/hermes-agent">Hermes</a>, an open source agent that runs on your own computer:</p>
+<pre><code>hermes mcp add calsync --command calsync --args mcp</code></pre>
+<p>For Claude Code:</p>
 <pre><code>claude mcp add calsync -- calsync mcp</code></pre>
-<p>For Hermes, in its <code>config.yaml</code>:</p>
-<pre><code>mcp_servers:
-  calsync:
-    command: calsync
-    args: [mcp]</code></pre>
 <p>Any other agent that takes an MCP command works the same way. With Docker, the command is <code>docker compose exec -T calsync python calsync.py mcp</code>.</p>
+<h2>Let Hermes set it up</h2>
+<p>A skill teaches Hermes how to install calsync, open the setup page with you, connect these tools and use them. You still sign in yourself, and it doesn't start syncing until you say so.</p>
+<pre><code>hermes skills install https://docs.getcalsync.app/hermes/SKILL.md</code></pre>
 <h2>An agent on another machine</h2>
 <pre><code>calsync mcp --http        # http://127.0.0.1:8485/mcp
 calsync mcp token         # print the token the agent must send
@@ -97,6 +97,7 @@ calsync mcp token --new   # replace it; the old one stops working at once</code>
 </dl>
 <p>An event marked private always shows as Busy.</p>
 <h2>Before you connect one</h2>
+<p><strong>These limits are on the tools, not on the agent.</strong> An agent that can also run commands on your computer, as Hermes normally can, runs as you. It could read calsync's data folder or run <code>calsync purge</code> without any of these tools. Read only stops it changing calendars by accident through calsync's tools. It isn't a wall. To make it one, turn off the agent's shell and file tools, or run calsync under a different user.</p>
 <p>What an agent reads goes to whichever model it runs on, so your event titles go there too unless you use <code>--busy-only</code>.</p>
 <p>Anyone can put an event on your calendar by inviting you, so an event title can be written to trick an agent. calsync keeps each title to one short line and tells the agent it is data, not instructions. That helps, but it can't guarantee what a model does. If you turn on <code>--allow-write</code>, use an agent that asks you before it adds something.</p>
 

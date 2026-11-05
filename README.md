@@ -41,7 +41,7 @@ sees your busy times from every other calendar, and each new booking is copied o
 
 ## AI agents
 
-calsync has no AI in it, but any agent that speaks MCP can use it: Claude Code, Hermes and others. `calsync mcp` lets an agent see all your calendars as one list. It's read only unless you add `--allow-write`, and no tool can sign in, delete copies or allow a mass delete. Setup is in the [docs](https://docs.getcalsync.app/agents/).
+calsync has no AI in it, but any agent that speaks MCP can use it: Claude Code, Hermes and others. `calsync mcp` lets an agent see all your calendars as one list. It's read only unless you add `--allow-write`, and no tool can sign in, delete copies or allow a mass delete. Those limits are on the tools: an agent that can run commands as you can still reach calsync's data folder. Setup is in the [docs](https://docs.getcalsync.app/agents/).
 
 ## What keeps your calendars safe
 

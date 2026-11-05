@@ -15,6 +15,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
   text. Both are for due-date feeds such as school assignments. A due time with no length now shows as 30 minutes.
 - `calsync mcp`: tools for AI agents over MCP, on stdin and stdout or over HTTP with a bearer token. Read only unless you
   add `--allow-write`; `--busy-only` hides titles and places. No tool can sign in, purge, remove a calendar or force a mass delete.
+- A skill for Hermes that installs and sets up calsync with you, connects these tools and uses them, at `docs-site/hermes/SKILL.md`.
 
 ### Fixed
 - The delete page says "1 copy" instead of "1 copies".
