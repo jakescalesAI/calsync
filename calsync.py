@@ -548,8 +548,19 @@ def ics_events(text, tmin, tmax, me=(), deadline=None):
         if inst:
             out.append(inst)
     if skipped:
+        _skipped.count = getattr(_skipped, "count", 0) + skipped
         print(f"calsync: skipped {skipped} event(s) on a calendar because they couldn't be read", file=sys.stderr)
     return out
+
+
+_skipped = threading.local()
+
+
+def take_skipped():
+    """How many events this thread couldn't read since it last asked. A list that left some out isn't the whole picture."""
+    count = getattr(_skipped, "count", 0)
+    _skipped.count = 0
+    return count
 
 
 def clean_ics_url(url):

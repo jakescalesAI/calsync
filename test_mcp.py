@@ -41,7 +41,7 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.cals = {"work": Fake(), "home": Fake()}
         calsync.ensure_home()
-        calsync.save_json(calsync.CONFIG, {"calendars": [
+        calsync.save_json(calsync.CONFIG, {"enabled": True, "calendars": [
             {"name": "work", "label": "work", "account": "me@secret.example", "calendar_id": "secret-calendar-id"},
             {"name": "home", "label": "home", "account": "feed", "calendar_id": "ics", "read_only": True}]})
         calsync.save_json(os.path.join(calsync.SECRETS, "accounts.json"), {
@@ -199,7 +199,7 @@ class Writing(Base):
         with mock.patch.object(calsync, "run_once", return_value={"created": 1, "errors": 0}) as run:
             out = self.ok("calsync_add_event", {"text": self.words}, WRITE)
         self.assertTrue(out["added"])
-        self.assertTrue(out["copied_everywhere"])
+        self.assertTrue(out["synced"])
         self.assertEqual(len(self.cals["work"].created), 1)
         run.assert_called_once()
         self.assertFalse(run.call_args.kwargs.get("force"))
@@ -225,7 +225,7 @@ class Writing(Base):
         with mock.patch.object(calsync, "run_once", side_effect=RuntimeError("POST https://x.example/?k=secret -> 500")):
             out = self.ok("calsync_add_event", {"text": self.words}, WRITE)
         self.assertTrue(out["added"])
-        self.assertFalse(out["copied_everywhere"])
+        self.assertFalse(out["synced"])
         self.assertNotIn("secret", out["problem"])
 
     def test_words_it_cannot_read(self):
@@ -346,3 +346,181 @@ class Command(unittest.TestCase):
         one, two, three = out.getvalue().split()
         self.assertEqual(one, two)
         self.assertNotEqual(two, three)
+
+
+class TesterFindings(Base):
+    """Each of these was a real failure in the first independent test."""
+    day = SOON.isoformat()
+    words = f"Dentist {SOON.isoformat()} 3pm 1h"
+
+    def set_enabled(self, value):
+        cfg = calsync.load_json(calsync.CONFIG, {})
+        cfg.pop("enabled", None)
+        if value is not None:
+            cfg["enabled"] = value
+        calsync.save_json(calsync.CONFIG, cfg)
+
+    def test_adding_an_event_never_starts_a_paused_or_unstarted_sync(self):
+        for value in (False, None):
+            self.set_enabled(value)
+            self.cals["work"].events.clear()
+            with mock.patch.object(calsync, "run_once") as run:
+                out = self.ok("calsync_add_event", {"text": self.words}, WRITE)
+            run.assert_not_called()
+            self.assertTrue(out["added"])
+            self.assertFalse(out["synced"])
+            self.assertIn("paused", out["note"])
+
+    def test_sync_now_never_starts_a_paused_or_unstarted_sync(self):
+        for value in (False, None):
+            self.set_enabled(value)
+            with mock.patch.object(calsync, "run_once") as run:
+                self.assertIn("won't start", self.failed("calsync_sync_now", opts=WRITE))
+            run.assert_not_called()
+
+    def test_preview_still_works_when_not_started(self):
+        self.set_enabled(None)
+        self.assertTrue(self.ok("calsync_preview_sync")["preview"])
+
+    def test_status_says_whether_it_is_syncing(self):
+        self.assertTrue(self.ok("calsync_status")["syncing"])
+        self.set_enabled(False)
+        self.assertFalse(self.ok("calsync_status")["syncing"])
+
+    def test_no_error_text_reaches_the_agent(self):
+        secret = "403 me@secret.example secret-calendar-id https://user:PW@x/y.ics nonnumeric port: 'PW@x'"
+        self.cals["work"] = Fake(fail=secret)
+        for name, args, opts in (("calsync_check_event", {"text": self.words}, READ), ("calsync_add_event", {"text": self.words}, WRITE)):
+            text = self.failed(name, args, opts)
+            self.assertNotIn("secret", text)
+            self.assertNotIn("PW", text)
+        with mock.patch.object(calsync, "run_once", side_effect=RuntimeError(secret)):
+            self.assertNotIn("secret", self.failed("calsync_preview_sync"))
+            self.assertNotIn("secret", self.failed("calsync_sync_now", opts=WRITE))
+
+    def test_saved_problems_reach_the_agent_only_as_a_count(self):
+        calsync.save_json(calsync.LASTRUN, {"at": "x", "errors": 1, "failed": [], "problems": ["! work: 403 me@secret.example secret-calendar-id"]})
+        out = self.ok("calsync_status")
+        self.assertEqual(out["last_run"]["problems"], 1)
+        self.assertNotIn("secret", json.dumps(out))
+
+    def test_one_strange_event_does_not_lose_the_agenda(self):
+        bad = [event("Year one", start="0001-01-01T00:00:00Z", end="2099-12-31T00:00:00Z"), dict(event("Number title"), title=123), event("List id", ical=["x"]),
+               dict(event("Date"), start=None)]
+        self.cals["work"].events = bad + [event("Fine")]
+        out = self.ok("calsync_agenda", {"start": self.day, "days": 1})
+        self.assertEqual([r["title"] for r in out["events"]], ["Fine"])
+        self.assertFalse(out["complete"])
+        self.assertEqual(out["events_not_read"], len(bad))
+
+    def test_strange_event_does_not_stop_check_or_add(self):
+        self.cals["work"].events = [event("Year one", start="0001-01-01T00:00:00Z", end="2099-12-31T00:00:00Z"), dict(event("Number"), title=123)]
+        self.assertFalse(self.ok("calsync_check_event", {"text": self.words})["already_there"])
+        with mock.patch.object(calsync, "run_once", return_value={"errors": 0}):
+            self.assertTrue(self.ok("calsync_add_event", {"text": self.words}, WRITE)["added"])
+
+    def test_a_calendar_that_exits_is_reported_not_fatal(self):
+        def adapter(cal):
+            if cal["name"] == "home":
+                raise SystemExit("No google OAuth client yet")
+            return self.cals[cal["name"]]
+        self.cals["work"].events = [event("Fine")]
+        with mock.patch.object(calsync, "make_adapter", adapter):
+            out = self.ok("calsync_agenda", {"start": self.day, "days": 1})
+        self.assertEqual(out["could_not_read"], ["home"])
+        self.assertFalse(out["complete"])
+
+    def test_events_the_parser_skipped_make_it_incomplete(self):
+        def lister(tmin, tmax):
+            calsync._skipped.count = 2
+            return [event("Fine")]
+        self.cals["work"].list = lister
+        out = self.ok("calsync_agenda", {"start": self.day, "days": 1})
+        self.assertEqual(out["events_not_read"], 2)
+        self.assertFalse(out["complete"])
+
+    def test_no_calendars_is_not_a_free_week(self):
+        calsync.save_json(calsync.CONFIG, {"calendars": []})
+        self.assertIn("CALSYNC_HOME", self.failed("calsync_agenda"))
+
+    def test_zero_length_events_on_the_first_day_stay(self):
+        start = event("x", day=SOON, hour=0)["start"]
+        self.cals["work"].events = [event("Point", start=start, end=start), event("Day", all_day=True, start=self.day, end=self.day)]
+        titles = {r["title"] for r in self.ok("calsync_agenda", {"start": self.day, "days": 1})["events"]}
+        self.assertEqual(titles, {"Point", "Day"})
+
+    def test_private_on_any_calendar_means_private(self):
+        self.cals["work"].events = [event("Secret")]
+        self.cals["home"].events = [event("Secret", private=True)]
+        rows = self.ok("calsync_agenda", {"start": self.day, "days": 1})["events"]
+        self.assertEqual([r["title"] for r in rows], ["Busy"])
+        self.assertNotIn("Secret", json.dumps(rows))
+
+    def test_reported_zone_is_the_one_in_use(self):
+        with mock.patch.dict(os.environ, {"CALSYNC_TZ": "Mars/Olympus"}):
+            self.assertEqual(self.ok("calsync_status")["time_zone"], "UTC")
+
+    def test_no_guessing_titles(self):
+        self.cals["work"].events = [event("Lawyer", private=True)]
+        guess = f"Lawyer {self.day} 3pm 1h"
+        self.assertFalse(self.ok("calsync_check_event", {"text": guess})["already_there"])
+        self.cals["work"].events = [event("Lawyer")]
+        self.assertTrue(self.ok("calsync_check_event", {"text": guess})["already_there"])
+        self.assertNotIn("already_there", self.ok("calsync_check_event", {"text": guess}, {"write": False, "busy_only": True}))
+
+    def test_busy_only_and_allow_write_do_not_mix(self):
+        with mock.patch("sys.stderr", io.StringIO()):
+            self.assertEqual(calsync_mcp.main(["--busy-only", "--allow-write"]), 2)
+
+    def test_long_title_retry_adds_nothing(self):
+        words = "T" * 250 + f" {self.day} 3pm 1h"
+        with mock.patch.object(calsync, "run_once", return_value={"errors": 0}):
+            self.ok("calsync_add_event", {"text": words}, WRITE)
+            self.assertFalse(self.ok("calsync_add_event", {"text": words}, WRITE)["added"])
+        self.assertEqual(len(self.cals["work"].created), 1)
+
+    def test_read_only_or_feed_calendars_are_never_added_to(self):
+        cfg = calsync.load_json(calsync.CONFIG, {})
+        cfg["quick_add"] = {"calendar": "home"}
+        calsync.save_json(calsync.CONFIG, cfg)
+        self.assertIn("read only", self.failed("calsync_add_event", {"text": self.words}, WRITE))
+        self.assertEqual(self.cals["home"].created, [])
+        self.assertFalse(self.ok("calsync_check_event", {"text": self.words})["can_add"])
+
+    def test_sync_tools_are_marked_as_able_to_delete(self):
+        marked = {t["name"]: t["annotations"]["destructiveHint"] for t in calsync_mcp.TOOLS}
+        self.assertTrue(marked["calsync_sync_now"] and marked["calsync_add_event"])
+        self.assertFalse(marked["calsync_agenda"])
+
+    def stdio(self, *lines):
+        out = io.BytesIO()
+        with mock.patch.object(sys, "stdout", sys.stdout):
+            self.assertEqual(calsync_mcp.serve_stdio(READ, io.BytesIO(b"".join(lines)), out), 0)
+        return [json.loads(x) for x in out.getvalue().splitlines()]
+
+    def test_strange_ids_cannot_kill_the_loop_or_break_json(self):
+        ping = b'{"jsonrpc":"2.0","id":7,"method":"ping"}\n'
+        replies = self.stdio(b'{"jsonrpc":"2.0","id":"\\ud800","method":"ping"}\n', b'{"jsonrpc":"2.0","id":NaN,"method":"ping"}\n',
+                             b'{"jsonrpc":"2.0","id":1e999,"method":"ping"}\n', b'{"jsonrpc":"2.0","id":[1],"method":"ping"}\n', b'{"id":NaN}\n', ping)
+        self.assertEqual(replies[-1]["id"], 7)
+        self.assertEqual(len(replies), 6)
+        self.assertEqual([r["id"] for r in replies[1:5]], [None] * 4)
+
+    def test_the_rest_of_a_long_line_is_not_a_request(self):
+        tail = b'{"jsonrpc":"2.0","id":9,"method":"ping"}'
+        replies = self.stdio(b" " * 70000 + tail + b"\n", b'{"jsonrpc":"2.0","id":7,"method":"ping"}\n')
+        self.assertEqual([r.get("id") for r in replies], [None, 7])
+        self.assertIn("error", replies[0])
+
+    def test_the_real_parser_with_hostile_invites(self):
+        day = SOON.strftime("%Y%m%d")
+        def vevent(uid, start, end, title):
+            return f"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20260101T000000Z\r\nDTSTART:{start}\r\nDTEND:{end}\r\nSUMMARY:{title}\r\nEND:VEVENT\r\n"
+        text = ("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n" + vevent("year@x", "00010101T000000Z", "20991231T000000Z", "Year one")
+                + vevent("bad@x", "notadate", "notadate", "Bad date") + vevent("ok@x", f"{day}T160000Z", f"{day}T170000Z", "Fine") + "END:VCALENDAR\r\n")
+        self.cals["work"].list = lambda tmin, tmax: calsync.ics_events(text, tmin, tmax)
+        with mock.patch("sys.stderr", io.StringIO()):
+            out = self.ok("calsync_agenda", {"start": self.day, "days": 1})
+        self.assertIn("Fine", [r["title"] for r in out["events"]])
+        self.assertFalse(out["complete"])
+        self.assertGreaterEqual(out["events_not_read"], 1)
