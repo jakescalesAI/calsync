@@ -1370,6 +1370,13 @@ def quick_add_note(path, adapter, now=None, log=print):
 # ---------- agenda: the calendar written into a folder of Markdown notes ----------
 # A calendar that holds a copy of everything gives every calendar in one place.
 
+def _note_title(title):
+    """A title on one line that can't do anything in a note. Titles come from whoever invited you, and a note can run
+    code blocks and load images, so line breaks become spaces and the marks for code, images and HTML are escaped."""
+    title = " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", title).split())
+    return title.replace("`", "\\`").replace("![", "\\![").replace("<", "\\<")
+
+
 def agenda_days(events, today, days):
     """events -> {date: ['- 9:00–10:15 AM · Title', ...]} for today..today+days-1, local time."""
     tz = local_tz()
@@ -1380,7 +1387,7 @@ def agenda_days(events, today, days):
         if ev["declined"] or _canceled(ev) or key in seen:
             continue
         seen.add(key)
-        title = ev["title"] or "(no title)"
+        title = _note_title(ev["title"] or "") or "(no title)"
         if ev["all_day"]:
             d, last = dt.date.fromisoformat(ev["start"]), dt.date.fromisoformat(ev["end"])
             while d < last:

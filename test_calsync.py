@@ -710,5 +710,46 @@ class HostileCalendarTests(unittest.TestCase):
             self.assertEqual(dst.labels, want)
 
 
+class NoteTitleTests(unittest.TestCase):
+    def ev(self, title):
+        return dict(uid="1", title=title, start="2030-01-10T15:00:00Z", end="2030-01-10T16:00:00Z", all_day=False,
+                    busy=True, location="", private=False, declined=False, copy_of=None)
+
+    def test_a_title_cannot_add_lines_or_run_anything_in_a_note(self):
+        title = "Lunch\n# Injected\r\n```dataviewjs\nalert(1)\n```\n![x](https://example.com/p.png) `$=1` <img src=x>\t\x07end"
+        day = dt.date(2030, 1, 10)
+        line = calsync.agenda_days([self.ev(title)], day, 1)[day][0]
+        self.assertNotIn("\n", line)
+        self.assertEqual(line.split(" · ", 1)[1], "Lunch # Injected \\`\\`\\`dataviewjs alert(1) \\`\\`\\` \\![x](https://example.com/p.png) \\`$=1\\` \\<img src=x> end")
+
+    def test_ordinary_titles_read_the_same(self):
+        for title in ("Dentist", "Call: Sam & Alex (Q3) [room 2]", "Café · 3pm", "a_b *c* #d"):
+            self.assertEqual(calsync._note_title(title), title)
+
+    def test_an_empty_or_blank_title_still_says_no_title(self):
+        day = dt.date(2030, 1, 10)
+        for title in ("", " \n "):
+            self.assertTrue(calsync.agenda_days([self.ev(title)], day, 1)[day][0].endswith("· (no title)"))
+
+    def test_a_daily_note_does_not_grow_run_after_run(self):
+        vault = tempfile.mkdtemp()
+        os.makedirs(os.path.join(vault, "Daily"))
+        now = dt.datetime(2030, 1, 10, 12, tzinfo=dt.timezone.utc)
+        path = os.path.join(vault, "Daily", "2030-01-10.md")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("# Day\n\n## Calendar\n- old\n\n## Notes\nmine\n")
+
+        class Adapter:
+            def list(_, a, b):
+                return [self.ev("Lunch\n# Injected")]
+        for _ in range(3):
+            calsync.write_agenda({"vault": vault, "days": 1}, Adapter(), now)
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        self.assertEqual(text.count("Injected"), 1)
+        self.assertNotIn("\n# Injected", text)
+        self.assertTrue(text.endswith("## Notes\nmine\n"))
+
+
 if __name__ == "__main__":
     unittest.main()
