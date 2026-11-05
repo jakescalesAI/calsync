@@ -558,7 +558,9 @@ def _may_be_in_window(ev, lo, hi):
     """1 if an event calsync can't read could fall in [lo, hi]. One dead event from years ago says nothing about this week."""
     try:
         start, _ = _ics_time(*ev["DTSTART"][0])
-        return 0 if "RRULE" not in ev and not lo - dt.timedelta(days=366) <= start <= hi else 1
+        start = start if start.tzinfo else start.replace(tzinfo=lo.tzinfo)     # an all-day start has no zone
+        repeats = "RRULE" in ev or "RDATE" in ev
+        return 0 if not repeats and not lo - dt.timedelta(days=366) <= start <= hi else 1
     except (*_UNREADABLE, AttributeError):
         return 1
 
@@ -850,7 +852,8 @@ class CalDavCalendar:
         for href, props in _multistatus(raw):
             data = props.get(CALNS + "calendar-data")
             if data is None or not data.text:
-                if data is not None or href.endswith(".ics"):   # not the calendar's own entry, which has no data
+                is_folder = href.endswith("/") or urllib.parse.unquote(urllib.parse.urlsplit(href).path).rstrip("/") == urllib.parse.unquote(urllib.parse.urlsplit(self.url).path).rstrip("/")
+                if data is not None or not is_folder:       # the calendar's own entry has no data, and isn't an event
                     _skipped.count = getattr(_skipped, "count", 0) + 1
                 continue
             for ev in ics_events(data.text, tmin, tmax, self.me, deadline):
@@ -1217,7 +1220,7 @@ QUICK_HINT = 'add a day and time, e.g. "fri 3pm"'
 
 def _clock(s):
     """'3pm' -> (3, 0, 'pm'); '15:00' -> (15, 0, None); 'noon' -> (12, 0, 'pm')."""
-    s = s.replace(" ", "")
+    s = s.replace(" ", "").lower()
     if s in ("noon", "midnight"):
         return (12, 0, "pm") if s == "noon" else (12, 0, "am")
     m = re.fullmatch(r"(\d{1,2})(?::(\d{2}))?([ap])?m?", s)
@@ -1234,7 +1237,7 @@ def _h24(h, mer):
 
 
 def _strong(s):
-    return bool(re.search(r"[ap]m?$|:|noon|midnight", s.replace(" ", "")))
+    return bool(re.search(r"[ap]m?$|:|noon|midnight", s.replace(" ", "").lower()))
 
 
 def quick_parse(text, now=None):
@@ -1282,8 +1285,8 @@ def quick_parse(text, now=None):
                                 int(m.group(1)), m.group(2)))
      or take(pre + rf"({_MON})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,?\s+(\d{{4}}))?(?!\w)",
              lambda m: explicit(m.group(3), _MONTHS[m.group(1).lower()], m.group(2)))
-     or take(pre + rf"(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?({_MON})(?!\w)",
-             lambda m: explicit(None, _MONTHS[m.group(2).lower()], m.group(1)))
+     or take(pre + rf"(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?({_MON})(?:,?\s+(\d{{4}}))?(?!\w)",
+             lambda m: explicit(m.group(3), _MONTHS[m.group(2).lower()], m.group(1)))
      or take(pre + rf"(?:(next|this)\s+)?({_WD})\.?(?!\w)", weekday))
 
     def time_range(m):

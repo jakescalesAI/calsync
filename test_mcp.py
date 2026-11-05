@@ -575,8 +575,8 @@ class TesterFindings(Base):
     def test_a_date_that_does_not_exist_is_refused(self):
         for words in ("X 2030-13-45 3pm", "Y 2/30 3pm", "Feb 30 3pm dentist", "dentist Jan 32 3pm", "June 31st 3pm call", "31 June 3pm call",
                       "X (2/30) 3pm", "X 2/30. 3pm", "2030/13/45 3pm call", "13.45.2030 3pm call", "30-02-2030 3pm call", "24/7 support 3pm"):
-            self.assertIn("doesn't exist", self.failed("calsync_check_event", {"text": words}), words)
-            self.assertIn("doesn't exist", self.failed("calsync_add_event", {"text": words}, WRITE), words)
+            self.assertIn("can't read", self.failed("calsync_check_event", {"text": words}), words)
+            self.assertIn("can't read", self.failed("calsync_add_event", {"text": words}, WRITE), words)
         self.assertEqual(self.cals["work"].created, [])
 
     def test_a_date_shape_in_a_title_is_fine_when_the_day_was_given(self):
@@ -628,3 +628,69 @@ class TesterFindings(Base):
             cfg["calendars"][0].update(name=name, calendar_id=address)
             calsync.save_json(calsync.CONFIG, cfg)
             self.assertEqual(calsync_mcp.public_names()[name] != name, hidden, name)
+
+    def test_capitals_in_a_time(self):
+        for words, title in (("Dentist tomorrow 3:00 PM", "Dentist"), ("Dentist tomorrow 3PM", "Dentist"), ("Dentist tomorrow at 3PM", "Dentist"), ("Dentist tomorrow 3 PM", "Dentist"),
+                             ("Dentist 3:00 PM", "Dentist"), ("Dentist tomorrow 3-4PM", "Dentist"), ("Dentist tomorrow 3:00-4:00 PM", "Dentist")):
+            ev, why = calsync.quick_parse(words)
+            self.assertFalse(ev["all_day"], words)
+            self.assertEqual((ev["title"], ev["start"].hour, ev["start"].minute), (title, 15, 0), words)
+        self.assertEqual(calsync.quick_parse("Lunch tomorrow NOON")[0]["start"].hour, 12)
+        self.assertEqual(calsync.quick_parse("Call tomorrow 10:30 AM")[0]["start"].hour, 10)
+
+    def test_two_days_are_refused_unless_one_is_firm(self):
+        for words in ("Review 3/4 report friday 3pm", "Review 3/4 report on friday 3pm", "Review 3/4 report next tuesday 3pm", "Review 3/4 report Dec 5 3pm", "Review 3/4 report 5 Dec 3pm",
+                      "Review 3/4 3/5 3pm", "Mon Tue review 3pm", "Review 3/4 report friday all day"):
+            self.assertIn("more than one day", self.failed("calsync_check_event", {"text": words}), words)
+            self.assertIn("more than one day", self.failed("calsync_add_event", {"text": words}, WRITE), words)
+        self.assertEqual(self.cals["work"].created, [])
+        for words, title in (("Standup fri 3pm", "Standup"), ("Friday review tomorrow 3pm", "Friday review"), ("50/50 split 3/4 3pm", "50/50 split"), ("24/7 support 3/4 3pm", "24/7 support"),
+                             ("Monday plan 2030-01-31 3pm", "Monday plan")):
+            self.assertEqual(self.ok("calsync_check_event", {"text": words})["title"], title, words)
+
+    def test_a_day_month_year_keeps_its_year(self):
+        out = self.ok("calsync_check_event", {"text": "dentist 5 Nov 2030 3pm"})
+        self.assertEqual((out["title"], out["date"]), ("dentist", "2030-11-05"))
+
+    def test_more_dates_the_engine_would_keep_in_the_title(self):
+        for words in ("X 2030.13.45 3pm", "dentist 2026.11.05 3pm", "Feb30 3pm call", "30-Feb 3pm call", "Feb/30 3pm call"):
+            self.assertIn("can't read", self.failed("calsync_check_event", {"text": words}), words)
+
+    def test_only_a_bad_certificate_says_certificate(self):
+        import ssl, urllib.error
+        self.assertEqual(calsync_mcp.failure(ssl.SSLError("wrong version")), calsync_mcp.NETWORK)
+        self.assertEqual(calsync_mcp.failure(urllib.error.URLError(ssl.SSLError("closed"))), calsync_mcp.NETWORK)
+        import xml.etree.ElementTree as ET
+        with self.assertRaises(ET.ParseError) as bad:
+            ET.fromstring("<a")
+        self.assertEqual(calsync_mcp.failure(bad.exception), calsync_mcp.BAD_DATA)
+
+    def test_broken_events_that_count_and_do_not(self):
+        def vcal(*lines):
+            return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n" + "\r\n".join(lines) + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        day = SOON.strftime("%Y%m%d")
+        for text, want in ((vcal("DTSTART;VALUE=DATE:20150101", "SUMMARY:Old all day, no uid"), 0), (vcal(f"DTSTART;VALUE=DATE:{day}", "SUMMARY:Near all day, no uid"), 1),
+                           (vcal("DTSTART:20150101T100000Z", f"RDATE:{day}T100000Z", "SUMMARY:Old with a new date, no uid"), 1)):
+            self.cals["work"].list = lambda tmin, tmax, text=text: calsync.ics_events(text, tmin, tmax)
+            with mock.patch("sys.stderr", io.StringIO()):
+                out = self.ok("calsync_agenda", {"start": self.day, "days": 1})
+            self.assertEqual(out["events_not_read"], want, text)
+
+    def test_a_name_holding_an_address_is_hidden(self):
+        cfg = calsync.load_json(calsync.CONFIG, {})
+        cfg["calendars"][0].update(name="sam@example.com", calendar_id="opaque-id")
+        calsync.save_json(calsync.CONFIG, cfg)
+        self.assertEqual(calsync_mcp.public_names()["sam@example.com"], "unnamed-calendar-1")
+
+    def test_caldav_entries_with_no_data(self):
+        def body(*hrefs):
+            rows = "".join(f'<d:response><d:href>{h}</d:href><d:propstat><d:prop><d:getetag>"1"</d:getetag></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>' for h in hrefs)
+            return f'<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">{rows}</d:multistatus>'
+        for hrefs, want in ((("/dav/cal/",), 0), (("/dav/cal",), 0), (("/dav/cal/a.ics",), 1), (("/dav/cal/a",), 1), (("/dav/cal/a.ICS",), 1), (("/dav/cal/a.ics?v=1",), 1), (("/dav/cal/",  "/dav/cal/a.EML"), 1)):
+            cal = calsync.CalDavCalendar.__new__(calsync.CalDavCalendar)
+            cal.url, cal.me = "https://dav.example/dav/cal/", ""
+            cal.client = mock.Mock()
+            cal.client.request.return_value = (207, body(*hrefs).encode(), cal.url)
+            calsync.take_skipped()
+            cal.list("2030-01-01T00:00:00Z", "2030-01-02T00:00:00Z")
+            self.assertEqual(calsync.take_skipped(), want, hrefs)
