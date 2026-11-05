@@ -454,7 +454,7 @@ def ics_events(text, tmin, tmax, me=(), deadline=None):
     masters, overrides = [], {}
     for ev in parse_ics(text):
         if "DTSTART" not in ev or "UID" not in ev:
-            skipped += 1
+            skipped += _may_be_in_window(ev, lo, hi)
             continue
         if "RECURRENCE-ID" in ev:
             try:
@@ -538,7 +538,7 @@ def ics_events(text, tmin, tmax, me=(), deadline=None):
         try:
             out += [inst for inst in expand(ev) if inst]
         except _UNREADABLE:
-            skipped += 1
+            skipped += _may_be_in_window(ev, lo, hi)
     for (uid, key), ev in overrides.items():  # moved occurrences whose original slot fell outside the window
         try:
             s2, ad2 = _ics_time(*first(ev, "DTSTART"))
@@ -552,6 +552,15 @@ def ics_events(text, tmin, tmax, me=(), deadline=None):
         _skipped.count = getattr(_skipped, "count", 0) + skipped
         print(f"calsync: skipped {skipped} event(s) on a calendar because they couldn't be read", file=sys.stderr)
     return out
+
+
+def _may_be_in_window(ev, lo, hi):
+    """1 if an event calsync can't read could fall in [lo, hi]. One dead event from years ago says nothing about this week."""
+    try:
+        start, _ = _ics_time(*ev["DTSTART"][0])
+        return 0 if "RRULE" not in ev and not lo - dt.timedelta(days=366) <= start <= hi else 1
+    except (*_UNREADABLE, AttributeError):
+        return 1
 
 
 _skipped = threading.local()
@@ -841,7 +850,8 @@ class CalDavCalendar:
         for href, props in _multistatus(raw):
             data = props.get(CALNS + "calendar-data")
             if data is None or not data.text:
-                _skipped.count = getattr(_skipped, "count", 0) + 1
+                if data is not None or href.endswith(".ics"):   # not the calendar's own entry, which has no data
+                    _skipped.count = getattr(_skipped, "count", 0) + 1
                 continue
             for ev in ics_events(data.text, tmin, tmax, self.me, deadline):
                 if ev["copy_of"]:
@@ -1333,7 +1343,7 @@ def quick_parse(text, now=None):
             end += dt.timedelta(days=1)
     else:
         end = start + dt.timedelta(minutes=found.get("minutes", 60))
-    return {"title": title, "all_day": False, "start": start, "end": end, "when": f"{start:%a %b} {start.day}, {_span(start, end)}"}, None
+    return {"title": title, "all_day": False, "start": start, "end": end, "when": f"{start:%a %b} {start.day}, {_span(start, end)}", "day_stated": "date" in found}, None
 
 
 def _span(start, end):

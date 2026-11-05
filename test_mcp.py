@@ -538,7 +538,7 @@ class TesterFindings(Base):
                           (RuntimeError("GET https://x/ -> 429 slow"), calsync_mcp.SERVER),
                           (RuntimeError("GET https://x/ -> 503 down"), calsync_mcp.SERVER),
                           (urllib.error.URLError("no route"), calsync_mcp.NETWORK), (TimeoutError(), calsync_mcp.NETWORK),
-                          (PermissionError("/secret/path"), calsync_mcp.FILES), (json.JSONDecodeError("bad", "x", 0), calsync_mcp.FILES),
+                          (PermissionError("/secret/path"), calsync_mcp.FILES), (json.JSONDecodeError("bad", "x", 0), calsync_mcp.BAD_DATA),
                           (RuntimeError("nonnumeric port: 'PW@x'"), calsync_mcp.UNKNOWN)):
             self.assertEqual(calsync_mcp.failure(err), want, err)
 
@@ -558,25 +558,36 @@ class TesterFindings(Base):
 
     def test_a_name_spelling_out_an_address_is_not_shown(self):
         cfg = calsync.load_json(calsync.CONFIG, {})
-        cfg["calendars"][0].update(name="work-jake-real-gmail-com", calendar_id="jake.real@gmail.com")
+        cfg["calendars"][0].update(name="work-sam-real-example-com", calendar_id="sam.real@example.com")
         calsync.save_json(calsync.CONFIG, cfg)
-        self.cals["work-jake-real-gmail-com"] = Fake(event("Fine"))
+        self.cals["work-sam-real-example-com"] = Fake(event("Fine"))
         status = json.dumps(self.ok("calsync_status"))
         agenda = json.dumps(self.ok("calsync_agenda", {"start": self.day, "days": 1}))
         check = self.ok("calsync_check_event", {"text": self.words})
-        self.assertEqual(check["calendar"], "calendar-1")
+        self.assertEqual(check["calendar"], "unnamed-calendar-1")
         for text in (status, agenda):
-            self.assertNotIn("jake", text)
-            self.assertIn("calendar-1", text)
+            self.assertNotIn("sam", text)
+            self.assertIn("unnamed-calendar-1", text)
 
     def test_ordinary_names_are_kept(self):
         self.assertEqual(calsync_mcp.public_names(), {"work": "work", "home": "home"})
 
     def test_a_date_that_does_not_exist_is_refused(self):
-        for words in ("X 2030-13-45 3pm", "Y 2/30 3pm"):
-            self.assertIn("doesn't exist", self.failed("calsync_check_event", {"text": words}))
-            self.assertIn("doesn't exist", self.failed("calsync_add_event", {"text": words}, WRITE))
+        for words in ("X 2030-13-45 3pm", "Y 2/30 3pm", "Feb 30 3pm dentist", "dentist Jan 32 3pm", "June 31st 3pm call", "31 June 3pm call",
+                      "X (2/30) 3pm", "X 2/30. 3pm", "2030/13/45 3pm call", "13.45.2030 3pm call", "30-02-2030 3pm call", "24/7 support 3pm"):
+            self.assertIn("doesn't exist", self.failed("calsync_check_event", {"text": words}), words)
+            self.assertIn("doesn't exist", self.failed("calsync_add_event", {"text": words}, WRITE), words)
         self.assertEqual(self.cals["work"].created, [])
+
+    def test_a_date_shape_in_a_title_is_fine_when_the_day_was_given(self):
+        for title in ("Review 3/4 report", "24/7 support call", "50/50 split review", "Room 12/3", "9/11 memorial"):
+            out = self.ok("calsync_check_event", {"text": f"{title} tomorrow 3pm"})
+            self.assertIn(title.split()[0], out["title"], title)
+        self.assertEqual(self.ok("calsync_check_event", {"text": "Version 2.5 review tomorrow 3pm"})["title"], "Version 2.5 review")
+        self.assertIn("2.5", self.ok("calsync_check_event", {"text": "Version 2.5 review 3pm"})["title"])
+
+    def test_ordinary_events_with_no_day_still_work(self):
+        self.assertEqual(self.ok("calsync_check_event", {"text": "Standup 3pm"})["title"], "Standup")
 
     def test_a_date_far_away_is_refused(self):
         for words in ("Old 0001-01-05 3pm", "Far 2999-01-05 3pm"):
@@ -585,3 +596,35 @@ class TesterFindings(Base):
 
     def test_the_reply_shows_the_whole_date(self):
         self.assertEqual(self.ok("calsync_check_event", {"text": self.words})["date"], self.day)
+
+    def test_a_reply_cannot_choose_the_reason(self):
+        for words in ("not signed in", "invalid_grant", "turned down that username"):
+            self.assertEqual(calsync_mcp.failure(RuntimeError(f"writing to this calendar -> 403 {words}")), calsync_mcp.REFUSED)
+            self.assertEqual(calsync_mcp.failure(RuntimeError(f"GET https://x/ -> 404 {words}")), calsync_mcp.GONE)
+
+    def test_more_failure_kinds(self):
+        import ssl, urllib.error
+        self.assertEqual(calsync_mcp.failure(RuntimeError("GET https://x/ -> 410 gone")), calsync_mcp.GONE)
+        self.assertEqual(calsync_mcp.failure(urllib.error.URLError(ssl.SSLCertVerificationError("bad"))), calsync_mcp.UNTRUSTED_SERVER)
+        self.assertEqual(calsync_mcp.failure(json.JSONDecodeError("bad", "x", 0)), calsync_mcp.BAD_DATA)
+
+    def test_a_dead_event_far_outside_the_window_does_not_alarm(self):
+        def vcal(*lines):
+            return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n" + "\r\n".join(lines) + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        day = SOON.strftime("%Y%m%d")
+        for text, want in ((vcal("DTSTART:20150101T100000Z", "SUMMARY:Old, no uid"), 0), (vcal("DTSTART:20990101T100000Z", "SUMMARY:Far, no uid"), 0),
+                           (vcal("UID:o@x", "DTSTART:20150101T100000Z", "DTEND:nonsense", "SUMMARY:Old, bad end"), 0),
+                           (vcal(f"DTSTART:{day}T100000Z", "SUMMARY:Now, no uid"), 1), (vcal("DTSTART:20150101T100000Z", "RRULE:FREQ=DAILY", "SUMMARY:Repeats, no uid"), 1),
+                           (vcal("UID:b@x", "DTSTART:nonsense", "SUMMARY:Bad start"), 1)):
+            self.cals["work"].list = lambda tmin, tmax, text=text: calsync.ics_events(text, tmin, tmax)
+            with mock.patch("sys.stderr", io.StringIO()):
+                out = self.ok("calsync_agenda", {"start": self.day, "days": 1})
+            self.assertEqual(out["events_not_read"], want, text)
+
+    def test_names_are_not_hidden_by_accident(self):
+        cfg = calsync.load_json(calsync.CONFIG, {})
+        for name, address, hidden in (("work-Home", "me@x.com", False), ("work-Sam-birthdays", "sam@x.com", False), ("work-Q1-plans", "1@x.com", False),
+                                      ("work-sam-x-com", "sam@x.com", True), ("a-long-label-for-this-account-sam-real", "sam.real@example.com", True)):
+            cfg["calendars"][0].update(name=name, calendar_id=address)
+            calsync.save_json(calsync.CONFIG, cfg)
+            self.assertEqual(calsync_mcp.public_names()[name] != name, hidden, name)
