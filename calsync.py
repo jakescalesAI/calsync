@@ -1237,7 +1237,8 @@ def _h24(h, mer):
 
 
 def _strong(s):
-    return bool(re.search(r"[ap]m?$|:|noon|midnight", s.replace(" ", "").lower()))
+    """Whether this alone says it's a time. In capitals only AM, PM, NOON and MIDNIGHT do: 4A is a room, and Noon or Midnight can start a title."""
+    return bool(re.search(r"[ap]$|(?i:[ap]m)$|:|noon|midnight|NOON|MIDNIGHT", s.replace(" ", "")))
 
 
 def quick_parse(text, now=None):
@@ -1285,7 +1286,7 @@ def quick_parse(text, now=None):
                                 int(m.group(1)), m.group(2)))
      or take(pre + rf"({_MON})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,?\s+(\d{{4}}))?(?!\w)",
              lambda m: explicit(m.group(3), _MONTHS[m.group(1).lower()], m.group(2)))
-     or take(pre + rf"(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?({_MON})(?:,?\s+(\d{{4}}))?(?!\w)",
+     or take(pre + rf"(\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?({_MON})(?:,?\s+(20[2-9]\d))?(?!\w)",
              lambda m: explicit(m.group(3), _MONTHS[m.group(2).lower()], m.group(1)))
      or take(pre + rf"(?:(next|this)\s+)?({_WD})\.?(?!\w)", weekday))
 

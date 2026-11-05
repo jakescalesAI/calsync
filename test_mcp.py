@@ -694,3 +694,27 @@ class TesterFindings(Base):
             calsync.take_skipped()
             cal.list("2030-01-01T00:00:00Z", "2030-01-02T00:00:00Z")
             self.assertEqual(calsync.take_skipped(), want, hrefs)
+
+    def test_a_capital_letter_after_a_number_is_not_a_time(self):
+        for words, title, hour in (("Interview Room 4A tomorrow 3pm", "Interview Room 4A", 15), ("Gate 3A pickup tomorrow 6:30pm", "Gate 3A pickup", 18), ("Apt 3P inspection fri 10am", "Apt 3P inspection", 10),
+                                   ("Midnight Run movie fri 8pm", "Midnight Run movie", 20), ("Noon yoga fri 6pm", "Noon yoga", 18)):
+            ev, _ = calsync.quick_parse(words)
+            self.assertEqual((ev["title"], ev["start"].hour), (title, hour), words)
+        for words, title in (("Viewing Apt 3A tomorrow", "Viewing Apt 3A"), ("Midnight Mass tomorrow", "Midnight Mass")):
+            ev, _ = calsync.quick_parse(words)
+            self.assertEqual((ev["title"], ev["all_day"]), (title, True), words)
+        self.assertEqual(calsync.quick_parse("Lunch tomorrow at Noon")[0]["start"].hour, 12)
+        self.assertEqual(calsync.quick_parse("Show tomorrow MIDNIGHT")[0]["start"].hour, 0)
+
+    def test_only_a_likely_year_is_taken_after_a_day_and_month(self):
+        ev, _ = calsync.quick_parse("Gala 5 Nov 2000 guests 3pm")
+        self.assertEqual(ev["title"], "Gala 2000 guests")
+        self.assertEqual(calsync.quick_parse("Gala 5 Nov 2031 3pm")[0]["start"].year, 2031)
+
+    def test_names_ending_like_an_address_are_hidden(self):
+        cfg = calsync.load_json(calsync.CONFIG, {})
+        for name, hidden in (("work-other-person-gmail-com", True), ("work-boss-corp-com", True), ("fm-sam-fastmail-com", True), ("icloud-sam-icloud-com", True),
+                             ("work-Home", False), ("work-about-me", False), ("team-plans", False)):
+            cfg["calendars"][0].update(name=name, calendar_id="opaque-id")
+            calsync.save_json(calsync.CONFIG, cfg)
+            self.assertEqual(calsync_mcp.public_names()[name] != name, hidden, name)
