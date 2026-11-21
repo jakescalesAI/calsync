@@ -9,7 +9,7 @@ through esc(). Tokens, client secrets, CalDAV passwords and .ics links are store
   CALSYNC_PUBLIC_URL  https address, if you put it behind your own proxy; used as Google's redirect
   CALSYNC_HOSTS       extra host names allowed to reach it, comma separated
 """
-import hashlib, hmac, html, http.cookies, http.server, ipaddress, json, os, re, secrets, signal, threading, time, urllib.parse
+import base64, hashlib, hmac, html, http.cookies, http.server, ipaddress, json, os, re, secrets, signal, threading, time, urllib.parse
 import calsync as engine
 
 PORT = int(os.environ.get("CALSYNC_PORT") or 8484)
@@ -120,31 +120,98 @@ def is_loopback(ip):
 
 # ---------- pages ----------
 
+# brand/mark-small-white.svg, sent inside the page so the content policy can stay closed; the stylesheet turns it dark-on-light for a light page
+MARK = "data:image/svg+xml;base64," + base64.b64encode((
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="calsync">'
+    '<rect x="2.85" y="4.85" width="58.3" height="58.3" rx="13.2" fill="#f5f5f5" stroke="#0a0a0a" stroke-width="1.7"/>'
+    '<rect x="17.5" y="0" width="5" height="11.5" rx="2.5" fill="#f5f5f5" stroke="#0a0a0a" stroke-width="1.7"/>'
+    '<rect x="41.5" y="0" width="5" height="11.5" rx="2.5" fill="#f5f5f5" stroke="#0a0a0a" stroke-width="1.7"/>'
+    '<g fill="none" stroke="#0a0a0a" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 33V25.1A8.5 8.5 0 0 1 17.5 16.6H46.5A8.5 8.5 0 0 1 55 25.1V33.6M49.9 28.5L55 33.6L60.1 28.5"/><path transform="rotate(180 32 37.4)" d="M9 33V25.1A8.5 8.5 0 0 1 17.5 16.6H46.5A8.5 8.5 0 0 1 55 25.1V33.6M49.9 28.5L55 33.6L60.1 28.5"/></g>'
+    '<path d="M25.78 50.67Q23.3 50.67 21.39 49.81Q19.47 48.96 18.37 47.46Q17.26 45.95 17.2 43.98L21.44 43.98Q21.5 44.94 22.08 45.65Q22.66 46.36 23.62 46.75Q24.58 47.13 25.78 47.13Q27.04 47.13 28.01 46.69Q28.98 46.25 29.54 45.45Q30.1 44.66 30.1 43.62Q30.1 42.54 29.53 41.72Q28.96 40.9 27.91 40.44Q26.85 39.97 25.35 39.97L23.27 39.97L23.27 36.72L25.35 36.72Q26.58 36.72 27.51 36.29Q28.44 35.86 28.96 35.08Q29.49 34.31 29.49 33.28Q29.49 32.29 29.04 31.55Q28.59 30.81 27.76 30.39Q26.93 29.97 25.83 29.97Q24.74 29.97 23.82 30.36Q22.91 30.75 22.34 31.46Q21.77 32.17 21.74 33.17L17.69 33.17Q17.72 31.2 18.82 29.71Q19.91 28.22 21.75 27.38Q23.59 26.53 25.86 26.53Q28.21 26.53 29.94 27.42Q31.68 28.3 32.63 29.78Q33.59 31.25 33.59 33.03Q33.59 35.02 32.42 36.36Q31.25 37.7 29.34 38.13L29.34 38.32Q30.98 38.54 32.12 39.29Q33.25 40.04 33.85 41.2Q34.44 42.37 34.44 43.84Q34.44 45.81 33.32 47.35Q32.2 48.9 30.25 49.78Q28.3 50.67 25.78 50.67ZM46.4 26.85L46.4 50.35L42.22 50.35L42.22 30.6L42.06 30.6L36.58 34.55L36.58 30.54L41.73 26.85Z" fill="#0a0a0a" stroke="#0a0a0a" stroke-width="0.5" stroke-linejoin="round"/>'
+    '</svg>'
+).encode()).decode()
+
 CSS = """
-:root{color-scheme:dark;--bg:#000;--card:#0b0b0c;--ink:#fff;--soft:#b0b0b0;--line:#262626;--accent:#fff;--accent-ink:#000;--bad:#ff9d9d;--note:#151516}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-header{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:16px;border-bottom:1px solid var(--line);background:var(--card)}
-header b{font-size:18px;margin-right:auto}header a{color:var(--soft);text-decoration:none}header a:hover{color:var(--ink)}
-main{max-width:760px;margin:0 auto;padding:24px 16px 64px}h1{font-size:26px;line-height:1.2;margin:0 0 16px}h2{font-size:19px;margin:32px 0 12px}
-section,.row{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin:0 0 12px}
-.row{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}.row>div{min-width:0;overflow-wrap:anywhere}
-label{display:block;font-weight:600;margin:12px 0 4px}label.check{font-weight:400;display:flex;gap:8px;align-items:flex-start;margin:6px 0}
-input[type=text],input[type=password],input[type=url],select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
-button,.button{display:inline-block;padding:10px 18px;border-radius:999px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
-button.plain,.button.plain{background:transparent;color:var(--ink);border-color:var(--line)}button.danger{background:transparent;color:var(--bad);border-color:var(--bad)}
-form.inline{display:inline}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.actions.flat{margin:0}.soft{color:var(--soft)}.bad{color:var(--bad);font-weight:600}
-.note{background:var(--note);border-color:transparent}ol{padding-left:22px}li{margin:6px 0}code{background:var(--note);padding:2px 5px;border-radius:5px;overflow-wrap:anywhere}
-.code{font:700 28px/1.2 ui-monospace,monospace;letter-spacing:2px}pre{background:var(--note);padding:12px;border-radius:8px;overflow:auto;max-height:420px;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+:root{color-scheme:light dark;--bg:#fafafa;--panel:#fff;--field:#fff;--well:#f0f0f0;--hover:rgba(0,0,0,.04);--ring:rgba(0,0,0,.08);--glass:rgba(250,250,250,.82);
+--line:rgba(0,0,0,.1);--line2:rgba(0,0,0,.24);--edge:#858585;--text:#0a0a0a;--body:#353535;--dim:#5c5c5c;--faint:#737373;--bad:#b3261e;--bad-line:rgba(179,38,30,.4);--bad-bg:rgba(179,38,30,.05);
+--sans:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#050505;--panel:#0c0c0c;--field:#050505;--well:#151515;--hover:rgba(255,255,255,.06);--ring:rgba(255,255,255,.08);--glass:rgba(5,5,5,.72);
+--line:rgba(255,255,255,.09);--line2:rgba(255,255,255,.22);--edge:#6e6e6e;--text:#f5f5f5;--body:#c4c4c4;--dim:#9a9a9a;--faint:#808080;--bad:#ff9d9d;--bad-line:rgba(255,157,157,.45);--bad-bg:rgba(255,120,120,.07)}}
+*,*::before,*::after{box-sizing:border-box}html{-webkit-text-size-adjust:100%;text-size-adjust:100%;background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--body);font:400 16px/1.55 var(--sans);-webkit-font-smoothing:antialiased;overflow-wrap:break-word}
+a{color:var(--text);text-decoration:underline;text-decoration-color:var(--line2);text-decoration-thickness:1px;text-underline-offset:.2em}a:hover{text-decoration-color:currentColor}
+:focus-visible{outline:2px solid var(--text);outline-offset:2px}b,strong{color:var(--text);font-weight:600}p{margin:0 0 12px}.soft{color:var(--dim)}
+header{position:sticky;top:0;z-index:5;background:var(--glass);border-bottom:1px solid var(--line);-webkit-backdrop-filter:saturate(140%) blur(14px);backdrop-filter:saturate(140%) blur(14px)}
+.bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 24px;max-width:1040px;min-height:64px;margin:0 auto;padding:10px 24px}
+.brand{display:inline-flex;align-items:center;gap:10px;font-weight:600;font-size:19px;letter-spacing:-.015em;text-decoration:none}.brand img,.empty img{display:block}
+nav{display:flex;gap:4px;font-size:14px}nav a{padding:7px 13px;border-radius:999px;color:var(--dim);font-weight:500;text-decoration:none;white-space:nowrap}
+nav a:hover{color:var(--text);background:var(--hover)}nav a[aria-current]{color:var(--text);background:var(--well);box-shadow:inset 0 0 0 1px var(--line)}
+main{max-width:720px;margin:0 auto;padding:40px 24px 96px}main.wide{max-width:1040px}
+h1,h2{color:var(--text);font-weight:600;text-wrap:balance;overflow-wrap:anywhere}h1{font-size:30px;line-height:1.1;letter-spacing:-.035em;margin:0 0 20px}
+h2{font-size:18px;line-height:1.3;letter-spacing:-.02em;margin:40px 0 12px}h1+h2{margin-top:28px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin:0 0 12px}section>:first-child{margin-top:0}section>:last-child,section>form>:last-child{margin-bottom:0}
+label{display:block;margin:16px 0 6px;color:var(--text);font-size:14px;font-weight:600}form>label:first-child,input[type=hidden]+label{margin-top:0}
+label.check{display:flex;gap:10px;align-items:flex-start;margin:10px 0;color:var(--body);font-size:15px;font-weight:400;cursor:pointer}
+input[type=checkbox]{flex:none;width:18px;height:18px;margin:2px 0 0;accent-color:var(--text);cursor:pointer}
+input[type=text],input[type=password],input[type=url],select{display:block;width:100%;min-height:44px;padding:9px 12px;border:1px solid var(--edge);border-radius:10px;background:var(--field);color:var(--text);font:inherit}
+input::placeholder{color:var(--faint);opacity:1}input+p.soft{margin:6px 0 0;font-size:14px}input:hover,select:hover{border-color:var(--text)}input:focus-visible,select:focus-visible{outline-offset:1px;border-color:var(--text)}
+button,.button{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:9px 18px;border:1px solid var(--text);border-radius:999px;background:var(--text);color:var(--bg);
+font:600 15px/1.25 var(--sans);text-align:center;text-decoration:none;cursor:pointer;transition:background-color .15s,border-color .15s,color .15s,box-shadow .15s}
+button:hover,.button:hover{box-shadow:0 0 0 4px var(--ring)}button.plain,.button.plain{background:transparent;color:var(--text);border-color:var(--line2)}
+button.plain:hover,.button.plain:hover{background:var(--hover);border-color:var(--text);box-shadow:none}button.danger{background:transparent;color:var(--bad);border-color:var(--bad-line)}
+button.danger:hover{background:var(--bad);color:var(--bg);border-color:var(--bad);box-shadow:none}form.inline{display:inline-flex}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:20px}.actions.flat{margin:0}
+.flash{display:flex;align-items:baseline;gap:10px;margin:0 0 20px;padding:12px 16px;border:1px solid var(--line2);border-radius:12px;background:var(--well);color:var(--text);font-weight:500}
+.flash::before,.state::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--text);transform:translateY(-1px)}
+.bad{color:var(--bad);font-weight:600}section.bad{border-color:var(--bad-line);background:var(--bad-bg);font-weight:500;overflow-wrap:anywhere}
+.note{border-style:dashed;border-color:var(--line2);background:transparent;color:var(--dim);font-size:15px}
+.empty{display:grid;justify-items:center;gap:8px;padding:56px 24px;border-style:dashed;border-color:var(--line2);text-align:center}.empty p{max-width:34ch;margin:8px 0}
+.list{padding:0}.row{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;padding:14px 20px;border-top:1px solid var(--line)}.row:first-child{border-top:0}
+.row>div:not(.actions){flex:1 1 150px;min-width:0;overflow-wrap:anywhere}.row .soft{display:block;font-size:14px}.row button,.row .button{min-height:36px;padding:6px 15px;font-size:14px}
+.tile{flex:none;display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:var(--well);color:var(--text);font-weight:600;font-size:14px}
+.head{display:flex;align-items:center;gap:16px;margin:0 0 16px}section+.button,h1+.button{margin-top:8px}.out main>.button{display:flex;width:fit-content;margin:16px auto 0}
+.chip{display:inline-block;padding:2px 9px;border:1px solid var(--line2);border-radius:999px;color:var(--dim);font-size:12px;line-height:1.5;white-space:nowrap}
+.cal{padding:0}summary{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:14px 20px;border-radius:13px;cursor:pointer;list-style:none}summary::-webkit-details-marker{display:none}
+summary:hover{background:var(--hover)}.who{flex:1 1 130px;display:grid;min-width:0;overflow-wrap:anywhere}.who .soft{font-size:13px}.chips{display:flex;flex-wrap:wrap;gap:6px}
+.more{color:var(--dim);font-size:13px;white-space:nowrap}.more::after{content:"";display:inline-block;width:7px;height:7px;margin-left:8px;border:solid;border-width:0 1.5px 1.5px 0;transform:translateY(-3px) rotate(45deg);transition:transform .15s}
+details[open] .more{color:var(--text)}details[open] .more::after{transform:translateY(1px) rotate(225deg)}details[open]>summary{border-radius:13px 13px 0 0}
+.opts{padding:16px 20px 20px;border-top:1px solid var(--line)}.opts>.actions{padding-top:16px;border-top:1px solid var(--line)}
+.state{display:flex;align-items:baseline;gap:10px;color:var(--text);font-weight:600}.state::before{background:transparent;box-shadow:inset 0 0 0 1.5px var(--faint)}.state.on::before{background:var(--text);box-shadow:0 0 0 4px var(--ring)}
+.state+.soft{font-size:14px}.tally{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 14px;padding:0;list-style:none}
+.tally li{margin:0;padding:10px 12px;border-radius:10px;background:var(--well);color:var(--text);font-weight:600;font-size:15px}
+ol{margin:16px 0;padding:0;list-style:none;counter-reset:step}ol li{position:relative;min-height:28px;margin:0;padding:11px 0 11px 44px;border-top:1px solid var(--line);counter-increment:step}
+ol li:first-child{border-top:0}ol li::before{content:counter(step);position:absolute;left:0;top:10px;display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--line2);border-radius:50%;color:var(--text);font:600 13px var(--mono)}
+ol+form{padding-top:20px;border-top:1px solid var(--line)}code,pre,.code{font-family:var(--mono)}code{padding:.1em .4em;border:1px solid var(--line);border-radius:6px;background:var(--well);color:var(--text);font-size:.86em;overflow-wrap:anywhere}
+pre{margin:12px 0;padding:14px 16px;max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--well);color:var(--text);font-size:13px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+ol li>.button:first-child{margin:-7px 0}.code{width:fit-content;max-width:100%;margin:10px 0 0;padding:12px 18px;border:1px dashed var(--line2);border-radius:10px;color:var(--text);font-weight:600;font-size:28px;line-height:1.2;letter-spacing:.12em;user-select:all}
+.out header{position:static;border:0;background:none;-webkit-backdrop-filter:none;backdrop-filter:none}.out .bar{justify-content:center;padding-top:56px}.out .brand{font-size:22px}
+.out main{max-width:440px;padding-top:20px}.out h1{font-size:26px;text-align:center}.out form button{width:100%}.out .actions{justify-content:center}
+@media (prefers-color-scheme:light){.brand img,.empty img{filter:invert(1)}}
+@media (min-width:900px){.cols{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:0 32px;align-items:start}.cols>div>h2:first-child{margin:0 0 20px;line-height:33px}}
+@media (max-width:560px){header{position:static}.bar{padding:10px 16px}nav{flex:1 1 100%}nav a{flex:1;padding:7px 4px;text-align:center}main{padding:28px 16px 72px}h1{font-size:26px}
+section{padding:16px}.list,.cal{padding:0}.row,summary{padding:14px 16px}.opts{padding:16px}.chips{order:1;flex-basis:100%;padding-left:46px}.row.long>div{flex-basis:100%}.tally li{padding:10px;font-size:14px}.out .bar{padding-top:36px}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 """
 
+NAV = (("/", "Sync"), ("/connect", "Add a calendar"), ("/settings", "Settings"))
 
-def page(title, body, signed_in=False, flash=None, refresh=None):
-    nav = '<a href="/">Sync</a> <a href="/connect">Add a calendar</a> <a href="/settings">Settings</a>' if signed_in else ""
+
+def page(title, body, signed_in=False, flash=None, refresh=None, at="", wide=False):
+    """at is the header link this page belongs under; wide gives the two-column sync page room."""
+    links = "".join('<a href="%s"%s>%s</a>' % (href, ' aria-current="page"' if href == at else "", name) for href, name in NAV)
+    nav = f'<nav aria-label="Main">{links}</nav>' if signed_in else ""
     meta = f'<meta http-equiv="refresh" content="{int(refresh)}">' if refresh else ""
-    note = f'<section class="note" role="status">{esc(flash)}</section>' if flash else ""
-    return (f'<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{meta}'
-            f'<title>{esc(title)} · calsync</title><link rel="stylesheet" href="/app.css"><link rel="icon" href="data:,">'
-            f'<header><b>calsync</b>{nav}</header><main>{note}{body}</main></html>')
+    note = f'<p class="flash" role="status">{esc(flash)}</p>' if flash else ""
+    size = 30 if signed_in else 40
+    return (f'<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark">{meta}'
+            f'<title>{esc(title)} · calsync</title><link rel="stylesheet" href="/app.css"><link rel="icon" href="{MARK}">'
+            f'<body class="{"in" if signed_in else "out"}"><header><div class="bar"><a class="brand" href="/"><img src="{MARK}" alt="" width="{size}" height="{size}">calsync</a>{nav}</div></header>'
+            f'<main{" class=wide" if wide else ""}>{note}{body}</main></html>')
+
+
+def tile(name):
+    """The square with a calendar's or an account's first letter, as on getcalsync.app."""
+    return f'<span class="tile" aria-hidden="true">{esc(str(name)[:1].upper())}</span>'
 
 
 GOOGLE_STEPS = """
@@ -177,30 +244,31 @@ def dashboard(csrf, flash=None, preview=None):
     cfg = engine.load_json(engine.CONFIG, {"calendars": []})
     cals, accounts = cfg["calendars"], engine._accounts()
     last = engine.load_json(engine.LASTRUN, None)
-    out = ["<h1>Your calendars</h1>"]
     if not accounts:
-        return page("Sync", out[0] + '<section><p>Nothing is connected yet. Start by adding your first calendar.</p>'
-                    '<a class="button" href="/connect">Add a calendar</a></section>', True, flash)
+        return page("Sync", f'<h1>Your calendars</h1><section class="empty"><img src="{MARK}" alt="" width="44" height="44"><p>Nothing is connected yet. Start by adding your first calendar.</p>'
+                    '<a class="button" href="/connect">Add a calendar</a></section>', True, flash, at="/")
+    out = ['<div class="cols"><div><h1>Your calendars</h1>']     # calendars on the left, sync and its preview on the right; one column on a phone
     names = [c["name"] for c in cals]
     for c in cals:
         flags = [f for f, on in (("Busy only", c.get("busy_only")), ("Never written to", c.get("read_only"))) if on]
         flags += [f"Skips {x}" for x in c.get("skip_sources", [])]
+        chips = "".join(f'<span class="chip">{esc(f)}</span>' for f in flags)
         skip = "".join(f'<label class="check"><input type="checkbox" name="skip" value="{esc(n)}"{" checked" if n in c.get("skip_sources", []) else ""}> Don\'t copy {esc(n)} here</label>'
                        for n in names if n != c["name"])
-        out.append(f'''<section><b>{esc(c.get("label") or c["name"])}</b> <span class="soft">{esc(c["account"])}{" · " + esc(", ".join(flags)) if flags else ""}</span>
-<details><summary>Options</summary><form method="post" action="/calendar/save"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(c["name"])}">
+        out.append(f'''<section class="cal"><details><summary>{tile(c.get("label") or c["name"])}<span class="who"><strong>{esc(c.get("label") or c["name"])}</strong><span class="soft">{esc(c["account"])}</span></span>
+<span class="chips">{chips}</span><span class="more">Options</span></summary><div class="opts"><form method="post" action="/calendar/save"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(c["name"])}">
 <label class="check"><input type="checkbox" name="busy_only"{" checked" if c.get("busy_only") else ""}> Copies here only say Busy</label>
 <label class="check"><input type="checkbox" name="read_only"{" checked" if c.get("read_only") else ""}> Never write to this calendar</label>
 {skip}<div class="actions"><button>Save</button></div></form>
 <div class="actions"><form class="inline" method="post" action="/calendar/remove"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(c["name"])}"><button class="plain">Stop syncing this calendar</button></form>
-<form class="inline" method="post" action="/purge"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(c["name"])}"><button class="danger">Delete the copies calsync made here</button></form></div></details></section>''')
+<form class="inline" method="post" action="/purge"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(c["name"])}"><button class="danger">Delete the copies calsync made here</button></form></div></div></details></section>''')
     if len(cals) < 2:
         out.append('<section class="note">Add at least two calendars and calsync can start.</section>')
-    out.append('<div class="actions"><a class="button plain" href="/connect">Add a calendar</a></div><h2>Sync</h2>')
+    out.append('<div class="actions"><a class="button plain" href="/connect">Add a calendar</a></div></div><div><h2>Sync</h2>')
     state = "Running in the background every " + str(cfg.get("interval_minutes", 5)) + " minutes." if cfg.get("enabled") else "Not running yet. Preview first, then start it."
-    out.append(f'<section><p>{esc(state)}</p><p class="soft">Last run: {esc(describe_run(last))}</p>')
+    out.append(f'<section><p class="state{" on" if cfg.get("enabled") else ""}">{esc(state)}</p><p class="soft">Last run: {esc(describe_run(last))}</p>')
     if last and last.get("problems"):
-        out.append('<p class="bad">Last run had problems:</p><pre>' + esc("\n".join(last["problems"])) + "</pre>")
+        out.append('<p class="bad">Last run had problems:</p><pre tabindex="0">' + esc("\n".join(last["problems"])) + "</pre>")
     if last and last.get("skipped_deletes"):
         out.append(f'<p class="bad">A run wanted to delete {esc(last["skipped_deletes"])} copies, more than half of a calendar, so it stopped and waited for you. Preview to see them.</p>')
     if len(cals) >= 2:
@@ -211,16 +279,16 @@ def dashboard(csrf, flash=None, preview=None):
         out.append("</div>")
     out.append("</section>")
     if preview is not None:
-        out.append(f'<h2>Preview</h2><section><p>{esc(preview["created"])} to add, {esc(preview["updated"])} to update, {esc(preview["deleted"])} to remove. Nothing has changed yet.</p>')
+        out.append(f'<h2>Preview</h2><section><ul class="tally"><li>{esc(preview["created"])} to add</li><li>{esc(preview["updated"])} to update</li><li>{esc(preview["deleted"])} to remove</li></ul><p>Nothing has changed yet.</p>')
         if preview.get("skipped_deletes"):
             out.append(f'<p class="bad">{esc(preview["skipped_deletes"])} deletes would be held back by the safety stop.</p>')
-        out.append("<pre>" + esc("\n".join(preview["lines"][:400]) or "Nothing to change.") + "</pre>")
+        out.append('<pre tabindex="0">' + esc("\n".join(preview["lines"][:400]) or "Nothing to change.") + "</pre>")
         hidden = f'<input type="hidden" name="csrf" value="{csrf}">'
         out.append(f'<div class="actions"><form class="inline" method="post" action="/start">{hidden}<button>Apply and keep syncing</button></form>')
         if preview.get("skipped_deletes"):
             out.append(f'<form class="inline" method="post" action="/run">{hidden}<input type="hidden" name="force" value="1"><button class="danger">Allow these deletes</button></form>')
         out.append("</div></section>")
-    return page("Sync", "".join(out), True, flash)
+    return page("Sync", "".join(out) + "</div></div>", True, flash, at="/", wide=True)
 
 
 def connect_page(csrf, flash=None):
@@ -228,17 +296,17 @@ def connect_page(csrf, flash=None):
     rows = []
     for label, a in accounts.items():
         kind = a.get("service") or {"google": "Google", "outlook": "Microsoft", "caldav": "CalDAV", "ics": ".ics link"}.get(a["provider"], "")
-        rows.append(f'''<div class="row"><div><b>{esc(label)}</b> <span class="soft">{kind}</span></div><div class="actions flat"><a class="button" href="/account?label={urllib.parse.quote(label)}">Choose calendars</a>
+        rows.append(f'''<div class="row">{tile(label)}<div><b>{esc(label)}</b> <span class="soft">{kind}</span></div><div class="actions flat"><a class="button" href="/account?label={urllib.parse.quote(label)}">Choose calendars</a>
 <form class="inline" method="post" action="/account/remove"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="label" value="{esc(label)}"><button class="plain">Sign out</button></form></div></div>''')
-    existing = ("<h2>Signed in</h2>" + "".join(rows)) if rows else ""
+    existing = ('<h2>Signed in</h2><section class="list">' + "".join(rows) + "</section>") if rows else ""
     caldav = "".join(f'''<div class="row"><div><b>{"Another CalDAV server" if k == "other" else v[0]}</b></div><a class="button" href="/connect/caldav?p={k}">Connect</a></div>'''
                      for k, v in engine.CALDAV_SERVERS.items())
     return page("Add a calendar", f'''<h1>Add a calendar</h1>{existing}<h2>Connect an account</h2>
-<div class="row"><div><b>Google Calendar</b></div><a class="button" href="/connect/google">Connect</a></div>
+<section class="list"><div class="row"><div><b>Google Calendar</b></div><a class="button" href="/connect/google">Connect</a></div>
 <div class="row"><div><b>Outlook or Microsoft 365</b></div><a class="button" href="/connect/microsoft">Connect</a></div>
-{caldav}
-<div class="row"><div><b>Published .ics link</b><br><span class="soft">Read-only: its events are copied out, nothing is written back. For Proton Calendar, an Exchange server, or an organization that blocks outside apps.</span></div><a class="button" href="/connect/ics">Add link</a></div>
-<div class="row"><div><b>Calendly, Cal.com or another booking app</b><br><span class="soft">Nothing to add here. Connect the booking app to any calendar above. calsync keeps that calendar showing your busy times from all the others.</span></div><a class="button" href="https://docs.getcalsync.app/booking-apps/">How it works</a></div>''', True, flash)
+{caldav}</section>
+<section class="list"><div class="row long"><div><b>Published .ics link</b> <span class="soft">Read-only: its events are copied out, nothing is written back. For Proton Calendar, an Exchange server, or an organization that blocks outside apps.</span></div><a class="button" href="/connect/ics">Add link</a></div>
+<div class="row long"><div><b>Calendly, Cal.com or another booking app</b> <span class="soft">Nothing to add here. Connect the booking app to any calendar above. calsync keeps that calendar showing your busy times from all the others.</span></div><a class="button plain" href="https://docs.getcalsync.app/booking-apps/">How it works</a></div></section>''', True, flash, at="/connect")
 
 
 def google_page(csrf, flash=None):
@@ -247,14 +315,15 @@ def google_page(csrf, flash=None):
         return page("Connect Google", f'''<h1>Connect Google</h1><section><form method="post" action="/connect/google/start"><input type="hidden" name="csrf" value="{csrf}">
 <label for="label">A short name for this account</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="work">
 <div class="actions"><button>Continue</button></div></form></section>
-<section><p>Your Google sign-in app is saved. Replace it only if you made a new one.</p>{client_form(csrf)}</section>''', True, flash)
-    return page("Connect Google", f'<h1>Connect Google</h1><section><p>Google needs a sign-in app of your own. It\'s free and takes about 10 minutes. You only do it once, for all your Google accounts.</p>{GOOGLE_STEPS}{client_form(csrf)}</section>', True, flash)
+<section><p>Your Google sign-in app is saved. Replace it only if you made a new one.</p>{client_form(csrf, True)}</section>''', True, flash, at="/connect")
+    return page("Connect Google", f'<h1>Connect Google</h1><section><p>Google needs a sign-in app of your own. It\'s free and takes about 10 minutes. You only do it once, for all your Google accounts.</p>{GOOGLE_STEPS}{client_form(csrf)}</section>', True, flash, at="/connect")
 
 
-def client_form(csrf):
+def client_form(csrf, replacing=False):
+    """Replacing a saved app is the side road, Continue is the way on, so its Save is the quieter button."""
     return f'''<form method="post" action="/connect/google/client" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
 <label for="cid">Client ID</label><input type="text" id="cid" name="client_id" required><label for="sec">Client secret</label><input type="password" id="sec" name="client_secret" required>
-<div class="actions"><button>Save</button></div></form>'''
+<div class="actions"><button{" class=plain" if replacing else ""}>Save</button></div></form>'''
 
 
 def microsoft_page(csrf, flash=None):
@@ -264,7 +333,7 @@ def microsoft_page(csrf, flash=None):
     return page("Connect Microsoft", f'''<h1>Connect Outlook or Microsoft 365</h1><section>{steps}<form method="post" action="/connect/microsoft/start" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
 <label for="cid">Application (client) ID</label><input type="text" id="cid" name="client_id" required value="{cid}">
 <label for="label">A short name for this account</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="school">
-<div class="actions"><button>Continue</button></div></form></section>''', True, flash)
+<div class="actions"><button>Continue</button></div></form></section>''', True, flash, at="/connect")
 
 
 def ics_page(csrf, flash=None):
@@ -272,7 +341,7 @@ def ics_page(csrf, flash=None):
 <form method="post" action="/connect/ics/save" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
 <label for="label">A short name</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="classes">
 <label for="url">Calendar link</label><input type="password" id="url" name="url" required>
-<div class="actions"><button>Check and save</button></div></form></section>''', True, flash)
+<div class="actions"><button>Check and save</button></div></form></section>''', True, flash, at="/connect")
 
 
 def caldav_page(kind, csrf, flash=None):
@@ -283,14 +352,14 @@ def caldav_page(kind, csrf, flash=None):
 <label for="label">A short name</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="personal">
 {address}<label for="username">Username</label><input type="text" id="username" name="username" required>
 <label for="password">Password</label><input type="password" id="password" name="password" required autocomplete="new-password">
-<div class="actions"><button>Check and save</button></div></form></section>''', True, flash)
+<div class="actions"><button>Check and save</button></div></form></section>''', True, flash, at="/connect")
 
 
 def account_page(label, csrf, flash=None):
     try:
         found = engine.account_calendars(label)
     except Exception as e:
-        return page("Choose calendars", f'<h1>{esc(label)}</h1><section class="bad">Couldn\'t read this account\'s calendars: {esc(short_error(e))}</section>', True, flash)
+        return page("Choose calendars", f'<h1>{esc(label)}</h1><section class="bad">Couldn\'t read this account\'s calendars: {esc(short_error(e))}</section>', True, flash, at="/connect")
     used = {(c.get("account"), c.get("calendar_id")) for c in engine.load_json(engine.CONFIG, {"calendars": []})["calendars"]}
     rows = []
     for i, c in enumerate(found):
@@ -298,14 +367,15 @@ def account_page(label, csrf, flash=None):
         part = "main" if "@" in c["name"] else c["name"]
         slug = re.sub(r"[^A-Za-z0-9_-]+", "-", f"{label.split('@')[0]}-{part}" if len(found) > 1 else label.split("@")[0]).strip("-_")[:40] or f"calendar-{i + 1}"
         if (label, c["id"]) in used:
-            rows.append(f'<div class="row"><div><b>{esc(c["name"])}</b> <span class="soft">already syncing</span></div></div>')
+            rows.append(f'<section class="list"><div class="row">{tile(c["name"])}<div><b>{esc(c["name"])}</b></div><span class="chip">already syncing</span></div></section>')
             continue
         ro = "" if c["writable"] else '<p class="soft">calsync can read this one but not write to it.</p>'
-        rows.append(f'''<section><b>{esc(c["name"])}</b>{ro}<form method="post" action="/calendar/add"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="account" value="{esc(label)}"><input type="hidden" name="calendar_id" value="{esc(c["id"])}">
+        rows.append(f'''<section><p class="head">{tile(c["name"])}<b>{esc(c["name"])}</b></p>{ro}<form method="post" action="/calendar/add"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="account" value="{esc(label)}"><input type="hidden" name="calendar_id" value="{esc(c["id"])}">
 <label for="n{i}">Name in calsync</label><input type="text" id="n{i}" name="name" value="{esc(slug)}" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*">
 {'<label class="check"><input type="checkbox" name="busy_only"> Copies here only say Busy</label>' if c["writable"] else ""}
 <div class="actions"><button>Sync this calendar</button></div></form></section>''')
-    return page("Choose calendars", f'<h1>{esc(label)}: choose calendars</h1>{"".join(rows) or "<section>This account has no calendars.</section>"}<div class="actions"><a class="button plain" href="/">Back to sync</a></div>', True, flash)
+    listed = "".join(rows) or '<section class="note">This account has no calendars.</section>'
+    return page("Choose calendars", f'<h1>{esc(label)}: choose calendars</h1>{listed}<div class="actions"><a class="button plain" href="/">Back to sync</a></div>', True, flash, at="/connect")
 
 
 def settings_page(csrf, flash=None):
@@ -320,7 +390,7 @@ def settings_page(csrf, flash=None):
 <label for="old">Current password</label><input type="password" id="old" name="old" required><label for="new">New password</label><input type="password" id="new" name="new" required minlength="10">
 <div class="actions"><button>Change password</button></div></form></section>
 <div class="actions"><form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="{csrf}"><button class="plain">Sign out</button></form>
-<form class="inline" method="post" action="/logout/everywhere"><input type="hidden" name="csrf" value="{csrf}"><button class="plain">Sign out on every device</button></form></div>''', True, flash)
+<form class="inline" method="post" action="/logout/everywhere"><input type="hidden" name="csrf" value="{csrf}"><button class="plain">Sign out on every device</button></form></div>''', True, flash, at="/settings")
 
 
 def short_error(e):
@@ -596,9 +666,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not get("confirm"):
                 count = engine.purge(cals, {c["name"]: engine.make_adapter(c) for c in cals}, dry_run=True, log=lambda *_: None)["deleted"]
                 return self.send(200, page("Delete copies", f'''<h1>Delete {copies(count)} from {esc(get("name"))}?</h1><section><p>This removes only events calsync made. If syncing is still on, the next run makes them again, so stop syncing this calendar too if you're done with it.</p>
-<form method="post" action="/purge"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(get("name"))}"><input type="hidden" name="confirm" value="1"><div class="actions"><button class="danger">Delete {copies(count)}</button><a class="button plain" href="/">Keep them</a></div></form></section>''', True))
+<form method="post" action="/purge"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(get("name"))}"><input type="hidden" name="confirm" value="1"><div class="actions"><button class="danger">Delete {copies(count)}</button><a class="button plain" href="/">Keep them</a></div></form></section>''', True, at="/"))
             s = engine.purge(cals, {c["name"]: engine.make_adapter(c) for c in cals}, log=lambda *_: None)
-            return self.send(200, page("Copies deleted", f'<h1>Deleted {copies(s["deleted"])}</h1><section>{esc(s["errors"])} problems.</section><a class="button plain" href="/">Back</a>', True))
+            return self.send(200, page("Copies deleted", f'<h1>Deleted {copies(s["deleted"])}</h1><section>{esc(s["errors"])} problems.</section><a class="button plain" href="/">Back</a>', True, at="/"))
         if url == "/preview":
             lines = []
             s = engine.run_once(dry_run=True, log=lines.append)
@@ -709,7 +779,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self.send(200, page("Connect Google", f'''<h1>Sign in to Google</h1><section><ol><li><a class="button" href="{esc(link)}" target="_blank" rel="noreferrer noopener">Open Google sign-in</a></li>
 <li>Google warns that the app isn't verified, because it's yours. Click Advanced, Go to calsync, then Allow.</li>
 <li>If the browser ends on a page that won't load, copy that page's whole address and paste it here.</li></ol>
-<form method="post" action="/connect/google/paste" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}"><label for="addr">Address from the browser</label><input type="text" id="addr" name="address" required><div class="actions"><button class="plain">Finish sign-in</button></div></form></section>''', True))
+<form method="post" action="/connect/google/paste" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}"><label for="addr">Address from the browser</label><input type="text" id="addr" name="address" required><div class="actions"><button class="plain">Finish sign-in</button></div></form></section>''', True, at="/connect"))
 
     def google_callback(self, q):
         state = q.get("state", [""])[0]
@@ -736,7 +806,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with state_lock:
             flow = pending_ms.get(flow_id)
         if not flow:
-            return self.send(200, page("Connect Microsoft", '<h1>This sign-in has expired</h1><a class="button plain" href="/connect/microsoft">Start again</a>', True))
+            return self.send(200, page("Connect Microsoft", '<h1>This sign-in has expired</h1><a class="button plain" href="/connect/microsoft">Start again</a>', True, at="/connect"))
         if flow["status"] == "done":
             with state_lock:
                 pending_ms.pop(flow_id, None)
@@ -744,8 +814,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if flow["status"] == "failed":
             with state_lock:
                 pending_ms.pop(flow_id, None)
-            return self.send(200, page("Connect Microsoft", f'<h1>That didn\'t work</h1><section class="bad">{esc(flow.get("problem", ""))}</section><a class="button plain" href="/connect/microsoft">Try again</a>', True))
-        return self.send(200, page("Connect Microsoft", f'''<h1>Sign in to Microsoft</h1><section><ol><li><a class="button" href="{esc(flow["link"])}" target="_blank" rel="noreferrer noopener">Open Microsoft sign-in</a></li><li>Enter this code:<p class="code">{esc(flow["user_code"])}</p></li><li>Sign in and accept. This page moves on by itself.</li></ol></section>''', True, refresh=5))
+            return self.send(200, page("Connect Microsoft", f'<h1>That didn\'t work</h1><section class="bad">{esc(flow.get("problem", ""))}</section><a class="button plain" href="/connect/microsoft">Try again</a>', True, at="/connect"))
+        return self.send(200, page("Connect Microsoft", f'''<h1>Sign in to Microsoft</h1><section><ol><li><a class="button" href="{esc(flow["link"])}" target="_blank" rel="noreferrer noopener">Open Microsoft sign-in</a></li><li>Enter this code:<p class="code">{esc(flow["user_code"])}</p></li><li>Sign in and accept. This page moves on by itself.</li></ol></section>''', True, refresh=5, at="/connect"))
 
 
 FLASHES = {"saved": "Saved.", "added": "Added. Preview to see what will change.", "removed": "Stopped syncing that calendar. Its copies on other calendars go away on the next run.",
