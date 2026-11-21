@@ -176,6 +176,7 @@ class WebTests(unittest.TestCase):
         self.assertFalse(calsync.load_json(calsync.CONFIG, {}).get("enabled"))
         token = self.csrf()
         self.assertEqual(self.req("POST", "/start", {"csrf": token}, origin="https://evil.example")[0].status, 400)
+        self.assertEqual(self.req("POST", "/start", {"csrf": token}, origin="null")[0].status, 400)  # a sandboxed or referrer-less page
         self.assertEqual(self.req("GET", "/", host="evil.example")[0].status, 400)
         self.assertEqual(self.req("POST", "/start", {"csrf": token}, host="evil.example")[0].status, 400)
         self.assertEqual(self.req("GET", "/", host="192.168.1.20:8484")[0].status, 200)
@@ -185,7 +186,8 @@ class WebTests(unittest.TestCase):
         csp = r.getheader("Content-Security-Policy")
         self.assertIn("default-src 'none'", csp)
         self.assertNotIn("unsafe", csp)
-        self.assertEqual(r.getheader("Referrer-Policy"), "no-referrer")
+        # not no-referrer: that makes browsers send "Origin: null" on the page's own forms (see below)
+        self.assertEqual(r.getheader("Referrer-Policy"), "same-origin")
         self.assertEqual(r.getheader("Cache-Control"), "no-store")
         self.assertNotIn("<script", text)
         self.assertNotIn("<style", text)
