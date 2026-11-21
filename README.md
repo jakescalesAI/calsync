@@ -4,13 +4,13 @@ Keep your Google and Outlook calendars showing the same events. You run it yours
 
 Every run makes each writable calendar hold one tagged copy of every real event from your other calendars. Published `.ics` links work as read-only sources.
 
-- **Website:** https://calsync.co
-- **Docs:** https://docs.calsync.co
+- **Website:** https://getcalsync.app
+- **Docs:** https://docs.getcalsync.app
 
 ## Run it
 
 ```bash
-git clone https://github.com/calsync-co/calsync.git
+git clone https://github.com/jakescalesAI/calsync.git
 cd calsync
 docker compose up -d
 docker compose logs calsync
@@ -23,7 +23,7 @@ Google and Microsoft each need a free sign-in app of your own. The page walks yo
 Without Docker, using Python 3.10 or newer:
 
 ```bash
-pipx install git+https://github.com/calsync-co/calsync.git
+pipx install git+https://github.com/jakescalesAI/calsync.git
 calsync web
 ```
 
@@ -62,7 +62,7 @@ calsync status
 calsync new TEXT [--check]
 ```
 
-Settings live in `$CALSYNC_HOME`, by default `~/.calsync`. A sample systemd timer is in [`deploy/`](deploy/). Optional notes features are described in the [docs](https://docs.calsync.co).
+Settings live in `$CALSYNC_HOME`, by default `~/.calsync`. A sample systemd timer is in [`deploy/`](deploy/). Optional notes features are described in the [docs](https://docs.getcalsync.app).
 
 ## Develop
 

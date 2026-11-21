@@ -351,7 +351,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'self'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
-        self.send_header("Referrer-Policy", "no-referrer")
+        # same-origin, not no-referrer: under no-referrer a browser sends "Origin: null" with this page's own
+        # form posts, and same_origin() rightly refuses that, so every form was blocked.
+        self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Cache-Control", "no-store")
         for k, v in headers:
             self.send_header(k, v)

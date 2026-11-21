@@ -12,8 +12,8 @@ requires-python = ">=3.10"
 dependencies = ["python-dateutil>=2.8", "tzdata>=2024.1"]
 
 [project.urls]
-Homepage = "https://calsync.co"
-Documentation = "https://docs.calsync.co"
+Homepage = "https://getcalsync.app"
+Documentation = "https://docs.getcalsync.app"
 
 [project.scripts]
 calsync = "calsync:cli"
