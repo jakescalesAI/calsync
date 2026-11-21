@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://docs.calsync.co/sitemap.xml
+Sitemap: https://docs.getcalsync.app/sitemap.xml

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://docs.calsync.co/</loc></url>
-  <url><loc>https://docs.calsync.co/docker/</loc></url>
-  <url><loc>https://docs.calsync.co/python/</loc></url>
-  <url><loc>https://docs.calsync.co/google/</loc></url>
-  <url><loc>https://docs.calsync.co/microsoft/</loc></url>
-  <url><loc>https://docs.calsync.co/ics/</loc></url>
-  <url><loc>https://docs.calsync.co/how-a-sync-decides/</loc></url>
-  <url><loc>https://docs.calsync.co/settings/</loc></url>
-  <url><loc>https://docs.calsync.co/faq/</loc></url>
-  <url><loc>https://docs.calsync.co/troubleshooting/</loc></url>
+  <url><loc>https://docs.getcalsync.app/</loc></url>
+  <url><loc>https://docs.getcalsync.app/docker/</loc></url>
+  <url><loc>https://docs.getcalsync.app/python/</loc></url>
+  <url><loc>https://docs.getcalsync.app/google/</loc></url>
+  <url><loc>https://docs.getcalsync.app/microsoft/</loc></url>
+  <url><loc>https://docs.getcalsync.app/ics/</loc></url>
+  <url><loc>https://docs.getcalsync.app/how-a-sync-decides/</loc></url>
+  <url><loc>https://docs.getcalsync.app/settings/</loc></url>
+  <url><loc>https://docs.getcalsync.app/faq/</loc></url>
+  <url><loc>https://docs.getcalsync.app/troubleshooting/</loc></url>
 </urlset>
