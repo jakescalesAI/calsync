@@ -19,6 +19,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - The delete page says "1 copy" instead of "1 copies".
+- A calendar read through a published `.ics` link no longer has calsync's old copies copied a second time. A feed such as
+  Google's secret address drops the tag, so a copy is now also known by the note it carries.
 - The setup page's forms work in a browser again. The page sent `Referrer-Policy: no-referrer`, which makes a browser
   send `Origin: null` with the page's own forms, so each one was refused as coming from another site. It now sends
   `same-origin`. The origin check is unchanged.

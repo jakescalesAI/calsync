@@ -338,6 +338,30 @@ class IcsTests(unittest.TestCase):
         self.assertTrue(any(e["title"] == "Busy" for e in a.copies()))   # private advising
         self.assertEqual(calsync.sync([{"name": "school"}, {"name": "a"}], cals, now=NOW, log=lambda *_: None)["created"], 0)
 
+    def test_ics_feed_of_a_calendar_holding_copies_does_not_copy_them_again(self):
+        # Google's secret address publishes a calendar's events without calsync's tag. The copies calsync once wrote there
+        # still carry its note, so they are known as copies and only the calendar's own events are copied on.
+        feed = ("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:own-1@google.com\r\nSUMMARY:Coffee with Sam\r\n"
+                "DTSTART:20261103T150000Z\r\nDTEND:20261103T160000Z\r\nEND:VEVENT\r\n"
+                "BEGIN:VEVENT\r\nUID:old-copy-1@google.com\r\nSUMMARY:Standup\r\n"
+                "DESCRIPTION:Synced from work by calsync. Edit the original there\\; changes here are overwritten.\r\n"
+                "DTSTART:20261103T170000Z\r\nDTEND:20261103T173000Z\r\nEND:VEVENT\r\n"
+                "BEGIN:VEVENT\r\nUID:own-2@google.com\r\nSUMMARY:Notes\r\nDESCRIPTION:I synced from work by calsync once.\r\n"
+                "DTSTART:20261104T150000Z\r\nDTEND:20261104T160000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+        tmin, tmax = "2026-11-01T00:00:00Z", "2026-11-30T00:00:00Z"
+        by_title = {e["title"]: e for e in calsync.ics_events(feed, tmin, tmax)}
+        self.assertIsNone(by_title["Coffee with Sam"]["copy_of"])
+        self.assertTrue(by_title["Standup"]["copy_of"])
+        self.assertIsNone(by_title["Notes"]["copy_of"])       # the note has to open the description, word for word
+
+        class Feed:
+            read_only = True
+            def list(self, tmin, tmax):
+                return calsync.ics_events(feed, tmin, tmax)
+        a = FakeCal()
+        calsync.sync([{"name": "personal"}, {"name": "a"}], {"personal": Feed(), "a": a}, now=NOW, log=lambda *_: None)
+        self.assertEqual(sorted(e["title"] for e in a.copies()), ["Coffee with Sam", "Notes"])
+
 
 SUN_11AM = dt.datetime(2026, 11, 1, 16, tzinfo=dt.timezone.utc)   # Sun Nov 1, 11:00 AM in New York
 

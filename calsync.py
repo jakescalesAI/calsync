@@ -41,6 +41,8 @@ LASTRUN = os.path.join(HOME, "last-run.json")
 TAG = "calsync"                      # Google private extended property key
 ICS_TAG = "X-CALSYNC"                # the same tag on a CalDAV event
 COPY_UID = "calsync-"                # every CalDAV copy's UID starts with this, so a copy is known even if a server drops ICS_TAG
+COPY_NOTE = re.compile(r"Synced from \S{1,60} by calsync\. Edit the original there")   # the note every copy carries: a published
+#   feed keeps it even where it drops the tag (Google's secret address does), so a copy read back through a link is still known
 MS_PROP = "String {6f8f3c3e-7a51-4d0b-9a8e-2c1f5b7d9e44} Name calsync"  # Graph extended property id
 PAST_DAYS, FUTURE_DAYS = 0, 120  # events that already ended are neither copied nor cleaned up
 GOOGLE_REDIRECT = "http://127.0.0.1:8765/"
@@ -487,7 +489,7 @@ def ics_events(text, tmin, tmax, me=(), deadline=None):
             fs = start.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             fe = end.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         busy = first(ev, "X-MICROSOFT-CDO-BUSYSTATUS")[1].upper() not in ("FREE", "WORKINGELSEWHERE") and first(ev, "TRANSP")[1].upper() != "TRANSPARENT"
-        tag = _unescape(first(ev, ICS_TAG)[1]) or (f"?|{uid}" if uid.startswith(COPY_UID) else None)
+        tag = _unescape(first(ev, ICS_TAG)[1]) or (f"?|{uid}" if uid.startswith(COPY_UID) or COPY_NOTE.match(_unescape(first(ev, "DESCRIPTION")[1])) else None)
         declined = any(p.get("PARTSTAT", "").upper() == "DECLINED" and v.lower().removeprefix("mailto:") in me for p, v in ev.get("ATTENDEE", []))
         return {"uid": f"{uid}|{orig}", "ical": uid, "title": _unescape(first(ev, "SUMMARY")[1]),
                 "start": fs, "end": fe, "all_day": all_day, "busy": busy,
