@@ -19,6 +19,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - The delete page says "1 copy" instead of "1 copies".
+- The setup page's forms work in a browser again. The page sent `Referrer-Policy: no-referrer`, which makes a browser
+  send `Origin: null` with the page's own forms, so each one was refused as coming from another site. It now sends
+  `same-origin`. The origin check is unchanged.
 
 ### Security
 - A CalDAV password follows only the host it was typed for, a host under it, or a built-in provider's own hosts.
