@@ -17,6 +17,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   add `--allow-write`; `--busy-only` hides titles and places. No tool can sign in, purge, remove a calendar, start syncing or force a mass delete.
 - A skill for Hermes that installs and sets up calsync with you, connects these tools and uses them, at `docs-site/hermes/SKILL.md`.
 
+### Changed
+- The setup page has the look of getcalsync.app: the calendar mark in a proper header with the current page marked, each
+  calendar as a row with its flags as chips, the preview's counts as tiles, light and dark themes, and a layout that fits
+  a phone. Still no scripts, no inline styles and no outside files; every form, field and link is unchanged.
+
 ### Fixed
 - The delete page says "1 copy" instead of "1 copies".
 - A calendar read through a published `.ics` link no longer has calsync's old copies copied a second time. A feed such as
