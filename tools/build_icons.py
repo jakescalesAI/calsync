@@ -3,7 +3,8 @@
 
 The mark is calsync's first one, the calendar page with its rings, the sync arrows and 31, on LocalHub's tile:
 a rounded square with a dark slate gradient, the page in LocalHub's white-to-blue-grey. The arrows sit clear of the
-rings, every line is one weight, and below 48 px the 31 drops out so a browser tab stays crisp.
+rings, and every line is one weight. The same artwork is used at every size, only scaled: Jake approved one icon,
+so there is no separately drawn small cut.
 
     python tools/build_icons.py            # write the SVGs (stdlib only)
     python tools/build_icons.py --png      # also the PNGs and favicon.ico (needs Chrome or Edge, and Pillow for the .ico)
@@ -87,7 +88,7 @@ def glyph_svg(color):
 
 FILES = {
     "mark.svg": lambda: tile_svg(),
-    "mark-small.svg": lambda: tile_svg(small=True),
+    "mark-small.svg": lambda: tile_svg(),     # the same artwork as mark.svg: Jake wants one icon, only ever scaled
     "mark-square.svg": lambda: tile_svg(square=True),
     "glyph-white.svg": lambda: glyph_svg("#ffffff"),
     "glyph-black.svg": lambda: glyph_svg("#000000"),
