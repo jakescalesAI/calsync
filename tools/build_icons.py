@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Draw calsync's mark and write every size the app, the website and the docs use.
 
-The mark follows LocalHub's: a rounded square with a dark slate gradient and one white glyph on it.
-calsync's glyph is a calendar page whose two rings sit on top and whose face holds the two sync arrows.
+The mark is calsync's first one, the calendar page with its rings, the sync arrows and 31, on LocalHub's tile:
+a rounded square with a dark slate gradient, the page in LocalHub's white-to-blue-grey. The arrows sit clear of the
+rings, every line is one weight, and below 48 px the 31 drops out so a browser tab stays crisp.
 
     python tools/build_icons.py            # write the SVGs (stdlib only)
     python tools/build_icons.py --png      # also the PNGs and favicon.ico (needs Chrome or Edge, and Pillow for the .ico)
 
 Edit the numbers here, never the files it writes.
 """
-import math
 import os
 import shutil
 import subprocess
@@ -27,48 +27,44 @@ def f(n):
     return f"{n:.1f}".rstrip("0").rstrip(".")
 
 
-def arrow(cx, cy, r, a0, a1, w, head):
-    """One sync arrow: an arc from angle a0 to a1 (degrees, clockwise on screen) and a filled head at a1."""
-    p = lambda a, rr=r: (cx + rr * math.cos(math.radians(a)), cy + rr * math.sin(math.radians(a)))
-    stop = a1 - math.degrees(head * 0.55 / r)            # the line ends inside the head, so the tip stays sharp
-    x0, y0 = p(a0)
-    x1, y1 = p(stop)
-    large = 1 if (stop - a0) % 360 > 180 else 0
-    line = f'<path d="M{f(x0)} {f(y0)}A{f(r)} {f(r)} 0 {large} 1 {f(x1)} {f(y1)}" fill="none" stroke-width="{f(w)}" stroke-linecap="round"/>'
-    tx, ty = -math.sin(math.radians(a1)), math.cos(math.radians(a1))   # direction of travel at a1
-    bx, by = p(a1 - math.degrees(head * 0.35 / r))
-    tip = (bx + tx * head, by + ty * head)
-    nx, ny = math.cos(math.radians(a1)), math.sin(math.radians(a1))
-    side = head * 0.92
-    a, b = (bx + nx * side, by + ny * side), (bx - nx * side, by - ny * side)
-    tri = f'<path d="M{f(tip[0])} {f(tip[1])}L{f(a[0])} {f(a[1])}L{f(b[0])} {f(b[1])}Z" stroke-width="{f(w * 0.35)}" stroke-linejoin="round"/>'
-    return line + tri
+INK = "#0b0f16"          # the tile's darkest colour: the arrows and the 31
+STROKE = 20              # every drawn line, in 512 units
+
+# The 31 from calsync's first mark (Inter SemiBold as outlines, on its 64 grid, centred near 31.8, 38.6).
+THIRTY_ONE = ("M25.78 50.67Q23.3 50.67 21.39 49.81Q19.47 48.96 18.37 47.46Q17.26 45.95 17.2 43.98L21.44 43.98Q21.5 44.94 22.08 45.65"
+              "Q22.66 46.36 23.62 46.75Q24.58 47.13 25.78 47.13Q27.04 47.13 28.01 46.69Q28.98 46.25 29.54 45.45Q30.1 44.66 30.1 43.62"
+              "Q30.1 42.54 29.53 41.72Q28.96 40.9 27.91 40.44Q26.85 39.97 25.35 39.97L23.27 39.97L23.27 36.72L25.35 36.72Q26.58 36.72 27.51 36.29"
+              "Q28.44 35.86 28.96 35.08Q29.49 34.31 29.49 33.28Q29.49 32.29 29.04 31.55Q28.59 30.81 27.76 30.39Q26.93 29.97 25.83 29.97"
+              "Q24.74 29.97 23.82 30.36Q22.91 30.75 22.34 31.46Q21.77 32.17 21.74 33.17L17.69 33.17Q17.72 31.2 18.82 29.71Q19.91 28.22 21.75 27.38"
+              "Q23.59 26.53 25.86 26.53Q28.21 26.53 29.94 27.42Q31.68 28.3 32.63 29.78Q33.59 31.25 33.59 33.03Q33.59 35.02 32.42 36.36"
+              "Q31.25 37.7 29.34 38.13L29.34 38.32Q30.98 38.54 32.12 39.29Q33.25 40.04 33.85 41.2Q34.44 42.37 34.44 43.84Q34.44 45.81 33.32 47.35"
+              "Q32.2 48.9 30.25 49.78Q28.3 50.67 25.78 50.67ZM46.4 26.85L46.4 50.35L42.22 50.35L42.22 30.6L42.06 30.6L36.58 34.55L36.58 30.54L41.73 26.85Z")
 
 
 def glyph(small=False):
-    """The calendar and its arrows, on a 512 grid. small=True is heavier, for 16 to 32 pixels."""
-    body = (120, 150, 272, 244, 56)                      # x, y, w, h, corner
-    ring_w, ring_h, ring_y = (44, 86, 104) if small else (38, 84, 108)
-    rings = (184 - ring_w / 2, 328 - ring_w / 2)
-    cx, cy, r = 256, 290, (54 if small else 58)
-    w = 30 if small else 23
-    head = 30 if small else 25
-    bar = 212 if not small else 216                       # the line under the calendar's top
-    parts = [f'<rect x="{body[0]}" y="{body[1]}" width="{body[2]}" height="{body[3]}" rx="{body[4]}" fill="url(#g)"/>']
-    for x in rings:                                     # rings: a gap in tile colour, then the white ring on top
-        parts.append(f'<rect x="{f(x - 12)}" y="{ring_y - 12}" width="{ring_w + 24}" height="{ring_h + 24}" rx="{f((ring_w + 24) / 2)}" fill="url(#t)"/>')
-        parts.append(f'<rect x="{f(x)}" y="{ring_y}" width="{ring_w}" height="{ring_h}" rx="{f(ring_w / 2)}" fill="url(#g)"/>')
-    cut = 'fill="url(#t)" stroke="url(#t)"'
-    if not small:
-        parts.append(f'<rect x="{body[0]}" y="{bar}" width="{body[2]}" height="10" fill="url(#t)"/>')
-    parts.append(f'<g {cut}>' + arrow(cx, cy, r, 200, 338, w, head) + arrow(cx, cy, r, 20, 158, w, head) + '</g>')
-    return "".join(parts)
+    """The calendar: page, rings, top bar, the two sync arrows lower down, and the 31 between them."""
+    w = 26 if small else STROKE
+    page = (112, 140, 288, 276, 56)                   # x, y, width, height, corner
+    rings = (184, 328)
+    out = [f'<rect x="{page[0]}" y="{page[1]}" width="{page[2]}" height="{page[3]}" rx="{page[4]}" fill="url(#g)"/>']
+    for cx in rings:                                   # each ring: a gap in the tile colour, then a white pill
+        out.append(f'<rect x="{cx - 30}" y="{88}" width="60" height="104" rx="30" fill="url(#t)"/>')
+        out.append(f'<rect x="{cx - 18}" y="{100}" width="36" height="80" rx="18" fill="url(#g)"/>')
+    # the original sync loop at its original size, lower: it now starts well under the rings instead of touching them
+    cx, cy, left, right, top, r = 256, 309, 154, 358, 224, 46
+    arrow = (f'M{left} {cy - 4}V{top + r}A{r} {r} 0 0 1 {left + r} {top}H{right - r}A{r} {r} 0 0 1 {right} {top + r}V{cy + 2}'
+             f'M{right - 22} {cy - 20}L{right} {cy + 2}L{right + 22} {cy - 20}')
+    out.append(f'<g fill="none" stroke="{INK}" stroke-width="{w}" stroke-linecap="round" stroke-linejoin="round">'
+               f'<path d="{arrow}"/><path transform="rotate(180 {cx} {cy})" d="{arrow}"/></g>')
+    if not small:                                      # the 31 stays on the big icon; at 32 px and below it is mush
+        out.append(f'<path transform="translate({cx} {cy}) scale(4.4) translate(-31.8 -38.6)" d="{THIRTY_ONE}" fill="{INK}" stroke="{INK}" stroke-width="0.6" stroke-linejoin="round"/>')
+    return "".join(out)
 
 
 def defs():
     return ('<defs><linearGradient id="t" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="512">'
             f'<stop offset="0" stop-color="{TILE_TOP}"/><stop offset="1" stop-color="{TILE_BOTTOM}"/></linearGradient>'
-            '<linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="104" x2="0" y2="394">'
+            '<linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="96" x2="0" y2="420">'
             f'<stop offset="0" stop-color="{GLYPH_TOP}"/><stop offset="1" stop-color="{GLYPH_BOTTOM}"/></linearGradient></defs>')
 
 
@@ -76,8 +72,6 @@ def tile_svg(small=False, square=False):
     """The full app icon. square=True fills the corners, for places that round them on their own (iOS, Android)."""
     corner = 0 if square else 114
     art = glyph(small)
-    if small:   # a browser tab has 16 pixels: the glyph takes more of the tile
-        art = f'<g transform="translate(256 262) scale(1.16) translate(-256 -250)">{art}</g>'
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="calsync">{defs()}'
             f'<rect width="512" height="512" rx="{corner}" fill="url(#t)"/>{art}</svg>')
 
@@ -85,7 +79,7 @@ def tile_svg(small=False, square=False):
 def glyph_svg(color):
     """The glyph alone in one colour, for text, buttons and the docs. The cut-outs are see-through."""
     g = glyph().replace('fill="url(#g)"', f'fill="{color}"')
-    mask = g.replace(f'fill="{color}"', 'fill="#fff"').replace('url(#t)', '#000')
+    mask = g.replace(f'fill="{color}"', 'fill="#fff"').replace('url(#t)', '#000').replace(INK, "#000")
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="96 88 320 320" role="img" aria-label="calsync">'
             f'<defs><mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">{mask}</mask></defs>'
             f'<rect x="96" y="88" width="320" height="320" fill="{color}" mask="url(#m)"/></svg>')
