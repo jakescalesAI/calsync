@@ -720,3 +720,29 @@ class TesterFindings(Base):
             cfg["calendars"][0].update(name=name, calendar_id="opaque-id")
             calsync.save_json(calsync.CONFIG, cfg)
             self.assertEqual(calsync_mcp.public_names()[name] != name, hidden, name)
+
+
+class OverlapsAndGuests(Base):
+    def test_an_overlap_needs_book_anyway(self):
+        self.cals["home"].events.append(event("CSCI-C 455", hour=12))
+        day = SOON.isoformat()
+        out = self.ok("calsync_add_event", {"text": f"Lunch {day} 12:30pm"}, WRITE)
+        self.assertEqual((out["added"], out["needs_confirm"]), (False, "overlap"))
+        self.assertEqual(out["overlaps"][0]["title"], "CSCI-C 455")
+        self.assertEqual(self.cals["work"].created, [])
+        out = self.ok("calsync_add_event", {"text": f"Lunch {day} 12:30pm", "book_anyway": True}, WRITE)
+        self.assertTrue(out["added"])
+        self.assertEqual(self.ok("calsync_check_event", {"text": f"Coffee {day} 12:15pm"})["overlaps"][0]["title"], "CSCI-C 455")
+
+    def test_guests_need_send_invites_and_a_google_calendar(self):
+        day = SOON.isoformat()
+        text = f"Breakfast with sam@x.com {day} 9am 2h remind me 1h before"
+        self.assertIn("Google calendar", self.failed("calsync_add_event", {"text": text}, WRITE))
+        with mock.patch.object(calsync, "GoogleCalendar", Fake):
+            out = self.ok("calsync_add_event", {"text": text}, WRITE)
+            self.assertEqual((out["added"], out["needs_confirm"], out["guests"], out["reminder_minutes_before"]), (False, "guests", ["sam@x.com"], 60))
+            self.assertTrue(self.ok("calsync_add_event", {"text": text, "send_invites": True}, WRITE)["added"])
+        self.assertEqual(self.cals["work"].created[0]["guests"], ["sam@x.com"])
+
+    def test_a_named_calendar_must_be_writable(self):
+        self.assertIn("calendar must be", self.failed("calsync_add_event", {"text": f"Lunch {SOON.isoformat()} 1pm", "calendar": "home"}, WRITE))

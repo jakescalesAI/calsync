@@ -138,6 +138,35 @@ class WebTests(unittest.TestCase):
         r, _ = self.req("GET", "/connect")
         self.assertEqual((r.status, r.getheader("Location")), (303, "/#add"))
 
+    def test_quick_add_previews_warns_then_adds(self):
+        self.start()
+        calls = []
+        plan_ev = {"title": "Breakfast", "when": "Sat Nov 28, 9:00-11:00 AM", "all_day": False, "guests": ["sam@x.com"], "remind_minutes": 60}
+        clash = [{"title": "CSCI-C 455", "when": "9:30-10:45 AM", "calendar": "school"}]
+        with mock.patch.object(calsync, "writable_calendars", return_value=[{"name": "work", "label": "work"}]), \
+             mock.patch.object(calsync, "make_adapter", return_value=calsync.GoogleCalendar("a", "b")), \
+             mock.patch.object(calsync, "busy_overlaps", return_value=(clash, [])), \
+             mock.patch.object(calsync, "quick_add", side_effect=lambda *a, **k: calls.append((a, k)) or {"status": "added", "synced": True}), \
+             mock.patch.object(calsync_web, "calendar_page", side_effect=lambda csrf, q, flash=None, quick=None: calsync_web.page("C", (flash or "") + (quick or ""), True)):
+            _, text = self.post("/quick", text="Breakfast with sam@x.com sat 9am 2h remind me 1h before", calendar="work", back="/calendar?view=week")
+            self.assertIn("This overlaps CSCI-C 455", text)
+            self.assertIn("Book anyway", text)
+            self.assertIn("sam@x.com", text)
+            self.assertIn('name="send_invites" value="1" required', text)
+            self.assertEqual(calls, [])                                     # a preview writes nothing
+            r, _ = self.post("/quick/add", text="Breakfast with sam@x.com sat 9am 2h", calendar="work", book_anyway="1", send_invites="1", back="https://evil.example/")
+            self.assertEqual((r.status, r.getheader("Location")), (303, "/calendar?m=quick"))
+            self.assertEqual(calls[0][1], {"confirm_overlap": True, "confirm_guests": True})
+
+    def test_skip_and_undo_go_through_the_engine(self):
+        self.start()
+        with mock.patch.object(calsync, "skip_occurrence") as skip, mock.patch.object(calsync, "unskip_occurrence") as unskip:
+            r, _ = self.post("/skip", key="school|abc|1", title="Class", start="2026-11-30T17:00:00Z", back="/calendar?view=week&d=2026-11-29")
+            self.assertTrue(r.getheader("Location").startswith("/calendar?view=week&d=2026-11-29&m=skipped"))
+            skip.assert_called_once_with("school|abc|1", "Class", "2026-11-30T17:00:00Z")
+            self.post("/unskip", key="school|abc|1", back="/calendar")
+            unskip.assert_called_once_with("school|abc|1")
+
     def test_the_calendar_tab_shows_events_in_each_calendars_colour(self):
         self.start()
         calsync.update_config(lambda c: c["calendars"].extend([
@@ -156,7 +185,7 @@ class WebTests(unittest.TestCase):
         calsync_web.CAL_CACHE.clear()
         with mock.patch.object(calsync, "make_adapter", side_effect=lambda c: Fake([own] if c["name"] == "work" else [copy])):
             text = self.req("GET", "/calendar")[1]
-            self.assertEqual(text.count("Dentist &lt;b&gt;"), 1)      # Everything: the copy on home isn't shown twice
+            self.assertEqual(text.count("Dentist &lt;b&gt;</summary>"), 1)      # Everything: the copy on home isn't shown twice
             self.assertIn('class="ev k0"', text)
             calsync_web.CAL_CACHE.clear()
             text = self.req("GET", "/calendar?view=month&show=home")[1]

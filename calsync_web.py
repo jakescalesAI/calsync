@@ -240,6 +240,12 @@ h2.big{margin:40px 0 12px;padding:0;color:var(--text);font:700 26px/1.15 var(--d
 .ev.copy{border-left-style:dashed;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--k) 12%,#fff) 0 6px,#fff 6px 12px)}
 .plus{display:block;font-size:12px;font-weight:500}.calnote{margin:14px 0 0;color:var(--dim);font-size:13px}
 @media (max-width:760px){.grid.week{grid-template-columns:1fr}.grid.week>div{min-height:0}.grid.month>div:not(.wd){min-height:64px;padding:4px}.grid.month .ev{padding:2px 4px;font-size:10px}.grid.month .ev .t{display:none}.grid>.wd{padding:6px 0;font-size:10px}.dn{min-width:24px;height:24px;font-size:13px}}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.quick{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}.quick input[type=text]{flex:1 1 320px;width:auto}.quick select{flex:0 1 180px;width:auto}
+.qpre{margin:10px 0 4px;box-shadow:0 0 0 1px var(--line)}.qline{font-size:17px}.warn{padding:10px 14px;border-radius:12px;background:var(--bad-bg);color:var(--bad)}
+.evd{margin:0 0 4px}.evd>summary{display:block;margin:0;padding:4px 6px 4px 8px;border-radius:6px;list-style:none;cursor:pointer}.evd>summary::-webkit-details-marker{display:none}.evd>summary:hover{background:color-mix(in srgb,var(--k) 22%,#fff)}
+.evd[open]>summary{border-radius:6px 6px 0 0}.evm{padding:8px;border:1px solid var(--line);border-top:0;border-radius:0 0 8px 8px;background:#fff;font-size:12px}.evm p{margin:0 0 6px}.evm button{min-height:30px;padding:4px 12px;font-size:13px}
+.ev.gone{opacity:.5;text-decoration:line-through}
 @media (min-width:900px){.cols{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:0 32px;align-items:start}.cols>div>h2:first-child{margin:0 0 20px;padding:0;color:var(--text);font:700 34px/1.1 var(--display);letter-spacing:-.03em;text-transform:none}}
 @media (max-width:560px){header{position:static}.bar{padding:10px 16px}nav{flex:1 1 100%}nav a{flex:1;padding:6px 4px;text-align:center}main{padding:24px 16px 72px}h1{font-size:30px}
 section{padding:16px}.list,.cal{padding:0}.row,summary{padding:12px 16px}.row+.row::before{left:68px}.opts{margin-left:16px;padding:16px 16px 16px 0}.chips{order:1;flex-basis:100%;padding-left:48px}.row.long>div{flex-basis:100%}.tally li{padding:10px;font-size:14px}.out .bar{padding-top:40px}}
@@ -442,10 +448,18 @@ def settings_page(csrf, flash=None):
     current = cfg.get("interval_minutes", 5)
     opts = "".join(f'<option value="{m}"{" selected" if m == current else ""}>Every {m} minutes</option>' for m in INTERVALS)
     made = ((web_config() or {}).get("recovery") or {}).get("made")
+    writable = engine.writable_calendars(cfg)
+    try:
+        main = engine.main_calendar(cfg)["name"] if writable else ""
+    except SystemExit:
+        main = ""
+    add_to = ("<label for=\"addto\">Quick add puts events on</label><select id=\"addto\" name=\"add_to\">" + "".join(
+        f'<option value="{esc(c["name"])}"{" selected" if c["name"] == main else ""}>{esc(c.get("label") or c["name"])}</option>' for c in writable)
+        + "</select><p class=\"soft\">Pick the calendar your booking page reads, so a new event blocks the time there at once.</p>") if writable else ""
     recovery_state = f"You have a recovery code, made {esc(made)}." if made else "<b>You don't have a recovery code yet.</b> Make one now, so a forgotten password isn't a problem."
     return page("Settings", f'''<h1>Settings</h1><section><form method="post" action="/settings/save"><input type="hidden" name="csrf" value="{csrf}">
 <label for="iv">How often to sync</label><select id="iv" name="interval">{opts}</select>
-<label for="tz">Your time zone</label><input type="text" id="tz" name="timezone" value="{esc(cfg.get("timezone") or engine.tz_name())}" required>
+{add_to}<label for="tz">Your time zone</label><input type="text" id="tz" name="timezone" value="{esc(cfg.get("timezone") or engine.tz_name())}" required>
 <div class="actions"><button>Save</button></div></form></section>
 <h2>Change password</h2><section><form method="post" action="/settings/password" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
 <label for="old">Current password</label><input type="password" id="old" name="old" required><label for="new">New password</label><input type="password" id="new" name="new" required minlength="10">
@@ -494,7 +508,7 @@ def _local(ev, tz):
     return s.date(), max(s.date(), last), label
 
 
-def calendar_page(csrf, q, flash=None):
+def calendar_page(csrf, q, flash=None, quick=None):
     D = engine.dt
     cfg = engine.load_json(engine.CONFIG, {"calendars": []})
     cals = cfg["calendars"]
@@ -542,6 +556,7 @@ def calendar_page(csrf, q, flash=None):
 
     per_day = {d: [] for d in days}
     seen, problems = set(), []
+    skips = engine.skipped(cfg)
     for c in wanted:
         kind, evs = results.get(c["name"], ("err", "took too long to answer"))
         if kind == "err":
@@ -558,7 +573,8 @@ def calendar_page(csrf, q, flash=None):
             first_day, last_day, when = _local(ev, tz)
             owner = src if src in colour else c["name"]
             what = "Busy" if ev.get("private") and src else (ev.get("title") or "(no title)")
-            item = (0 if ev["all_day"] else 1, ev["start"], when, what, colour[owner], bool(src), label.get(owner, owner))
+            key = ev["copy_of"] if src else f"{c['name']}|{ev['uid']}"      # the occurrence a skip is about: always the source's
+            item = (0 if ev["all_day"] else 1, ev["start"], when, what, colour[owner], bool(src), label.get(owner, owner), key, key in skips)
             d = max(first_day, days[0])
             while d <= min(last_day, days[-1]) and d - first_day < D.timedelta(days=62):
                 per_day[d].append(item)
@@ -588,18 +604,73 @@ def calendar_page(csrf, q, flash=None):
         cls = " ".join(x for x in ("today" if d == today else "", "other" if view == "month" and d.month != anchor.month else "") if x)
         head = (f'<p class="dh"><span class="dn">{d.day}</span>' + (f'<span class="wn">{d.strftime("%a")}</span>' if view == "week" else "") + "</p>")
         limit = 3 if view == "month" else 50
-        evs = "".join(f'<p class="ev {k}{" copy" if cp else ""}" title="{esc(who)}{" (copy)" if cp else ""}"><span class="t">{esc(when)}</span>{esc(t)}</p>'
-                      for _, _, when, t, k, cp, who in items[:limit])
+        evs = "".join(chip(view, csrf, item, link()) for item in items[:limit])
         if len(items) > limit:
             evs += f'<a class="plus" href="{esc(link(view="week", d=d.isoformat()))}">{len(items) - limit} more</a>'
         cells.append(f'<div{" class=" + chr(34) + cls + chr(34) if cls else ""}>{head}{evs}</div>')
     bad = "".join(f"<li>{esc(p)}</li>" for p in problems)
     bad = f'<section class="bad"><p>Some calendars couldn\'t be read just now:</p><ul>{bad}</ul></section>' if bad else ""
+    writable = engine.writable_calendars(cfg)
+    try:
+        main = engine.main_calendar(cfg)["name"] if writable else None
+    except SystemExit:
+        main = None
+    pick = q.get("cal", [main or ""])[0]
+    opts = "".join(f'<option value="{esc(c["name"])}"{" selected" if c["name"] == pick else ""}>{esc(c.get("label") or c["name"])}</option>' for c in writable)
+    adder = (f'''<form class="quick" method="post" action="/quick" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="back" value="{esc(link())}">
+<label for="qa" class="vh">Add an event</label><input type="text" id="qa" name="text" required maxlength="300" value="{esc(q.get("text", [""])[0])}" placeholder="Breakfast with friends tomorrow 9am for 2 hours">
+<select name="calendar" aria-label="Add it to">{opts}</select><button>Preview</button></form>''' if writable else "")
+    gone = [x for x in cfg.get("skips", []) if x["key"] in skips]
+    skipped_list = ('<h2>Skipped</h2><section class="list">' + "".join(
+        f'''<div class="row"><div><b>{esc(x["title"])}</b><span class="soft">{esc(x["start"][:10])} · not copied, so it doesn't block your other calendars</span></div>
+<form class="inline" method="post" action="/unskip"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="key" value="{esc(x["key"])}"><input type="hidden" name="back" value="{esc(link())}"><button class="plain">Undo</button></form></div>'''
+        for x in gone) + "</section>") if gone else ""
     body = f'''<div class="calbar"><h1>Calendar</h1><div class="tools"><nav class="seg" aria-label="View">{seg}</nav><span class="step">{step}</span></div></div>
-<p class="range">{esc(title)}</p><div class="legend" role="group" aria-label="Calendars">{"".join(legend)}</div>{bad}
+{adder}{quick or ""}<p class="range">{esc(title)}</p><div class="legend" role="group" aria-label="Calendars">{"".join(legend)}</div>{bad}
 <div class="grid {view}">{"".join(cells)}</div>
-<p class="calnote">{explain} Times are in {esc(engine.tz_name())}. Read a moment ago; <a href="{esc(link(fresh="1"))}">refresh</a>.</p>'''
+<p class="calnote">{explain} {"Open an event in the week view to skip it, for a class that's cancelled. " if view == "month" else "Open an event to skip it, for a class that's cancelled. "}Times are in {esc(engine.tz_name())}. Read a moment ago; <a href="{esc(link(fresh="1"))}">refresh</a>.</p>{skipped_list}'''
     return page("Calendar", body, True, flash, at="/calendar", wide=True)
+
+
+def chip(view, csrf, item, back):
+    """One event. In the week view it opens to show where it's from, with Skip this one."""
+    _, start, when, t, k, cp, who, key, gone = item
+    cls = f'ev {k}{" copy" if cp else ""}{" gone" if gone else ""}'
+    label = f'<span class="t">{esc(when)}</span>{esc(t)}'
+    if view != "week":
+        return f'<p class="{cls}" title="{esc(who)}{" (copy)" if cp else ""}{" (skipped)" if gone else ""}">{label}</p>'
+    hidden = (f'<input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="key" value="{esc(key)}">'
+              f'<input type="hidden" name="back" value="{esc(back)}">')
+    if gone:
+        action = f'<form method="post" action="/unskip">{hidden}<button class="plain">Undo skip</button></form>'
+        note = "Skipped: not copied to your other calendars."
+    else:
+        action = (f'<form method="post" action="/skip">{hidden}<input type="hidden" name="title" value="{esc(t)}">'
+                  f'<input type="hidden" name="start" value="{esc(start)}"><button class="plain">Skip this one</button></form>')
+        note = ("A copy calsync made. " if cp else "") + "Skipping it removes its copies, so the time opens on your other calendars. The original stays."
+    return f'<details class="evd"><summary class="{cls}">{label}</summary><div class="evm"><p><b>From {esc(who)}</b></p><p class="soft">{note}</p>{action}</div></details>'
+
+
+def quick_preview(csrf, plan, text, cal, back):
+    """The one-line preview, with whatever needs a yes: an overlap, guests who would get an invite."""
+    ev = plan["event"]
+    lines = [f'<p class="qline"><b>{esc(ev["title"])}</b> · {esc(ev["when"])} · on {esc(plan["calendar"])}</p>']
+    if ev.get("remind_minutes") is not None:
+        m = ev["remind_minutes"]
+        lines.append(f'<p class="soft">Reminder {esc(f"{m // 60} h" if m and m % 60 == 0 else f"{m} min")} before.</p>')
+    if plan["overlaps"]:
+        lines.append('<p class="warn"><b>This overlaps ' + "; ".join(f'{esc(o["title"])}, {esc(o["when"])} ({esc(o["calendar"])})' for o in plan["overlaps"]) + ".</b></p>")
+    if plan.get("unread"):
+        lines.append(f'<p class="soft">Couldn&#x27;t check {esc(", ".join(plan["unread"]))} for overlaps just now.</p>')
+    invite = ""
+    if ev.get("guests"):
+        lines.append('<p>Invites will be emailed to: <b>' + esc(", ".join(ev["guests"])) + '</b></p>')
+        invite = '<label class="check"><input type="checkbox" name="send_invites" value="1" required> Send the invites to these people</label>'
+    go = "Book anyway" if plan["overlaps"] else "Add it"
+    return (f'<section class="qpre">{"".join(lines)}<form method="post" action="/quick/add"><input type="hidden" name="csrf" value="{csrf}">'
+            f'<input type="hidden" name="text" value="{esc(text)}"><input type="hidden" name="calendar" value="{esc(cal)}"><input type="hidden" name="back" value="{esc(back)}">'
+            f'<input type="hidden" name="book_anyway" value="{"1" if plan["overlaps"] else ""}">{invite}'
+            f'<div class="actions"><button{" class=danger" if plan["overlaps"] else ""}>{go}</button><a class="button plain" href="{esc(back)}">Cancel</a></div></form></section>')
 
 
 def short_error(e):
@@ -901,6 +972,41 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.redirect("/?m=paused")
         if url == "/run":
             return self.redirect("/?m=" + ("running" if run_in_background(force=bool(get("force"))) else "busy"))
+        if url == "/quick":
+            text, cal, back = get("text").strip(), get("calendar"), back_to(get("back"))
+            q = dict(urllib.parse.parse_qs(urllib.parse.urlparse(back).query), text=[text], cal=[cal])
+            ev, why = engine.quick_plan(text)
+            if not ev:
+                return self.send(200, calendar_page(csrf, q, f"Couldn't read that: {why}."))
+            target = next((c for c in engine.writable_calendars() if c["name"] == cal), None)
+            if not target:
+                return self.send(200, calendar_page(csrf, q, "Pick a calendar to add it to."))
+            if ev["guests"] and not isinstance(engine.make_adapter(target), engine.GoogleCalendar):
+                return self.send(200, calendar_page(csrf, q, "Invites go out from a Google calendar. Pick one, or leave the addresses out."))
+            overlaps, unread = engine.busy_overlaps(ev)
+            plan = {"event": ev, "calendar": target.get("label") or target["name"], "overlaps": overlaps, "unread": unread}
+            return self.send(200, calendar_page(csrf, q, None, quick_preview(csrf, plan, text, cal, back)))
+        if url == "/quick/add":
+            back = back_to(get("back"))
+            r = engine.quick_add(get("text"), get("calendar"), confirm_overlap=bool(get("book_anyway")), confirm_guests=bool(get("send_invites")))
+            q = dict(urllib.parse.parse_qs(urllib.parse.urlparse(back).query), text=[get("text")], cal=[get("calendar")])
+            if r["status"] == "invalid":
+                return self.send(200, calendar_page(csrf, q, f"Not added: {r['why']}."))
+            if r["status"] == "confirm":        # something changed since the preview: show it again
+                return self.send(200, calendar_page(csrf, q, None, quick_preview(csrf, r, get("text"), get("calendar"), back)))
+            with state_lock:
+                CAL_CACHE.clear()
+            return self.redirect(with_flash(back, "quick" if r.get("synced") else "quicklater"))
+        if url in ("/skip", "/unskip"):
+            back = back_to(get("back"))
+            if url == "/skip":
+                engine.skip_occurrence(get("key"), get("title"), get("start"))
+            else:
+                engine.unskip_occurrence(get("key"))
+            with state_lock:
+                CAL_CACHE.clear()
+            synced = engine.load_json(engine.CONFIG, {}).get("enabled") and run_in_background()
+            return self.redirect(with_flash(back, ("skipped" if url == "/skip" else "unskipped") + ("" if synced else "later")))
         if url == "/settings/save":
             minutes, zone = get("interval"), get("timezone").strip()
             try:
@@ -910,7 +1016,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.send(200, settings_page(csrf, "That time zone isn't known. Use a name like America/New_York."))
             if not minutes.isdigit() or int(minutes) not in INTERVALS:
                 return self.send(200, settings_page(csrf, "Pick one of the listed intervals."))
-            engine.update_config(lambda c: c.update(interval_minutes=int(minutes), timezone=zone))
+            add_to = get("add_to")
+            if add_to and add_to not in {c["name"] for c in engine.writable_calendars()}:
+                return self.send(200, settings_page(csrf, "Pick one of the listed calendars for quick add."))
+            engine.update_config(lambda c: c.update(interval_minutes=int(minutes), timezone=zone, **({"add_to": add_to} if add_to else {})))
             return self.redirect("/settings?m=saved")
         if url == "/settings/password":
             ip = self.client_address[0]
@@ -1071,9 +1180,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self.send(200, page("Connect Microsoft", f'''<h1>Sign in to Microsoft</h1><section><ol><li><a class="button" href="{esc(flow["link"])}" target="_blank" rel="noreferrer noopener">Open Microsoft sign-in</a></li><li>Enter this code:<p class="code">{esc(flow["user_code"])}</p></li><li>Sign in and accept. This page moves on by itself.</li></ol></section>''', True, refresh=5, at="/"))
 
 
+def back_to(path):
+    """Only back to a Calendar page: never somewhere else a form could be pointed at."""
+    return path if re.fullmatch(r"/calendar(\?[A-Za-z0-9=&%._+-]*)?", path or "") else "/calendar"
+
+
+def with_flash(path, key):
+    return path + ("&" if "?" in path else "?") + "m=" + key
+
+
 FLASHES = {"saved": "Saved.", "added": "Added. Preview to see what will change.", "removed": "Stopped syncing that calendar. Its copies on other calendars go away on the next run.",
            "busy": "A sync is already going. Try again in a moment.", "started": "Syncing started.", "paused": "Paused. Nothing changes until you start it again.",
-           "running": "Sync started.", "signedout": "Signed out of that account."}
+           "running": "Sync started.", "signedout": "Signed out of that account.",
+           "quick": "Added and synced. A booking page reading your calendars sees that time as busy now.",
+           "quicklater": "Added. It reaches your other calendars at the next sync.",
+           "skipped": "Skipped. Its copies are being removed, so the time opens on your other calendars.",
+           "skippedlater": "Skipped. Its copies go at the next sync.",
+           "unskipped": "Copying it again.", "unskippedlater": "It's copied again at the next sync."}
 
 
 def login_page(flash=None):

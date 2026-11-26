@@ -230,12 +230,17 @@ class GoogleCalendar:
         http("PUT", self._url("/" + urllib.parse.quote(uid, safe="")), self.token(), self._body(fields, copy_of, src_label))
 
     def create_native(self, ev):
-        """A real event (from quick add), not a copy: untagged, so the next sync copies it everywhere."""
+        """A real event (from quick add), not a copy: untagged, so the next sync copies it everywhere.
+        Guests get Google's normal invite email; the caller has already had the person confirm the list."""
         when = (lambda d: {"date": d}) if ev["all_day"] else (lambda t: {"dateTime": t.isoformat(), "timeZone": tz_name()})
-        return http("POST", self._url(), self.token(), {
-            "summary": ev["title"], "start": when(ev["start"]), "end": when(ev["end"]),
-            "description": "Added with calsync quick add.",
-            "extendedProperties": {"private": {"calsync_quick": "1"}}})["id"]
+        body = {"summary": ev["title"], "start": when(ev["start"]), "end": when(ev["end"]),
+                "description": "Added with calsync quick add.",
+                "extendedProperties": {"private": {"calsync_quick": "1"}}}
+        if ev.get("guests"):
+            body["attendees"] = [{"email": g} for g in ev["guests"]]
+        if ev.get("remind_minutes") is not None:
+            body["reminders"] = {"useDefault": False, "overrides": [{"method": "popup", "minutes": ev["remind_minutes"]}]}
+        return http("POST", self._url("?sendUpdates=all" if ev.get("guests") else ""), self.token(), body)["id"]
 
     def delete(self, uid):
         try:
@@ -955,7 +960,9 @@ def sync(cals, adapters, dry_run=False, force=False, log=print, now=None):
             failed.add(c["name"])
             log(f"! {c['name']}: list failed: {e}")
     labels = {c["name"]: c.get("label") or c["name"] for c in cals}
-    sources = {n: [e for e in evs if not e["copy_of"] and not e["declined"] and not _canceled(e)] for n, evs in listed.items()}
+    skips = skipped()       # occurrences the person marked "Skip this one": not copied, so their copies go
+    sources = {n: [e for e in evs if not e["copy_of"] and not e["declined"] and not _canceled(e) and f"{n}|{e['uid']}" not in skips]
+               for n, evs in listed.items()}
     summary = {"created": 0, "updated": 0, "deleted": 0, "skipped_deletes": 0, "failed": sorted(failed), "errors": 0}
 
     for dst in cals:
@@ -1626,9 +1633,154 @@ def cmd_run(dry_run, force):
     return 1 if s["errors"] or s["failed"] else 0
 
 
+# ---------- quick add with guests, a reminder and an overlap check; skipping one occurrence ----------
+
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+_REMIND = re.compile(r"(?<!\S),?\s*(?:and\s+)?remind(?:er)?(?:\s+me)?\s+(\d+(?:\.\d+)?)\s?(m|mins?|minutes?|h|hrs?|hours?|d|days?)(?:\s+(?:before|ahead|early))?(?!\w)", re.I)
+MAX_GUESTS = 20
+
+
+def quick_plan(text, now=None):
+    """quick_parse, plus who to invite (email addresses) and a reminder ("remind me 1h before").
+    Names without an address stay in the title: "Breakfast with Sam". -> (event, None) or (None, why)."""
+    guests = []
+
+    def grab(m):
+        guests.append(m.group(0).lower())
+        return " "
+    rest = _EMAIL.sub(grab, text or "")
+    remind = None
+    m = _REMIND.search(rest)
+    if m:
+        n, unit = float(m.group(1)), m.group(2).lower()
+        remind = int(n * (1440 if unit.startswith("d") else 60 if unit.startswith("h") else 1))
+        rest = rest[:m.start()] + " " + rest[m.end():]
+    if remind is not None and not 0 <= remind <= 40320:
+        return None, "a reminder can be up to 4 weeks before"
+    if len(set(guests)) > MAX_GUESTS:
+        return None, f"at most {MAX_GUESTS} guests"
+    ev, why = quick_parse(rest, now)
+    if not ev:
+        return None, why
+    title = re.sub(r"\s+(?:and|,)\s+(?=(?:and|,|with)\b|$)", " ", ev["title"])       # "with Sam and  " left by a removed address
+    title = re.sub(r"(?:\s*(?:,|\band\b|\bwith\b))+\s*$", "", title).strip() or ev["title"]
+    ev.update(title=title, guests=sorted(set(guests)), remind_minutes=remind)
+    return ev, None
+
+
+def _when_utc(v, end=False):
+    """A quick-add start or end as an aware UTC datetime; an all-day date counts from local midnight."""
+    if isinstance(v, dt.datetime):
+        return v.astimezone(dt.timezone.utc)
+    d = v if isinstance(v, dt.date) else dt.date.fromisoformat(str(v)[:10])
+    return dt.datetime.combine(d, dt.time(), local_tz()).astimezone(dt.timezone.utc)
+
+
+def busy_overlaps(ev, cals=None):
+    """The real, busy events on any calendar that a new event would sit on top of. -> (overlaps, calendars not read).
+    Copies calsync made are left out (their source is checked instead), and so are all-day items and free time."""
+    if ev.get("all_day"):
+        return [], []
+    cfg = load_json(CONFIG, {"calendars": []})
+    cals = cals if cals is not None else cfg["calendars"]
+    lo, hi = _when_utc(ev["start"]), _when_utc(ev["end"], True)
+    tmin, tmax = (lo - dt.timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%SZ"), (hi + dt.timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    found, seen, unread, tz = [], set(), [], local_tz()
+    for c in cals:
+        try:
+            evs = list_for_people(make_adapter(c), tmin, tmax)
+        except Exception:
+            unread.append(c.get("label") or c["name"])
+            continue
+        for x in evs:
+            try:                                # anyone can invite you, so one strange event mustn't stop the check
+                if x["copy_of"] or x["declined"] or _canceled(x) or x["all_day"] or not x["busy"]:
+                    continue
+                s = dt.datetime.strptime(x["start"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+                f = dt.datetime.strptime(x["end"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+                key = (str(x.get("ical") or x["uid"]), x["start"])
+                if not (s < hi and lo < f) or key in seen:
+                    continue
+                s, f = s.astimezone(tz), f.astimezone(tz)
+                row = {"title": "Busy" if x["private"] else (str(x["title"] or "") or "(no title)"), "calendar": c.get("label") or c["name"],
+                       "start": s, "end": f, "when": _span(s, f)}
+            except Exception:
+                continue
+            seen.add(key)
+            found.append(row)
+    return sorted(found, key=lambda o: o["start"]), unread
+
+
+def writable_calendars(cfg=None):
+    cfg = cfg or load_json(CONFIG, {"calendars": []})
+    accounts = _accounts()
+    return [c for c in cfg["calendars"] if not c.get("read_only") and not c.get("cannot_write")
+            and accounts.get(c.get("account"), {}).get("provider") not in (None, "ics")]
+
+
+def quick_add(text, calendar=None, confirm_overlap=False, confirm_guests=False, sync=True, now=None):
+    """One quick add, the same for the web page, the agent tools and the command line.
+    Returns {"status": "invalid" | "confirm" | "added", ...}. "confirm" lists what needs a yes first: overlaps
+    (book anyway?) and guests (send invites?). Nothing is written until both are confirmed. After adding, it syncs
+    right away so a booking page reading any synced calendar sees the time as busy within seconds."""
+    ev, why = quick_plan(text, now)
+    if not ev:
+        return {"status": "invalid", "why": why}
+    cfg = load_json(CONFIG, {"calendars": []})
+    writable = writable_calendars(cfg)
+    cal = next((c for c in writable if c["name"] == calendar), None) if calendar else None
+    if calendar and not cal:
+        return {"status": "invalid", "why": f"{calendar} isn't a calendar calsync can add to"}
+    try:
+        cal = cal or main_calendar(cfg)
+    except SystemExit as e:
+        return {"status": "invalid", "why": str(e)}
+    adapter = make_adapter(cal)
+    if ev["guests"] and not isinstance(adapter, GoogleCalendar):
+        return {"status": "invalid", "why": "invites go out from a Google calendar: pick one to add it to"}
+    overlaps, unread = busy_overlaps(ev)
+    out = {"event": ev, "calendar": cal.get("label") or cal["name"], "overlaps": overlaps, "unread": unread}
+    needs = [n for n, ok in (("overlap", confirm_overlap or not overlaps), ("guests", confirm_guests or not ev["guests"])) if not ok]
+    if needs:
+        return dict(out, status="confirm", needs=needs)
+    adapter.create_native(ev)
+    out.update(status="added", synced=False)
+    if sync and cfg.get("enabled"):
+        started = time.time()
+        summary = run_once(log=lambda *_: None)
+        while summary is None and time.time() - started < 45:     # the timer's own sync was mid-run: wait for it, then sync this in
+            time.sleep(2)
+            summary = run_once(log=lambda *_: None)
+        if summary is not None:
+            out.update(synced=not summary.get("errors"), sync_seconds=round(time.time() - started, 1))
+    return out
+
+
+def skipped(cfg=None):
+    """Occurrences the person said not to copy ("Skip this one"), as copy keys "SOURCE|UID". Old ones drop off."""
+    cfg = cfg or load_json(CONFIG, {})
+    today = now_utc().date().isoformat()
+    return {s["key"] for s in cfg.get("skips", []) if s.get("until", "9999") >= today}
+
+
+def skip_occurrence(key, title, start):
+    """Stop copying one occurrence; its copies go at the next sync. The source calendar is left alone."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}\|.{1,1000}", key or ""):
+        raise ValueError("not an event calsync knows")
+    until = (_when_utc(start).date() + dt.timedelta(days=2)).isoformat()
+    def change(c):
+        keep = [s for s in c.get("skips", []) if s["key"] != key and s.get("until", "9999") >= now_utc().date().isoformat()]
+        c["skips"] = keep + [{"key": key, "title": str(title)[:200], "start": str(start)[:25], "until": until}]
+    update_config(change)
+
+
+def unskip_occurrence(key):
+    update_config(lambda c: c.update(skips=[s for s in c.get("skips", []) if s["key"] != key]))
+
+
 def main_calendar(cfg):
-    """Where quick add puts events: config quick_add.calendar, else the first calendar calsync can write to."""
-    cals, want = cfg["calendars"], cfg.get("quick_add", {}).get("calendar")
+    """Where quick add puts events: add_to (set in Settings), then quick_add.calendar, else the first calendar calsync can write to."""
+    cals, want = cfg["calendars"], cfg.get("add_to") or cfg.get("quick_add", {}).get("calendar")
     accounts = _accounts()
     for c in cals:
         writable = not c.get("read_only") and accounts.get(c.get("account"), {}).get("provider") != "ics"

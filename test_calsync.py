@@ -751,5 +751,83 @@ class HostileCalendarTests(unittest.TestCase):
             self.assertEqual(dst.labels, want)
 
 
+class QuickPlanTests(unittest.TestCase):
+    NOW = dt.datetime(2026, 11, 26, 17, tzinfo=dt.timezone.utc)
+
+    def plan(self, text):
+        return calsync.quick_plan(text, self.NOW)
+
+    def test_plain_words_with_a_length(self):
+        ev, _ = self.plan("breakfast with friends tomorrow 9am for 2 hours")
+        self.assertEqual((ev["title"], ev["guests"], ev["remind_minutes"]), ("breakfast with friends", [], None))
+        self.assertEqual(ev["end"] - ev["start"], dt.timedelta(hours=2))
+
+    def test_addresses_become_guests_and_names_stay_in_the_title(self):
+        ev, _ = self.plan("Breakfast with Sam and SAM@x.com sat 9am 2h remind me 1h before")
+        self.assertEqual((ev["title"], ev["guests"], ev["remind_minutes"]), ("Breakfast with Sam", ["sam@x.com"], 60))
+        ev, _ = self.plan("lunch with a@b.co, c@d.org, a@b.co fri noon, reminder 30 min")
+        self.assertEqual((ev["title"], ev["guests"], ev["remind_minutes"]), ("lunch", ["a@b.co", "c@d.org"], 30))
+
+    def test_limits(self):
+        self.assertIsNone(self.plan("party " + " ".join(f"g{i}@x.com" for i in range(25)) + " fri 8pm")[0])
+        self.assertIsNone(self.plan("trip fri 8pm remind me 30 days before")[0])
+        self.assertIsNone(self.plan("coffee with sam@x.com")[0])          # no day or time: nothing to add
+
+
+class SkipTests(unittest.TestCase):
+    def setUp(self):
+        self.a, self.b = FakeCal(), FakeCal()
+        self.cals = {"a": self.a, "b": self.b}
+        self.uid = self.a.add("Class", "2026-11-02T15:00:00Z", "2026-11-02T16:00:00Z")
+        self.a.add("Lab", "2026-11-03T15:00:00Z", "2026-11-03T16:00:00Z")
+
+    def test_a_skipped_occurrence_loses_its_copies_and_its_source_stays(self):
+        run(self.cals)
+        self.assertEqual(len(self.b.copies()), 2)
+        with mock.patch.object(calsync, "skipped", return_value={f"a|{self.uid}"}):
+            s = run(self.cals)
+            self.assertEqual(s["deleted"], 1)
+            self.assertEqual([e["title"] for e in self.b.copies()], ["Lab"])
+            self.assertEqual(run(self.cals)["created"], 0)          # stays skipped though the source still lists it
+        self.assertEqual(len(self.a.natives()), 2)
+        self.assertEqual(run(self.cals)["created"], 1)              # undo: copied again
+
+    def test_skips_are_kept_in_the_config_and_drop_off_after_their_day(self):
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        with mock.patch.object(calsync, "CONFIG", os.path.join(d.name, "config.json")):
+            calsync.save_json(calsync.CONFIG, {"calendars": []})
+            soon = (calsync.now_utc() + dt.timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            calsync.skip_occurrence("school|x|1", "Class", soon)
+            calsync.skip_occurrence("school|old|1", "Old", "2020-01-01T10:00:00Z")
+            self.assertEqual(calsync.skipped(), {"school|x|1"})
+            calsync.unskip_occurrence("school|x|1")
+            self.assertEqual(calsync.skipped(), set())
+            with self.assertRaises(ValueError):
+                calsync.skip_occurrence("not a key", "x", soon)
+
+
+class GoogleInviteTests(unittest.TestCase):
+    def test_guests_get_an_invite_and_a_reminder_is_set(self):
+        ev, _ = calsync.quick_plan("Breakfast with sam@x.com sat 9am 2h remind me 1h before", dt.datetime(2026, 11, 26, 17, tzinfo=dt.timezone.utc))
+        g = calsync.GoogleCalendar("acct", "me@example.com")
+        with mock.patch.object(calsync, "google_access_token", return_value="t"), \
+             mock.patch.object(calsync, "http", return_value={"id": "new"}) as http:
+            g.create_native(ev)
+        method, url, _, body = http.call_args[0]
+        self.assertTrue(url.endswith("/events?sendUpdates=all"))
+        self.assertEqual(body["attendees"], [{"email": "sam@x.com"}])
+        self.assertEqual(body["reminders"]["overrides"], [{"method": "popup", "minutes": 60}])
+
+    def test_no_guests_no_emails(self):
+        ev, _ = calsync.quick_plan("Dentist sat 9am", dt.datetime(2026, 11, 26, 17, tzinfo=dt.timezone.utc))
+        g = calsync.GoogleCalendar("acct", "me@example.com")
+        with mock.patch.object(calsync, "google_access_token", return_value="t"), \
+             mock.patch.object(calsync, "http", return_value={"id": "new"}) as http:
+            g.create_native(ev)
+        self.assertTrue(http.call_args[0][1].endswith("/events"))
+        self.assertNotIn("attendees", http.call_args[0][3])
+
+
 if __name__ == "__main__":
     unittest.main()

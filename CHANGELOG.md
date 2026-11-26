@@ -6,6 +6,17 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Quick add on the Calendar tab: plain words like "breakfast with friends tomorrow 9am for 2 hours" show a one-line
+  preview, then the event goes on the calendar you pick and calsync syncs at once, so a booking page reading any synced
+  calendar sees the time as busy within seconds. Email addresses in the words become guests who get a normal Google
+  invite, only after you tick "Send the invites"; "remind me 1h before" sets a reminder.
+- Overlap warning: when a new event sits on top of something busy, the preview says so plainly ("This overlaps
+  CSCI-C 455, 12:00-1:15 PM") and the button becomes Book anyway. The agent tools do the same: `calsync_add_event`
+  returns needs_confirm until the person says book_anyway or send_invites.
+- Skip this one: open an event in the week view and skip a single occurrence, such as a cancelled class. Its copies go
+  at once, so the time opens on your other calendars; the source calendar is left alone. Skips are listed with Undo
+  and drop off after their day.
+- Settings: "Quick add puts events on", to point quick add at the calendar your booking page reads.
 - A forgotten page password has two ways back, both only on the computer calsync runs on: the recovery code shown
   once when the password is chosen (a "Forgot password?" link on the sign-in page), and `calsync reset-password`.
   Either one signs everyone out and gives a new recovery code. Settings can make a new code.

@@ -213,7 +213,7 @@ def parsed(args):
     if not isinstance(text, str) or not clean(text):
         raise Refused('text is required, like "Dentist 2030-01-31 3pm 1h".')
     words = clean(text, MAX_WORDS)
-    ev, why = engine.quick_parse(words)
+    ev, why = engine.quick_plan(words)
     if not ev:
         raise Refused(f"Not read as an event: {why}")
     if not ev["all_day"] and not ev["day_stated"] and DATE_SHAPED.search(ev["title"]):   # the engine keeps a date it can't read in the title, and picks today
@@ -223,7 +223,15 @@ def parsed(args):
     this_year = engine.now_utc().year
     if not this_year - 1 <= event_day(ev).year <= this_year + 10:
         raise Refused(f"That date is too far away to be right. {DATE_HINT}")
-    cal = engine.main_calendar(engine.load_json(engine.CONFIG, {"calendars": []}))
+    cfg = engine.load_json(engine.CONFIG, {"calendars": []})
+    wanted = args.get("calendar")
+    if wanted is not None:
+        names = {v: k for k, v in public_names().items()}
+        cal = next((c for c in engine.writable_calendars(cfg) if c["name"] == names.get(wanted, wanted)), None)
+        if not cal:
+            raise Refused("calendar must be one calsync can add to; calsync_status lists them.")
+    else:
+        cal = engine.main_calendar(cfg)
     return ev, cal, engine.make_adapter(cal)
 
 
@@ -250,7 +258,21 @@ def event_day(ev):
 
 
 def reading(ev, cal):
-    return {"title": ev["title"], "when": ev["when"], "date": event_day(ev).isoformat(), "calendar": public_names()[cal["name"]]}
+    out = {"title": ev["title"], "when": ev["when"], "date": event_day(ev).isoformat(), "calendar": public_names()[cal["name"]]}
+    if ev.get("guests"):
+        out["guests"] = ev["guests"]
+    if ev.get("remind_minutes") is not None:
+        out["reminder_minutes_before"] = ev["remind_minutes"]
+    return out
+
+
+def clashes(ev, opts):
+    """What the new event would overlap, for a plain warning. With --busy-only the titles stay hidden."""
+    found, unread = engine.busy_overlaps(ev)
+    shown = public_names()
+    rows = [{"title": "Busy" if opts["busy_only"] else clean(o["title"]), "when": o["when"],
+             **({} if opts["busy_only"] else {"calendar": shown.get(o["calendar"], o["calendar"])})} for o in found]
+    return rows, unread
 
 
 def can_add(cal, adapter):
@@ -259,7 +281,9 @@ def can_add(cal, adapter):
 
 def check_event(args, opts):
     ev, cal, adapter = parsed(args)
-    out = dict(reading(ev, cal), can_add=can_add(cal, adapter), added=False)
+    rows, unread = clashes(ev, opts)
+    out = dict(reading(ev, cal), can_add=can_add(cal, adapter), added=False, overlaps=rows,
+               **({"overlap_check_incomplete": True} if unread else {}))
     return out if opts["busy_only"] else dict(out, already_there=already_there(ev, adapter))
 
 
@@ -275,6 +299,17 @@ def add_event(args, opts):
     if not can_add(cal, adapter):
         raise Refused(f"{public_names()[cal['name']]} is read only, so nothing can be added to it.")
     out = reading(ev, cal)
+    if ev["guests"] and not isinstance(adapter, engine.GoogleCalendar):
+        raise Refused("Invites go out from a Google calendar. Pass calendar with one of those, or leave the addresses out.")
+    if already_there(ev, adapter):              # a retry: it would overlap itself, so check this first
+        return dict(out, already_there=True, added=False, note="If another calendar is missing it, the next sync copies it.")
+    rows, unread = clashes(ev, opts)
+    if rows and args.get("book_anyway") is not True:      # the person decides, not the agent
+        return dict(out, added=False, needs_confirm="overlap", overlaps=rows,
+                    note="This overlaps the events listed. Tell the person plainly, and call again with book_anyway true only if they say to.")
+    if ev["guests"] and args.get("send_invites") is not True:
+        return dict(out, added=False, needs_confirm="guests",
+                    note="Adding this emails an invite to every guest listed. Show the person the list, and call again with send_invites true only if they say to.")
     with engine.file_lock("mcp-add.lock"):      # two calls at once still make one event
         if already_there(ev, adapter):
             return dict(out, already_there=True, added=False, note="If another calendar is missing it, the next sync copies it.")
@@ -309,19 +344,25 @@ def tool(name, description, run, properties=None, required=None, write=False):
             "annotations": {"readOnlyHint": not write, "destructiveHint": write, "openWorldHint": True}}   # a sync can remove a few copies
 
 
-TEXT = {"text": {"type": "string", "description": 'The event in plain words with its date, like "Dentist 2030-01-31 3pm 1h".'}}
+TEXT = {"text": {"type": "string", "description": 'The event in plain words with its date, like "Breakfast with Sam sam@x.com 2030-01-31 9am for 2 hours, remind me 1h before".'}}
+CALENDAR = {"calendar": {"type": "string", "description": "Optional: which calendar to add it to, by the name calsync_status shows. Default: the main one."}}
 TOOLS = [
     tool("calsync_status", "List the calendars calsync keeps in step, and how the last sync went.", status),
     tool("calsync_agenda", "Everything on the person's calendars for a span of days, one row per real event. Copies calsync made are "
          "left out. complete is false when a calendar or an event could not be read, so a gap in the list may not be free time. could_not_read says which calendars and why.", agenda,
          {"start": {"type": "string", "description": "First day, YYYY-MM-DD. Default today."},
           "days": {"type": "integer", "minimum": 1, "maximum": MAX_DAYS, "description": "How many days. Default 7."}}),
-    tool("calsync_check_event", "Show how plain words would be read as an event, which calendar it would go on, and whether it is already "
-         "there. Adds nothing. Use this first, and show the person when the words were vague.", check_event, TEXT, ["text"]),
+    tool("calsync_check_event", "Show how plain words would be read as an event, which calendar it would go on, whether it is already "
+         "there, its guests and reminder, and which events it would overlap. Adds nothing. Use this first, and show the person when "
+         "the words were vague or it overlaps something.", check_event, dict(TEXT, **CALENDAR), ["text"]),
     tool("calsync_preview_sync", "Count what a sync would create, update and delete right now. Changes nothing.", preview_sync),
-    tool("calsync_add_event", "Add one event to the main calendar. If syncing is on, also run a sync, which copies it to the others and "
-         "may remove a few copies whose original is gone. If syncing is paused or was never started, it only adds the event and says "
-         "so. If the same title at the same time is already there, it adds nothing and says so.", add_event, TEXT, ["text"], write=True),
+    tool("calsync_add_event", "Add one event to the main calendar, or to calendar. Email addresses in the text become guests who get a "
+         "normal calendar invite, and \"remind me 1h before\" sets a reminder. If it overlaps a busy event it adds nothing and returns "
+         "needs_confirm overlap; if it has guests, needs_confirm guests. Ask the person, then call again with book_anyway or send_invites. "
+         "If syncing is on, it then syncs at once, so booking pages see the time as busy within seconds. If the same title at the "
+         "same time is already there, it adds nothing and says so.", add_event,
+         dict(TEXT, **CALENDAR, book_anyway={"type": "boolean", "description": "The person said to add it even though it overlaps."},
+              send_invites={"type": "boolean", "description": "The person saw the guest list and said to send the invites."}), ["text"], write=True),
     tool("calsync_sync_now", "Run a sync now rather than waiting for the next one, which may remove a few copies whose original is gone. "
          "Refused if syncing is paused or was never started: only the person can start it. If it wants to delete many copies it holds "
          "back, and only the owner can allow that.", sync_now, write=True),
