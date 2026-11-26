@@ -471,7 +471,7 @@ def calendar_events(c, tmin, tmax, fresh=False):
     if hit and not fresh and time.time() - hit[0] < CAL_CACHE_SECONDS:
         return hit[1]
     try:
-        got = ("ok", [e for e in engine.make_adapter(c).list(tmin, tmax) if not e.get("declined") and not engine._canceled(e)])
+        got = ("ok", [e for e in engine.list_for_people(engine.make_adapter(c), tmin, tmax) if not e.get("declined") and not engine._canceled(e)])
     except Exception as e:
         got = ("err", short_error(e))
     with state_lock:

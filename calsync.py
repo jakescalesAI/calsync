@@ -592,11 +592,13 @@ def clean_ics_url(url):
 DUE_LENGTH = dt.timedelta(minutes=30)
 
 
-def due_items(evs, tmin, tmax, only=None, free=False):
+def due_items(evs, tmin, tmax, only=None, free=False, for_sync=True):
     """Shape a due-date feed, such as Canvas assignments. --only keeps items whose UID holds that text; --free stops
     them marking anyone busy, since a due date isn't a meeting. A due time with no length ends at the deadline, so it
     can be seen. All-day items are held to what Google will list back: it hides one once its day is over and doesn't
-    reach one just past the window, and ics_events keeps both, which would make a new copy on every run."""
+    reach one just past the window, and ics_events keeps both, which would make a new copy on every run. That trim
+    is only for sync: anything that shows a calendar to a person (agendas, the Calendar tab, agents) asks with
+    for_sync=False through list_for_people(), or items due in the last two days of what it shows would go missing."""
     lo = dt.datetime.fromisoformat(tmin.replace("Z", "+00:00"))
     last = dt.datetime.fromisoformat(tmax.replace("Z", "+00:00")).date() - dt.timedelta(days=2)
     out = []
@@ -604,7 +606,7 @@ def due_items(evs, tmin, tmax, only=None, free=False):
         if only and only not in (ev.get("ical") or ""):
             continue
         if ev["all_day"]:
-            if dt.datetime.fromisoformat(ev["end"]).replace(tzinfo=local_tz()) <= lo or dt.date.fromisoformat(ev["start"]) >= last:
+            if dt.datetime.fromisoformat(ev["end"]).replace(tzinfo=local_tz()) <= lo or (for_sync and dt.date.fromisoformat(ev["start"]) >= last):
                 continue
         elif ev["start"] == ev["end"]:
             due = dt.datetime.fromisoformat(ev["end"].replace("Z", "+00:00"))
@@ -621,7 +623,7 @@ class IcsCalendar:
     def __init__(self, url, only=None, free=False):
         self.url, self.only, self.free = clean_ics_url(url), only, free
 
-    def list(self, tmin, tmax):
+    def list(self, tmin, tmax, for_sync=True):
         req = urllib.request.Request(self.url, headers={"User-Agent": "calsync"})
         with urllib.request.urlopen(req, timeout=60) as r:
             raw = r.read(self.MAX_BYTES + 1)
@@ -631,7 +633,12 @@ class IcsCalendar:
         if "BEGIN:VCALENDAR" not in text:
             raise RuntimeError("link did not return a calendar")
         evs = ics_events(text, tmin, tmax)
-        return due_items(evs, tmin, tmax, self.only, self.free) if self.only or self.free else evs
+        return due_items(evs, tmin, tmax, self.only, self.free, for_sync) if self.only or self.free else evs
+
+
+def list_for_people(adapter, tmin, tmax):
+    """A calendar's events for showing, not for syncing: a due-date feed keeps its last two days (see due_items)."""
+    return adapter.list(tmin, tmax, for_sync=False) if isinstance(adapter, IcsCalendar) else adapter.list(tmin, tmax)
 
 
 # ---------- CalDAV: iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and anything else that speaks it ----------
@@ -1449,8 +1456,8 @@ def write_agenda(cfg, adapter, now=None):
     days = cfg.get("days", 14)
     today = (now or now_utc()).astimezone(tz).date()
     start = dt.datetime(today.year, today.month, today.day, tzinfo=tz).astimezone(dt.timezone.utc)
-    events = adapter.list(start.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                          (start + dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    events = list_for_people(adapter, start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                             (start + dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ"))
     by_day = agenda_days(events, today, days)
     vault, changed = cfg["vault"], 0
 
@@ -1539,7 +1546,7 @@ def export_calendars(cfg, cals, adapters, now=None):
     seen, files = set(), []
     for name in cfg["calendars"]:
         keep = []
-        for ev in sorted(adapters[name].list(tmin, tmax), key=lambda e: (e["start"], e["uid"])):
+        for ev in sorted(list_for_people(adapters[name], tmin, tmax), key=lambda e: (e["start"], e["uid"])):
             if ev["copy_of"] or ev["declined"] or _canceled(ev):  # the same rule sync uses for a source event
                 continue
             key = (ev.get("ical") or f"{name}|{ev['uid']}", ev["start"])

@@ -281,6 +281,23 @@ class DueItemsTests(unittest.TestCase):
         self.assertEqual(self.shape(self.item("2027-03-03", "2027-03-04")), [])
         self.assertEqual(len(self.shape(self.item("2027-03-01", "2027-03-02"))), 1)
 
+    def test_shown_to_people_the_far_edge_stays(self):
+        # an agenda or the Calendar tab must not lose what's due in its last two days (HW due 12-01, asked on 11-26 for 7 days)
+        edge = self.item("2027-03-03", "2027-03-04")
+        self.assertEqual(calsync.due_items([edge], self.LO, self.HI, free=True, for_sync=False)[0]["uid"], edge["uid"])
+        self.assertEqual(calsync.due_items([edge], self.LO, self.HI, free=True), [])      # a sync still waits
+
+    def test_list_for_people_asks_a_due_feed_without_the_trim(self):
+        feed = calsync.IcsCalendar("https://feed.test/x.ics", free=True)
+        with mock.patch.object(calsync.IcsCalendar, "list", return_value=[]) as listed:
+            calsync.list_for_people(feed, self.LO, self.HI)
+        listed.assert_called_once_with(self.LO, self.HI, for_sync=False)
+
+        class Other:
+            def list(self, tmin, tmax):
+                return ["ok"]
+        self.assertEqual(calsync.list_for_people(Other(), self.LO, self.HI), ["ok"])
+
     def test_due_time_gets_a_length_ending_at_the_deadline(self):
         ev = self.shape(self.item("2026-11-10T22:30:00Z", "2026-11-10T22:30:00Z", all_day=False))[0]
         self.assertEqual((ev["start"], ev["end"]), ("2026-11-10T22:00:00Z", "2026-11-10T22:30:00Z"))

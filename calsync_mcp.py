@@ -179,7 +179,7 @@ def agenda(args, opts):
     for cal in cals:
         engine.take_skipped()
         try:
-            events = engine.make_adapter(cal).list(utc(low), utc(high))
+            events = engine.list_for_people(engine.make_adapter(cal), utc(low), utc(high))
         except (Exception, SystemExit) as e:
             unread.append({"calendar": shown[cal["name"]], "why": failure(e)})
             continue
@@ -236,7 +236,7 @@ def already_there(ev, adapter):
         low, high = window(ev["start"].astimezone(engine.local_tz()).date(), 1)
         same = lambda other: not other["all_day"] and local(other["start"]) == ev["start"]
     title = ev["title"].casefold()
-    for other in adapter.list(utc(low), utc(high)):
+    for other in engine.list_for_people(adapter, utc(low), utc(high)):
         try:                                    # a private title is never confirmed to someone guessing at it
             if not other.get("private") and same(other) and clean(other["title"], MAX_WORDS).casefold() == title:
                 return True
