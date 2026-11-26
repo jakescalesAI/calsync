@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Install with Docker | calsync docs</title>
 <meta name="description" content="Run calsync with Docker Compose and finish setup on a web page at localhost:8484.">
-<meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#050505">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://docs.getcalsync.app/docker/">
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/style.css">
@@ -71,6 +71,7 @@ docker compose up -d</code></pre>
 <li>The page asks for a setup code. Get it from the logs:
 <pre><code>docker compose logs calsync</code></pre></li>
 <li>Choose a password for the page. It guards your sign-ins, so make it a good one.</li>
+<li>Save the recovery code the page shows next, in a password manager or on paper. It is shown only once. See <a href="/settings/#forgot">Forgot your password</a>.</li>
 </ol>
 <h2>Add your calendars</h2>
 <ol>
@@ -80,6 +81,7 @@ docker compose up -d</code></pre>
 <li>Set the options on each calendar. See below.</li>
 <li>Press Preview changes. It shows how many events would be added, updated and removed. Nothing has changed yet.</li>
 <li>Press Apply and keep syncing.</li>
+<li>Open the Calendar tab to see a week or a month of every calendar, one colour each.</li>
 </ol>
 <h2>Options on each calendar</h2>
 <dl class="kv">

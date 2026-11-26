@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Settings and environment | calsync docs</title>
 <meta name="description" content="calsync settings: how often it runs, environment variables, time zone, and exposing the page safely behind HTTPS.">
-<meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#050505">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://docs.getcalsync.app/settings/">
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/style.css">
@@ -61,11 +61,20 @@
 <h1>Settings and environment</h1>
 <p class="lede">Most settings are on the calsync page. A few live in environment variables.</p>
 <h2>On the page</h2>
+<p>The page has three tabs. <strong>Sync</strong> lists your calendars, adds new ones and runs the sync. <strong>Calendar</strong> shows a week or a month of what calsync sees: pick one calendar to see what is on it now, with the copies calsync made striped. <strong>Settings</strong> holds the rest.</p>
 <ul>
 <li><strong>How often it runs.</strong> Every 2, 5, 10, 15, 30 or 60 minutes. The default is 5.</li>
 <li><strong>Time zone.</strong> Used for quick add text, agendas and .ics times that name no zone.</li>
 <li><strong>Password.</strong> You can change it in the settings.</li>
+<li><strong>Recovery code.</strong> Make a new one at any time. The old one stops working.</li>
 </ul>
+<h2 id="forgot">Forgot your password</h2>
+<p>calsync runs on your own computer, so there is no account and no email reset. Both ways back work only on the computer calsync runs on, never from anywhere else.</p>
+<ul>
+<li><strong>From a terminal on that computer.</strong> Run <code>calsync reset-password</code>. With Docker, run <code>docker compose exec calsync calsync reset-password</code>. Anyone who can do this can already read calsync's folder, so it gives nothing away.</li>
+<li><strong>With your recovery code.</strong> The page showed it once when you chose your password. On the sign-in page, choose Forgot password? and enter it with a new password. Each code works once.</li>
+</ul>
+<p>Either way, every browser is signed out and you get a new recovery code.</p>
 <h2>Environment variables</h2>
 <dl class="kv">
 <div><dt><code>CALSYNC_HOME</code></dt><dd>The folder for config and sign-in tokens. Default <code>~/.calsync</code>. Keep it private to your user.</dd></div>
