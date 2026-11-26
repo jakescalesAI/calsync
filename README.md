@@ -16,7 +16,7 @@ docker compose up -d
 docker compose logs calsync
 ```
 
-Open http://localhost:8484 and enter the setup code from the logs. Choose a password, add your calendars, press **Preview changes**, then **Apply and keep syncing**.
+Open http://localhost:8484 and enter the setup code from the logs. Choose a password, add your calendars, press **Preview changes**, then **Apply and keep syncing**. Save the recovery code it shows you: if you forget the password, it lets you pick a new one on that computer, and so does `calsync reset-password`. There is no account and no email reset.
 
 Google and Microsoft each need a free sign-in app of your own. The page walks you through it in about 10 minutes. iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server only need an app password.
 
@@ -67,6 +67,7 @@ Limits: it looks 120 days ahead, and repeating events are copied as individual o
 
 ```text
 calsync web                          web page and background sync
+calsync reset-password               forgot the page password: choose a new one (on that computer only)
 calsync setup google|microsoft       store your sign-in app
 calsync auth google|outlook|ics NAME sign in an account
 calsync auth caldav NAME [SERVER]    iCloud, Fastmail or any CalDAV server (icloud, fastmail, yahoo, aol, zoho, or an address)

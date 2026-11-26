@@ -1,7 +1,8 @@
 <!doctype html>
 <!--
   calsync landing page. Plain static files: no build step, no framework, no scripts, no trackers, no outside requests.
-  Motion is CSS only and stops for people who ask for reduced motion. Fonts are Inter and JetBrains Mono (OFL), served from /fonts.
+  Same family as trylocalhub.com, in plain white: the app tile inside the wordmark, Apple's light system colours, blue as the accent.
+  Motion is CSS only and stops for people who ask for reduced motion. Inter and JetBrains Mono (OFL) are the fallbacks, served from /fonts.
   The pictures of the app are drawn in HTML from the real setup page's wording, never from a real calendar.
 -->
 <html lang="en">
@@ -10,10 +11,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>calsync: every calendar, always in sync</title>
 <meta name="description" content="calsync is free, self-hosted and keeps your Google, Microsoft 365, iCloud and CalDAV calendars in two-way sync. Your sign-ins and calendar data stay on your machine.">
-<meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#050505">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://getcalsync.app/">
-<link rel="icon" href="/favicon.svg?v=32" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preload" href="/fonts/inter-600.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="website">
@@ -30,7 +31,7 @@
 
 <header class="top">
 <div class="wrap">
-<a class="brand" href="/"><img src="/logo.svg?v=32" alt="" width="40" height="40">calsync</a>
+<a class="brand" href="/"><img src="/mark.svg" alt="" width="40" height="40">calsync</a>
 <nav aria-label="Main">
 <a href="#how">How it works</a>
 <a href="#careful">Safety</a>
@@ -44,7 +45,7 @@
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img src="/logo.svg?v=32" alt="" width="40" height="40">calsync</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img src="/mark.svg" alt="" width="40" height="40">calsync</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="#how">How it works</a>
 <a href="#careful">Safety</a>
 <a href="#compare">Compare</a>
@@ -56,8 +57,9 @@
 <main id="main">
 <section class="hero">
 <div class="wrap">
-<p class="pill"><b>MIT</b>Free, open source, runs on your machine</p>
-<h1>Every calendar.<span class="dim">Always in sync.</span></h1>
+<p class="pill"><b>MIT</b>Free and open source</p>
+<h1 class="wordmark" aria-label="calsync"><span>cal</span><img class="tile" src="/mark.svg" alt="" width="512" height="512"><span>sync</span></h1>
+<p class="tagline">Every calendar. <span class="dim">Always in sync.</span></p>
 <p class="lede">A meeting on your work calendar shows up on your personal one, and the other way round. Google, Microsoft 365, iCloud and any CalDAV or .ics calendar. Nothing hosted, nothing to pay.</p>
 <div class="btns"><a class="btn primary" href="#install">Install calsync</a><a class="btn" href="#how">See how it works</a></div>
 <div class="setup"><span>or get set up directly with</span>
@@ -130,7 +132,7 @@
 <div class="orbit" aria-hidden="true">
 <div class="ring"></div><div class="ring r2"></div><div class="ring r3"></div>
 <div class="spin"><i></i></div><div class="spin rev"><i></i></div>
-<img class="core" src="/mark.svg?v=32" alt="" width="92" height="92">
+<img class="core" src="/mark.svg" alt="" width="92" height="92">
 <span class="node n1"><span class="mark">G</span>Google</span>
 <span class="node n2"><span class="mark">M</span>Microsoft 365</span>
 <span class="node n3"><span class="mark">i</span>iCloud</span>
@@ -261,7 +263,7 @@ py -m pipx ensurepath</code></pre>
 
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img src="/logo.svg?v=32" alt="" width="24" height="24">calsync</a>
+<a class="brand" href="/" aria-label="calsync home"><img src="/mark.svg" alt="" width="24" height="24">calsync</a>
 <nav aria-label="Footer"><a href="/blog/">Blog</a><a href="https://docs.getcalsync.app/">Docs</a><a href="https://docs.getcalsync.app/faq/">FAQ</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav>
 <p>MIT licence. This page has no trackers, analytics or cookies.</p>
 </div>

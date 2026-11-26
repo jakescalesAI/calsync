@@ -1,0 +1,19 @@
+// getcalsync.app: the static site in site/, served by Cloudflare as a Worker with static assets, the same way
+// trylocalhub.com is. Deploy from the repo root with `npx wrangler deploy` after `npx wrangler login`.
+// The docs are a second Worker: `npx wrangler deploy -c wrangler.docs.jsonc`.
+// The custom domains below make Cloudflare create the DNS records and certificates on deploy. If the domain is
+// already served by something else (a Pages project, say), remove it there first or the deploy refuses.
+{
+  "name": "getcalsync",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./site",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "getcalsync.app", "custom_domain": true },
+    { "pattern": "www.getcalsync.app", "custom_domain": true }
+  ],
+  "workers_dev": false
+}

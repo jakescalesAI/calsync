@@ -72,7 +72,8 @@ class WebTests(unittest.TestCase):
 
     def start(self):
         r, text = self.req("POST", "/first-run", {"password": "correct horse battery"})
-        self.assertEqual(r.status, 303)
+        self.assertEqual(r.status, 200)
+        self.recovery = re.search(r'<p class="code">([A-Z0-9-]+)</p>', text).group(1)     # shown once, at setup
 
     def csrf(self, path="/settings"):
         return re.search(r'name="csrf" value="(\w+)"', self.req("GET", path)[1]).group(1)
@@ -80,11 +81,95 @@ class WebTests(unittest.TestCase):
     def post(self, path, **form):
         return self.req("POST", path, dict(form, csrf=self.csrf()))
 
+    # --- forgotten password, the merged sync page and the Calendar tab
+
+    def test_a_recovery_code_resets_the_password_once(self):
+        self.start()
+        self.cookie = None
+        self.assertIn("Forgot password?", self.req("GET", "/")[1])
+        self.assertIn("calsync reset-password", self.req("GET", "/forgot")[1])
+        self.assertIn("isn&#x27;t right", self.req("POST", "/forgot", {"code": "AAAA-BBBB-CCCC-DDDD", "password": "brand new password"})[1])
+        r, text = self.req("POST", "/forgot", {"code": self.recovery.lower().replace("-", " "), "password": "brand new password"})
+        self.assertEqual(r.status, 200)
+        self.assertIsNotNone(self.cookie)
+        fresh = re.search(r'<p class="code">([A-Z0-9-]+)</p>', text).group(1)
+        self.assertNotEqual(fresh, self.recovery)
+        self.cookie = None
+        self.req("POST", "/login", {"password": "brand new password"})
+        self.assertIsNotNone(self.cookie)
+        self.cookie = None      # the used code is spent
+        self.assertIn("isn&#x27;t right", self.req("POST", "/forgot", {"code": self.recovery, "password": "another new password"})[1])
+
+    def test_a_recovery_code_never_works_from_another_machine(self):
+        self.start()
+        self.cookie = None
+        with mock.patch.object(calsync_web, "is_loopback", return_value=False):
+            self.assertNotIn('name="code"', self.req("GET", "/forgot")[1])
+            r, _ = self.req("POST", "/forgot", {"code": self.recovery, "password": "brand new password"})
+            self.assertEqual(r.status, 403)
+        self.assertIsNone(self.cookie)
+        self.assertEqual(self.req("POST", "/login", {"password": "correct horse battery"})[0].status, 303)
+
+    def test_recovery_code_tries_are_capped(self):
+        self.start()
+        self.cookie = None
+        for _ in range(calsync_web.ATTEMPTS_PER_MINUTE):
+            self.req("POST", "/forgot", {"code": "AAAA-BBBB-CCCC-DDDD", "password": "brand new password"})
+        self.assertEqual(self.req("POST", "/forgot", {"code": self.recovery, "password": "brand new password"})[0].status, 429)
+
+    def test_changing_the_password_keeps_the_recovery_code(self):
+        self.start()
+        self.post("/settings/password", old="correct horse battery", new="a different password")
+        self.assertTrue(calsync_web.recovery_ok(calsync_web.web_config(), self.recovery))
+
+    def test_a_new_recovery_code_needs_the_password(self):
+        self.start()
+        self.assertIn("isn&#x27;t right", self.post("/settings/recovery", old="wrong password")[1])
+        _, text = self.post("/settings/recovery", old="correct horse battery")
+        self.assertFalse(calsync_web.recovery_ok(calsync_web.web_config(), self.recovery))
+        self.assertTrue(calsync_web.recovery_ok(calsync_web.web_config(), re.search(r'<p class="code">([A-Z0-9-]+)</p>', text).group(1)))
+        self.assertNotIn(self.recovery.replace("-", ""), json.dumps(calsync_web.web_config()))     # only its hash is kept
+
+    def test_adding_a_calendar_is_on_the_sync_page(self):
+        self.start()
+        text = self.req("GET", "/")[1]
+        self.assertIn('id="add"', text)
+        self.assertIn('href="/calendar"', text)
+        r, _ = self.req("GET", "/connect")
+        self.assertEqual((r.status, r.getheader("Location")), (303, "/#add"))
+
+    def test_the_calendar_tab_shows_events_in_each_calendars_colour(self):
+        self.start()
+        calsync.update_config(lambda c: c["calendars"].extend([
+            {"name": "work", "label": "work", "account": "a", "calendar_id": "x"}, {"name": "home", "label": "home", "account": "b", "calendar_id": "y"}]))
+        today = calsync.dt.datetime.now(calsync.local_tz()).date()
+        at = calsync.dt.datetime.combine(today, calsync.dt.time(12), calsync.local_tz()).astimezone(calsync.dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        own = {"uid": "1", "ical": "1", "title": "Dentist <b>", "start": at, "end": at, "all_day": False, "busy": True, "location": "", "private": False, "declined": False, "copy_of": None}
+        copy = dict(own, uid="2", title="Dentist <b>", copy_of="work|1")
+
+        class Fake:
+            def __init__(self, evs):
+                self.evs = evs
+
+            def list(self, tmin, tmax):
+                return self.evs
+        calsync_web.CAL_CACHE.clear()
+        with mock.patch.object(calsync, "make_adapter", side_effect=lambda c: Fake([own] if c["name"] == "work" else [copy])):
+            text = self.req("GET", "/calendar")[1]
+            self.assertEqual(text.count("Dentist &lt;b&gt;"), 1)      # Everything: the copy on home isn't shown twice
+            self.assertIn('class="ev k0"', text)
+            calsync_web.CAL_CACHE.clear()
+            text = self.req("GET", "/calendar?view=month&show=home")[1]
+            self.assertIn('class="ev k0 copy"', text)                  # a copy, in the colour of where it came from
+        with mock.patch.object(calsync, "make_adapter", side_effect=RuntimeError("no way in")):
+            calsync_web.CAL_CACHE.clear()
+            self.assertIn("no way in", self.req("GET", "/calendar")[1])
+
     # --- CalDAV
 
     def test_connect_lists_every_calendar_service(self):
         self.start()
-        text = self.req("GET", "/connect")[1]
+        text = self.req("GET", "/")[1]
         self.assertIn("Calendly, Cal.com or another booking app", text)
         for name in ("Apple iCloud", "Fastmail", "Yahoo Calendar", "AOL Calendar", "Zoho Calendar", "Nextcloud", "Another CalDAV server", "Proton Calendar"):
             self.assertIn(name, text)
@@ -102,7 +187,7 @@ class WebTests(unittest.TestCase):
         with mock.patch.object(calsync, "account_calendars", return_value=found):
             for path in ("/", "/connect", "/connect/caldav?p=icloud", "/account?label=apple"):
                 self.assertNotIn("SECRET-APP-PASS", self.req("GET", path)[1])
-            self.assertIn("Apple iCloud", self.req("GET", "/connect")[1])
+            self.assertIn("Apple iCloud", self.req("GET", "/")[1])
             self.assertIn("Home", self.req("GET", "/account?label=apple")[1])
 
     def test_a_bad_caldav_sign_in_shows_why_and_saves_nothing(self):
@@ -142,7 +227,8 @@ class WebTests(unittest.TestCase):
             self.assertIn("Setup code", self.req("GET", "/")[1])
             self.assertIn("isn&#x27;t right", self.req("POST", "/first-run", {"password": "long enough password", "code": "nope"})[1])
             self.assertIsNone(calsync_web.web_config())
-            self.assertEqual(self.req("POST", "/first-run", {"password": "long enough password", "code": calsync_web.setup_code})[0].status, 303)
+            self.assertEqual(self.req("POST", "/first-run", {"password": "long enough password", "code": calsync_web.setup_code})[0].status, 200)
+            self.assertIsNotNone(calsync_web.web_config())
 
     def test_every_page_and_action_needs_signing_in(self):
         self.start()

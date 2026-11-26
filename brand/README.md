@@ -1,13 +1,24 @@
 # calsync mark
 
-A square calendar page with two rings, the sync arrows and 31. Black, white and grey only.
+A calendar page with its two rings and the sync arrows, in white on LocalHub's dark slate tile. Same tile, gradients
+and corner as LocalHub's icon, so the two read as one family.
+
+Every file here is written by `tools/build_icons.py`. Change the numbers there and run it again, never the files:
+
+```bash
+python tools/build_icons.py --png    # needs Chrome or Edge for the PNGs, and Pillow for favicon.ico
+```
 
 | File | Use |
 |---|---|
-| `mark-white.svg` / `mark-black.svg` | The calendar with rings, sync arrows and 31 in Inter SemiBold. 24 px and up. |
-| `mark-small-white.svg` / `mark-small-black.svg` | The same with a slightly heavier 31. Browser tabs and other small uses. |
-| `panel-dark.svg` / `panel-light.svg` | The calendar on its own tile. App icons, social images. |
-| `panel-dark-small.svg` | The small mark on the dark tile. |
-| `*-1024.png`, `panel-dark-512.png` | PNG exports, transparent outside the tile. |
+| `mark.svg` | The app icon: tile with rounded corners. The site, the docs, README. 48 px and up. |
+| `mark-small.svg` | The same with a bigger, heavier glyph for 16 to 32 px. Browser tabs and the setup page. |
+| `mark-square.svg` | Square corners, for systems that round icons themselves (iOS, Android). |
+| `glyph-white.svg` / `glyph-black.svg` | The calendar alone, one colour, see-through cut-outs. On photos or next to text. |
+| `mark-1024.png`, `icon-512.png`, `icon-192.png` | PNG exports of `mark.svg`. |
+| `apple-touch-icon.png` | 180 px from `mark-square.svg`. |
+| `favicon-32.png`, `favicon-16.png`, `favicon.ico` | Browser tabs, from `mark-small.svg`. |
+| `og.png` | 1200 by 630, the wordmark with the tile in it. The picture a shared link shows. |
 
-The 31 is Inter SemiBold, the font of the wordmark and headlines, converted to outlines so the files need nothing else to render.
+The script also copies what each site needs into `site/` and `docs-site/`. The setup page carries `mark-small.svg`
+inside `calsync_web.py`, so it needs no outside files.

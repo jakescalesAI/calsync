@@ -6,6 +6,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- A forgotten page password has two ways back, both only on the computer calsync runs on: the recovery code shown
+  once when the password is chosen (a "Forgot password?" link on the sign-in page), and `calsync reset-password`.
+  Either one signs everyone out and gives a new recovery code. Settings can make a new code.
+- A Calendar tab: a week or month of what calsync sees, one colour per calendar. "Everything" shows your own events
+  from every calendar; pick one calendar to see what is on it now, with calsync's copies striped in their source's colour.
 - Two-way CalDAV calendars: Apple iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server, signed in
   with an app password. Basic and Digest sign-in, server discovery, event calendars only (Reminders lists are skipped).
 - `.ics` sources now honour RDATE, and keep calsync's own tag so a published copy is never copied again.
@@ -18,6 +23,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - A skill for Hermes that installs and sets up calsync with you, connects these tools and uses them, at `docs-site/hermes/SKILL.md`.
 
 ### Changed
+- The tabs are Sync, Calendar and Settings. Adding a calendar is part of the Sync page.
+- A new icon in the LocalHub family: a calendar with the sync arrows on a dark slate tile, in every size the setup
+  page, the site and the docs use, all drawn by `tools/build_icons.py`. The old "31" marks are gone.
+- The setup page and getcalsync.app are plain white in the LocalHub family: Apple's light system colours, the system
+  font, blue as the one accent, soft grey cards, a segmented header, and on the site the wordmark with the tile in it.
+  The docs use LocalHub's dark palette.
+- The site and docs deploy as Cloudflare Workers with static assets (`wrangler.jsonc`, `wrangler.docs.jsonc`), like
+  trylocalhub.com.
 - The setup page has the look of getcalsync.app: the calendar mark in a proper header with the current page marked, each
   calendar as a row with its flags as chips, the preview's counts as tiles, light and dark themes, and a layout that fits
   a phone. Still no scripts, no inline styles and no outside files; every form, field and link is unchanged.

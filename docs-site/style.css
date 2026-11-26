@@ -1,4 +1,4 @@
-/* calsync docs. Same look as getcalsync.app: black, white and grey only, Inter and a mono face, no scripts. */
+/* calsync docs. Same look as getcalsync.app and LocalHub: Apple's dark system colours, the system font with Inter as the fallback, no scripts. */
 
 @font-face { font-family: Inter; src: url(/fonts/inter-400.woff2) format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: Inter; src: url(/fonts/inter-600.woff2) format("woff2"); font-weight: 600; font-display: swap; }
@@ -6,29 +6,31 @@
 
 :root {
   color-scheme: dark;
-  --bg: #050505;
-  --panel: #0c0c0c;
-  --line: rgba(255, 255, 255, .08);
-  --line2: rgba(255, 255, 255, .15);
-  --text: #f5f5f5;
-  --body: #c4c4c4;
-  --dim: #8d8d8d;
-  --faint: #5c5c5c;
-  --sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: Mono, ui-monospace, "SFMono-Regular", Menlo, monospace;
+  /* LocalHub's dark palette (Apple system colours), so the docs, the site and the app read as one family. */
+  --bg: #000000;
+  --panel: #1c1c1e;
+  --line: rgba(84, 84, 88, .45);
+  --line2: rgba(84, 84, 88, .8);
+  --text: #ffffff;
+  --body: rgba(235, 235, 245, .8);
+  --dim: rgba(235, 235, 245, .6);
+  --faint: rgba(235, 235, 245, .3);
+  --blue: #0a84ff;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Mono, Menlo, Consolas, monospace;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; background: var(--bg); scroll-padding-top: 84px; }
 body {
   margin: 0; color: var(--body); font: 400 16px/1.7 var(--sans); -webkit-font-smoothing: antialiased;
-  background: radial-gradient(900px 420px at 50% -220px, rgba(255, 255, 255, .07), transparent 70%) no-repeat, var(--bg);
+  background: var(--bg);
   overflow-wrap: break-word; overflow-x: clip;
 }
 img, svg { max-width: 100%; }
 a { color: var(--text); text-decoration: underline; text-decoration-color: var(--line2); text-underline-offset: .22em; text-decoration-thickness: 1px; transition: text-decoration-color .2s; }
 a:hover { text-decoration-color: var(--text); }
-:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; border-radius: 6px; }
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; border-radius: 6px; }
 .wrap { width: 100%; max-width: 1160px; margin: 0 auto; padding: 0 24px; }
 .skip { position: absolute; left: -999px; top: 8px; background: var(--text); color: var(--bg); padding: 8px 12px; border-radius: 8px; z-index: 50; }
 .skip:focus { left: 8px; }

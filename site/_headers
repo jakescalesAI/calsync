@@ -11,10 +11,16 @@
 /style.css
   Cache-Control: public, max-age=3600
 
-/logo.svg
+/mark.svg
   Cache-Control: public, max-age=86400
 
-/favicon.svg
+/mark-small.svg
+  Cache-Control: public, max-age=86400
+
+/favicon.ico
+  Cache-Control: public, max-age=86400
+
+/*.png
   Cache-Control: public, max-age=86400
 
 /fonts/*
