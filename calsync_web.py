@@ -300,7 +300,7 @@ textarea{min-height:96px;resize:vertical}.days{display:flex;flex-wrap:wrap;gap:6
 .toast button{min-height:32px;padding:4px 14px;background:rgba(255,255,255,.16);color:#fff;font-size:15px}.toast .soft{color:rgba(255,255,255,.6);font-weight:500}
 .results{padding:0}.results .row{padding:10px 20px}.results .when{flex:0 0 150px;color:var(--dim);font-size:14px;font-variant-numeric:tabular-nums}
 .keys{font-size:13px;color:var(--dim)}kbd{display:inline-block;min-width:20px;padding:1px 6px;border-radius:6px;background:#fff;box-shadow:inset 0 0 0 .5px var(--line),0 1px 0 var(--line);font:600 12px var(--sans);text-align:center}
-@media (max-width:560px){.tg{--gut:38px}.tg.tz2{--gut:76px}.tg-hours span{padding:0 4px;font-size:10px}.tg-head .zones{font-size:0}.tg.d7 .ev .t,.tg.d5 .ev .t{display:none}.tg-day .ev{padding:2px 3px;font-size:10px;border-left-width:2px}}
+@media (max-width:560px){.tg{--gut:38px}.tg.tz2{--gut:84px}.tg-hours span{padding:0 3px;font-size:9px}.tg-day .ev{overflow-wrap:normal;word-break:keep-all;hyphens:none}.tg-head .zones{font-size:0}.tg.d7 .ev .t,.tg.d5 .ev .t{display:none}.tg-day .ev{padding:2px 3px;font-size:10px;border-left-width:2px}}
 @media (max-width:760px){.tg.d7{--n:7}.tg-head>div{padding:6px 0;font-size:11px}.tg-day .ev{font-size:10px;padding:2px 3px}.tools input[type=search]{width:100%}}
 @media print{header,.tools,.toggles,.quick,.legend,.calnote,.toast,.flash,.noprint{display:none!important}main,main.wide{max-width:none;padding:0}.tg-scroll{max-height:none;overflow:visible}body{font-size:12px}.grid,.tg{box-shadow:none;border:1px solid #ccc}}
 """
