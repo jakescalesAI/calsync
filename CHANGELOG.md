@@ -1,9 +1,27 @@
 # Changelog
 
-All notable changes to calsync. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+All notable changes to CalSync. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-11-27 (beta)
+
+The first beta. Highlights:
+
+- Two-way sync between Google Calendar, Outlook and Microsoft 365, and CalDAV calendars (iCloud, Fastmail, Yahoo, AOL,
+  Zoho, Nextcloud and others), with published `.ics` links read only.
+- A web page with three tabs: Sync, Calendar and Settings.
+- Quick add from plain words, with an overlap warning (Book anyway), Google invites after you confirm, and reminders.
+- Skip this one: a single occurrence, such as a cancelled class, stops being copied; the source is left alone.
+- A forgotten password is reset locally: `calsync reset-password`, or the recovery code. Neither works remotely.
+- Tools for AI agents: `calsync mcp`, read only unless you add `--allow-write`.
+
+Known limits (beta): Google and Microsoft each need your own sign-in app; school and work Microsoft accounts are often
+blocked, so use a published `.ics` link read only; repeating events are copied as single occurrences; it looks 120 days
+ahead; tested on Linux, WSL and Docker, with Windows and macOS lightly tested so far.
+
+The details:
 
 ### Added
 - Quick add on the Calendar tab: plain words like "breakfast with friends tomorrow 9am for 2 hours" show a one-line
@@ -65,9 +83,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   password in Settings.
 - CI actions are pinned to exact commits.
 
-## [0.1.0] - 2026-11-03
+## Before the beta (2026-11-03, not tagged)
 
-First public release.
+The first working version, built before the repository was public.
 
 ### Added
 - Two-way sync between Google Calendar and Outlook / Microsoft 365 calendars. Each writable calendar gets one

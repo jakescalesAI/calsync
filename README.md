@@ -61,7 +61,17 @@ CalSync has no AI in it, but any agent that speaks MCP can use it: Claude Code, 
 - **Quick add:** `calsync new Dentist tomorrow 3pm 1h`.
 - **Notes (optional):** a Markdown agenda and a quick-add note, for Obsidian-style folders.
 
-Limits: it looks 120 days ahead, and repeating events are copied as individual occurrences. Some school and work Microsoft accounts block outside apps. Those can still be read one way through a published `.ics` link.
+## Known limits (beta)
+
+CalSync is in beta. What to know before you rely on it:
+
+- **Google and Microsoft need your own sign-in app.** It takes about 10 minutes each, and Google shows an "unverified app" warning because the app is yours, not a published one. That's expected.
+- **School and work Microsoft accounts are often blocked** from outside apps. You can still bring them in read only, through the calendar's published `.ics` link.
+- **Repeating events are copied as single occurrences**, not as one repeating series.
+- **It looks 120 days ahead.** Events further out are copied as they come into range.
+- **Tested on Linux, WSL and Docker.** Windows and macOS without Docker work but are only lightly tested so far.
+
+Found a problem? Open an [issue](https://github.com/jakescalesAI/calsync/issues). For anything about security, see [SECURITY.md](SECURITY.md).
 
 ## Command line
 

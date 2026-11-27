@@ -1,19 +1,23 @@
 # Security
 
-calsync holds sign-ins to your calendars, so treat its data folder like a password file.
+CalSync holds sign-ins to your calendars, so treat its data folder like a password file.
 
 - Sign-ins, CalDAV passwords, client secrets and .ics links live in `secrets/` inside the data folder, readable only by its owner. On Windows that protection comes from your user folder, so if you point `CALSYNC_HOME` somewhere else, check who can read it. They're stored unencrypted, the same as most self-hosted tools, so protect the machine and its backups.
 - The web page listens on this machine only by default. To reach it from elsewhere, put it behind your own HTTPS proxy or a private network, and set `CALSYNC_HOSTS` and `CALSYNC_PUBLIC_URL`.
 - The first visit needs the setup code from the logs, so a stranger can't claim a fresh install. Only a visit from this machine itself to `localhost`, with the page listening on loopback only (not in Docker), skips it; anything that comes through a proxy (a `Forwarded` or `X-Forwarded-For` header, `CALSYNC_PUBLIC_URL` set, or another host name) needs the code.
 - Wrong passwords and setup codes are capped at 5 a minute per address, plus 30 (passwords) and 10 (setup codes) a minute from all addresses together. Someone who can reach the page can therefore keep it locked for a while; that's on purpose, since a lock-out is better than a guessable password. Keep the page off the open internet.
 - Settings has **Sign out on every device**, which ends every session at once, for a lost laptop or a copied cookie.
-- A CalDAV password only goes to the server you typed, or a host under it, and never from `https://` down to `http://`. Only the built-in providers can move it between their own hosts. If your server redirects somewhere else, calsync stops; type the final address instead. `http://` works only for a server on your own network, and the password crosses that network unencrypted.
-- Anyone can put an event on your calendar by inviting you, and a published calendar can be anyone's. An event calsync can't read is skipped, a rule repeating every minute or second is left out, and a calendar that's too big or too slow to read is reported with its copies left alone.
+- A CalDAV password only goes to the server you typed, or a host under it, and never from `https://` down to `http://`. Only the built-in providers can move it between their own hosts. If your server redirects somewhere else, CalSync stops; type the final address instead. `http://` works only for a server on your own network, and the password crosses that network unencrypted.
+- Anyone can put an event on your calendar by inviting you, and a published calendar can be anyone's. An event CalSync can't read is skipped, a rule repeating every minute or second is left out, and a calendar that's too big or too slow to read is reported with its copies left alone.
 - A Busy copy shows no title or location, and doesn't name the calendar it came from.
-- calsync only edits or deletes events it created, marked with its own tag. On a CalDAV calendar someone else could send an invite carrying that tag, and calsync would treat it as its own copy and remove it.
+- CalSync only edits or deletes events it created, marked with its own tag. On a CalDAV calendar someone else could send an invite carrying that tag, and CalSync would treat it as its own copy and remove it.
 - `calsync mcp` is read only unless you add `--allow-write`. Over HTTP it listens on this machine only and needs a bearer token, kept in `secrets/`, on every request; it refuses a web page's request. Its tools can't sign in, purge, remove a calendar, start or resume syncing, or force a mass delete, and never return a calendar ID, an account name, a token, a .ics link or a server's reply: a failure comes back as one of a few fixed reasons. With `--allow-write`, a sync they run can remove a few copies whose original is gone, as any sync does.
 - An event title can be written to trick an AI agent, since anyone can invite you. `calsync mcp` cuts titles and places to one short line, removes control characters and tells the agent they are data. It can't promise what a model does, so give an agent `--allow-write` only if it asks you before it adds something. What an agent reads also goes to the model it runs on; `--busy-only` shows times only.
-- `calsync mcp`'s limits apply to its tools only. An agent that can also run commands as you, as most local agents can, can read the data folder or run `calsync purge` directly. To stop that, turn off its shell, file, code and sub-agent tools, or run calsync under another user and connect with `--http`.
-- calsync only talks to Google, Microsoft, your CalDAV servers and the .ics links you add. It sends nothing anywhere else.
+- `calsync mcp`'s limits apply to its tools only. An agent that can also run commands as you, as most local agents can, can read the data folder or run `calsync purge` directly. To stop that, turn off its shell, file, code and sub-agent tools, or run CalSync under another user and connect with `--http`.
+- CalSync only talks to Google, Microsoft, your CalDAV servers and the .ics links you add. It sends nothing anywhere else.
 
-Please report a security problem privately through the repository's security advisories, not in a public issue.
+## Reporting a problem
+
+Please report a security problem privately, not in a public issue: use **Report a vulnerability** on the repository's
+[Security tab](https://github.com/jakescalesAI/calsync/security/advisories/new). Only the maintainer sees it. Say what
+you found and how to reproduce it; leave out real sign-ins, tokens and calendar links.
