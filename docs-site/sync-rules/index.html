@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sync rules | CalSync docs</title>
+<meta name="description" content="Choose what CalSync copies in each direction: titles or Busy, details, a tag, a colour, and what to leave out.">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#ffffff">
+<link rel="canonical" href="https://docs.getcalsync.app/sync-rules/">
+<link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Sync rules | CalSync docs">
+<meta property="og:description" content="Choose what CalSync copies in each direction: titles or Busy, details, a tag, a colour, and what to leave out.">
+<meta property="og:url" content="https://docs.getcalsync.app/sync-rules/">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap bar hd">
+<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a>
+<nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
+</header>
+<span id="shut" hidden></span>
+<nav class="menu" id="menu" aria-label="Menu">
+<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<a href="/">Overview</a>
+<a href="/docker/">Install with Docker</a>
+<a href="/python/">Install without Docker</a>
+<a href="/google/">Google sign-in app</a>
+<a href="/microsoft/">Microsoft sign-in app</a>
+<a href="/caldav/">iCloud and CalDAV</a>
+<a href="/ics/">Published .ics feeds</a>
+<a href="/booking-apps/">Booking apps</a>
+<a href="/agents/">AI agents</a>
+<a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/sync-rules/">Sync rules</a>
+<a href="/calendar/">The Calendar tab</a>
+<a href="/settings/">Settings and environment</a>
+<a href="/faq/">FAQ</a>
+<a href="/troubleshooting/">Troubleshooting</a>
+<a href="https://getcalsync.app/">getcalsync.app</a>
+<a href="https://github.com/jakescalesAI/calsync">GitHub</a>
+</nav>
+<div class="wrap docs">
+<nav class="side" aria-label="Docs"><p>Docs</p><ul>
+<li><a href="/">Overview</a></li>
+<li><a href="/docker/">Install with Docker</a></li>
+<li><a href="/python/">Install without Docker</a></li>
+<li><a href="/google/">Google sign-in app</a></li>
+<li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/caldav/">iCloud and CalDAV</a></li>
+<li><a href="/ics/">Published .ics feeds</a></li>
+<li><a href="/booking-apps/">Booking apps</a></li>
+<li><a href="/agents/">AI agents</a></li>
+<li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/sync-rules/" aria-current="page">Sync rules</a></li>
+<li><a href="/calendar/">The Calendar tab</a></li>
+<li><a href="/settings/">Settings and environment</a></li>
+<li><a href="/faq/">FAQ</a></li>
+<li><a href="/troubleshooting/">Troubleshooting</a></li>
+</ul></nav>
+<main id="main" class="doc">
+
+<h1>Sync rules</h1>
+<p class="lede">Each direction between two calendars has its own rule. Work to Personal can copy titles and details, while Personal to Work shows only Busy.</p>
+<h2>Where to find them</h2>
+<p>On the Sync tab, <strong>What goes where</strong> lists every direction, such as School → Work, with its rule in a few words and how it went last time: Synced, Syncing, Error or Off. Press <strong>Edit</strong> to change one, or <strong>Resync</strong> to rewrite every copy going that way now.</p>
+<h2>On or off</h2>
+<p>Untick <strong>Copy events from A to B</strong> to stop that direction. You choose what happens to the copies already made:</p>
+<ul>
+<li><strong>Remove them at the next sync.</strong> The calendar is as if that direction never synced.</li>
+<li><strong>Keep them where they are.</strong> CalSync stops updating or deleting them. They stay until you delete them.</li>
+</ul>
+<p>Stopping a whole calendar asks the same question about its copies on your other calendars.</p>
+<h2>Info to copy</h2>
+<dl class="kv">
+<div><dt>Title</dt><dd>Off, and copies say the text you choose instead, such as Busy or Personal.</dd></div>
+<div><dt>Location</dt><dd>The place, as written on the original.</dd></div>
+<div><dt>Description</dt><dd>The original's notes, below CalSync's own line.</dd></div>
+<div><dt>Video call link</dt><dd>A Meet, Teams or Zoom link from the original, added to the notes as Join.</dd></div>
+<div><dt>Guest list</dt><dd>The guests' addresses, as text in the notes. Nobody is invited.</dd></div>
+<div><dt>Reminders</dt><dd>On: the copy uses the calendar's usual reminder. Off by default, so you aren't alerted twice.</dd></div>
+<div><dt>Mark copies private</dt><dd>Others who can see that calendar see only Busy.</dd></div>
+</dl>
+<p>A private event never shares its title, place or notes, whatever is ticked.</p>
+<h2>Tag and colour</h2>
+<p>A <strong>tag</strong> goes in front of each copy's title, such as <code>[Work] Standup</code>. The page shows how copies will look as you type. The <strong>colour</strong> can be the calendar's own, the same as the original, or one you pick. Google calendars use event colours; Microsoft calendars get a category with that name; CalDAV calendars get a colour where the app shows one.</p>
+<h2>Leave out</h2>
+<ul>
+<li>Events marked free, invites you answered Maybe, and invites you haven't answered.</li>
+<li>All-day events, birthdays and out of office. Birthdays are left out unless you untick them.</li>
+<li>Titles with certain words, or only titles with certain words.</li>
+<li>Certain colours or categories, or only certain ones.</li>
+<li>Only some days of the week, and only events that start between two times. All-day events skip the time check.</li>
+</ul>
+<p>When a rule starts leaving an event out, its copy is removed at the next sync.</p>
+<h2>How far it syncs</h2>
+<p>In Settings, choose how many days back and ahead to sync. The default is 0 back and 120 ahead. Copies outside the window are left as they are.</p>
+<h2>Why is or isn't this copied?</h2>
+<p>Press <strong>Preview changes</strong>. Below the counts, every event is listed with where it would go. Open one to see the rule that decided, for example <em>not copied, because its title has "lunch"</em> or <em>copied as "Busy"</em>.</p>
+<h2>Activity</h2>
+<p>The <strong>Activity</strong> page lists every sync, newest first: when, why it ran, and what it added, updated and removed. The last 300 runs are kept on your computer only.</p>
+<h2>Settings from before rules</h2>
+<p>Busy only and Don't copy X here still work. A rule you save for a direction takes over from them for that direction.</p>
+
+<div class="pager"><a href="/how-a-sync-decides/">Back: How a sync decides</a><a href="/calendar/">Next: The Calendar tab</a></div>
+</main>
+</div>
+<footer class="foot">
+<div class="wrap">
+<a class="brand" href="/" aria-label="CalSync home"><img src="/mark-small.svg" alt="" width="30" height="30">CalSync</a>
+<p>This page has no trackers, analytics or cookies.</p>
+</div>
+</footer>
+</body>
+</html>

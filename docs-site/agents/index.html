@@ -34,6 +34,8 @@
 <a href="/booking-apps/">Booking apps</a>
 <a href="/agents/">AI agents</a>
 <a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/sync-rules/">Sync rules</a>
+<a href="/calendar/">The Calendar tab</a>
 <a href="/settings/">Settings and environment</a>
 <a href="/faq/">FAQ</a>
 <a href="/troubleshooting/">Troubleshooting</a>
@@ -52,6 +54,8 @@
 <li><a href="/booking-apps/">Booking apps</a></li>
 <li><a href="/agents/" aria-current="page">AI agents</a></li>
 <li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/sync-rules/">Sync rules</a></li>
+<li><a href="/calendar/">The Calendar tab</a></li>
 <li><a href="/settings/">Settings and environment</a></li>
 <li><a href="/faq/">FAQ</a></li>
 <li><a href="/troubleshooting/">Troubleshooting</a></li>
@@ -68,6 +72,10 @@
 <div><dt><code>calsync_preview_sync</code></dt><dd>Count what a sync would change. Changes nothing.</dd></div>
 <div><dt><code>calsync_add_event</code></dt><dd>Add an event. If syncing is on, it's copied to your other calendars straight away. If syncing is paused or was never started, it stays on one calendar until the next sync. Only with <code>--allow-write</code>.</dd></div>
 <div><dt><code>calsync_sync_now</code></dt><dd>Run a sync now, if syncing is on. Only with <code>--allow-write</code>.</dd></div>
+<div><dt><code>calsync_sync_rules</code></dt><dd>What goes from each calendar to each other one, and whether that direction synced cleanly last time.</dd></div>
+<div><dt><code>calsync_why</code></dt><dd>Why an event is or isn't copied to each calendar, from a dry run that changes nothing. Not offered titles with <code>--busy-only</code>.</dd></div>
+<div><dt><code>calsync_activity</code></dt><dd>The latest syncs, with what each direction added, updated or removed.</dd></div>
+<div><dt><code>calsync_resync</code></dt><dd>Rewrite every copy going one way now, if syncing is on. Only with <code>--allow-write</code>.</dd></div>
 </dl>
 <p>No tool can sign in, remove a calendar, start or resume syncing, or allow a mass delete. A sync run by a tool can remove a few copies whose original is gone, as any sync does. No tool returns a calendar ID, an account name, a token, a .ics link or a server's reply. When something fails, the tool gives one of a few fixed reasons, such as "not signed in" or "refused", and <code>calsync run --dry-run</code> may show you more. Tools do show the names you gave your calendars, so keep addresses out of those.</p>
 <p>"Syncing is on" means you pressed <strong>Apply and keep syncing</strong> on the page. If you run CalSync from cron or your own timer instead, <code>calsync_sync_now</code> refuses, and an added event is copied at the next run.</p>

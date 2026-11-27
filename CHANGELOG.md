@@ -5,6 +5,34 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Sync rules for each direction between two calendars (What goes where, on the Sync tab). Each can be on or off, copy
+  the title or a text of your choice, and copy the description, place, video call link, guest list (as text), reminders
+  and privacy. Copies can carry a tag in front of the title, with a live preview, and a colour of their own or the
+  original's.
+- Filters per direction: free events, Maybe and unanswered invites, all-day events, birthdays, out of office, title
+  words, colours or categories, days of the week and a time of day. Each can leave out or keep only.
+- A sync window: how many days back and ahead, in Settings (default 0 and 120, as before).
+- The Preview says why each event is or isn't copied, and which rule decided.
+- Turning a direction off, or stopping a calendar, asks whether to remove or keep the copies it made.
+- An Activity page with every run, a status for each direction (Synced, Syncing, Error, Off) and Resync.
+- Faster sync: a one-minute check asks Google and Microsoft calendars whether anything changed. With a public https
+  address (`CALSYNC_PUBLIC_URL`), Google push channels and Microsoft Graph subscriptions trigger a sync within seconds.
+- The Calendar tab is a full calendar: day, week and month, a time grid, keyboard keys, new events (repeat, guests,
+  Meet or Teams, place, busy or free, private, colour), changing, dragging and resizing with repeat scope (this one,
+  this and following, every one), Undo for 10 seconds, a choice to email guests, RSVP and Join, copies that open their
+  original, per-calendar colours, Hide copies, Hide weekends, week numbers, a second time zone, search with `cal:`,
+  `from:`, `before:` and `after:`, and print.
+- Agent tools: `calsync_sync_rules`, `calsync_why`, `calsync_activity`, and `calsync_resync` with `--allow-write`.
+- `calsync.set_home(path)` and `calsync_web.serve(host, port, home, block)` for running the engine and page from code.
+
+### Changed
+- Signed-in pages load one same-origin script (`/app.js`) for keys, dragging and the Undo countdown. The content policy
+  still allows no inline script or style, and every page works without it.
+- Google birthdays are read (and left out of syncs by default) so they show on the Calendar tab.
+- Configs from before rules keep their behaviour: Busy only and Don't copy X here map onto the new rules, and copies
+  made before are not rewritten.
+
 ## [0.1.0] - 2026-11-27 (beta)
 
 The first beta. Highlights:

@@ -34,6 +34,8 @@
 <a href="/booking-apps/">Booking apps</a>
 <a href="/agents/">AI agents</a>
 <a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/sync-rules/">Sync rules</a>
+<a href="/calendar/">The Calendar tab</a>
 <a href="/settings/">Settings and environment</a>
 <a href="/faq/">FAQ</a>
 <a href="/troubleshooting/">Troubleshooting</a>
@@ -52,6 +54,8 @@
 <li><a href="/booking-apps/">Booking apps</a></li>
 <li><a href="/agents/">AI agents</a></li>
 <li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/sync-rules/">Sync rules</a></li>
+<li><a href="/calendar/">The Calendar tab</a></li>
 <li><a href="/settings/" aria-current="page">Settings and environment</a></li>
 <li><a href="/faq/">FAQ</a></li>
 <li><a href="/troubleshooting/">Troubleshooting</a></li>
@@ -61,10 +65,12 @@
 <h1>Settings and environment</h1>
 <p class="lede">Most settings are on the CalSync page. A few live in environment variables.</p>
 <h2>On the page</h2>
-<p>The page has three tabs. <strong>Sync</strong> lists your calendars, adds new ones and runs the sync. <strong>Calendar</strong> shows a week or a month of what CalSync sees: pick one calendar to see what is on it now, with the copies CalSync made striped. <strong>Settings</strong> holds the rest.</p>
+<p>The page has three tabs. <strong>Sync</strong> lists your calendars, adds new ones and runs the sync. <strong>Calendar</strong> shows a day, a week or a month, where you can add, change and move events: see <a href="/calendar/">The Calendar tab</a>. <strong>Settings</strong> holds the rest.</p>
 <ul>
 <li><strong>How often it runs.</strong> Every 2, 5, 10, 15, 30 or 60 minutes. The default is 5.</li>
-<li><strong>Time zone.</strong> Used for quick add text, agendas and .ics times that name no zone.</li>
+<li><strong>Time zone.</strong> Used for quick add text, agendas and .ics times that name no zone. A second time zone can show beside it on the Calendar tab.</li>
+<li><strong>How far to sync.</strong> Days back and ahead. The default is 0 back and 120 ahead.</li>
+<li><strong>Quick checks.</strong> On by default: every minute, CalSync asks Google and Microsoft calendars whether anything changed, with one small request each, and syncs at once if so. iCloud, other CalDAV servers and .ics links sync on the interval.</li>
 <li><strong>Password.</strong> You can change it in the settings.</li>
 <li><strong>Recovery code.</strong> Make a new one at any time. The old one stops working.</li>
 <li><strong>Quick add puts events on.</strong> The calendar quick add writes to. Pick the one your booking page reads, so a new event blocks that time there at once.</li>
@@ -74,7 +80,7 @@
 <li><strong>Quick add.</strong> Type plain words on the Calendar tab, like <code>breakfast with friends tomorrow 9am for 2 hours</code>. You see a one-line preview first. After you add it, CalSync syncs right away.</li>
 <li><strong>Guests and reminders.</strong> Email addresses become guests, who get a normal invite from your Google calendar only after you tick Send the invites. <code>remind me 1h before</code> sets a reminder.</li>
 <li><strong>Overlaps.</strong> If the time is already busy, the preview names what it overlaps, and the button says Book anyway.</li>
-<li><strong>Skip this one.</strong> In the week view, open an event and skip it, for example a class that's cancelled. Its copies go, so the time opens on your other calendars. The original stays where it is. Skipped events are listed below the calendar with Undo.</li>
+<li><strong>Skip copying this one.</strong> Open an event and skip it, for example a class that's cancelled. Its copies go, so the time opens on your other calendars. The original stays where it is. Skipped events are listed below the calendar with Undo.</li>
 </ul>
 <h2 id="forgot">Forgot your password</h2>
 <p>CalSync runs on your own computer, so there is no account and no email reset. Both ways back work only on the computer CalSync runs on, never from anywhere else.</p>
@@ -89,7 +95,7 @@
 <div><dt><code>CALSYNC_PORT</code></dt><dd>The port for the page. Default 8484. In Compose, it sets the port published on your machine.</dd></div>
 <div><dt><code>CALSYNC_BIND</code></dt><dd>The address the page listens on. Default <code>127.0.0.1</code>. The Docker image listens on all addresses inside the container, and Compose publishes the port to this machine only.</dd></div>
 <div><dt><code>CALSYNC_HOSTS</code></dt><dd>Extra host names allowed to reach the page, separated by commas.</dd></div>
-<div><dt><code>CALSYNC_PUBLIC_URL</code></dt><dd>The https address, if you put CalSync behind your own proxy. It is used as Google's sign-in return address.</dd></div>
+<div><dt><code>CALSYNC_PUBLIC_URL</code></dt><dd>The https address, if you put CalSync behind your own proxy. It is used as Google's sign-in return address. With it, Google and Microsoft also tell CalSync the moment a calendar changes, at <code>/hook/google</code> and <code>/hook/microsoft</code>, and it syncs within seconds.</dd></div>
 <div><dt><code>CALSYNC_TZ</code></dt><dd>The time zone for quick add text, agendas and .ics times that name none.</dd></div>
 </dl>
 <p>With Docker Compose, put these in your shell or in a <code>.env</code> file next to <code>compose.yaml</code>. Compose passes <code>CALSYNC_TZ</code>, <code>CALSYNC_HOSTS</code>, <code>CALSYNC_PUBLIC_URL</code> and <code>CALSYNC_PORT</code> through.</p>
@@ -105,7 +111,7 @@
 <div><dt><code>export</code></dt><dd>Writes one .ics file per source calendar, with real events only.</dd></div>
 </dl>
 
-<div class="pager"><a href="/how-a-sync-decides/">Back: How a sync decides</a><a href="/faq/">Next: FAQ</a></div>
+<div class="pager"><a href="/calendar/">Back: The Calendar tab</a><a href="/faq/">Next: FAQ</a></div>
 </main>
 </div>
 <footer class="foot">
