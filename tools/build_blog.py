@@ -140,10 +140,10 @@ def page(title, description, path, main, *, noindex=False, article=None):
 <meta name="theme-color" content="#ffffff">
 {chr(10).join(meta)}
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="alternate" type="application/rss+xml" title="calsync blog" href="/blog/feed.xml">
+<link rel="alternate" type="application/rss+xml" title="CalSync blog" href="/blog/feed.xml">
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="{kind}">
-<meta property="og:site_name" content="calsync">
+<meta property="og:site_name" content="CalSync">
 <meta property="og:title" content="{esc(title)}">
 <meta property="og:description" content="{esc(description)}">
 <meta property="og:url" content="{canonical}">
@@ -155,7 +155,7 @@ def page(title, description, path, main, *, noindex=False, article=None):
 
 <header class="top">
 <div class="wrap">
-<a class="brand" href="/"><img class="glyph" src="/glyph-light.svg" alt="" width="37" height="40">calsync</a>
+<a class="brand" href="/"><img class="glyph" src="/glyph-light.svg" alt="" width="37" height="40">CalSync</a>
 <nav aria-label="Main">
 <a href="/#how">How it works</a>
 <a href="/#careful">Safety</a>
@@ -169,7 +169,7 @@ def page(title, description, path, main, *, noindex=False, article=None):
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img class="glyph" src="/glyph-light.svg" alt="" width="37" height="40">calsync</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img class="glyph" src="/glyph-light.svg" alt="" width="37" height="40">CalSync</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="/#how">How it works</a>
 <a href="/#careful">Safety</a>
 <a href="/#compare">Compare</a>
@@ -184,7 +184,7 @@ def page(title, description, path, main, *, noindex=False, article=None):
 
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img class="glyph" src="/glyph-light.svg" alt="" width="22" height="24">calsync</a>
+<a class="brand" href="/" aria-label="CalSync home"><img class="glyph" src="/glyph-light.svg" alt="" width="22" height="24">CalSync</a>
 <nav aria-label="Footer"><a href="/blog/">Blog</a><a href="{DOCS_URL}/">Docs</a><a href="{DOCS_URL}/faq/">FAQ</a><a href="https://github.com/{OWNER}/calsync">GitHub</a></nav>
 <p>MIT licence. This page has no trackers, analytics or cookies.</p>
 </div>
@@ -212,7 +212,7 @@ def list_page(posts):
 <section class="wrap blog-list">
 {rows(posts, "/blog/")}
 </section>"""
-    return page("Blog | calsync", "How calendar sync works, how to set it up, and how to keep two calendars honest without a subscription.",
+    return page("Blog | CalSync", "How calendar sync works, how to set it up, and how to keep two calendars honest without a subscription.",
                 "/blog/", main)
 
 
@@ -222,7 +222,7 @@ def post_page(p, base="/blog/", noindex=False):
 <a class="back" href="{base}">Back to the blog</a>
 <h1 itemprop="headline">{esc(p["title"])}</h1>
 <p class="lede" itemprop="description">{esc(p["description"])}</p>
-<p class="byline"><time itemprop="datePublished" datetime="{p["date"]}">{nice(p["date"])}</time> · {minutes(p["body"])} min read · <span itemprop="author">calsync contributors</span><meta itemprop="dateModified" content="{p["updated"]}"></p>
+<p class="byline"><time itemprop="datePublished" datetime="{p["date"]}">{nice(p["date"])}</time> · {minutes(p["body"])} min read · <span itemprop="author">CalSync contributors</span><meta itemprop="dateModified" content="{p["updated"]}"></p>
 </header>
 <div class="wrap prose" itemprop="articleBody">
 {markdown(p["body"])}
@@ -230,9 +230,9 @@ def post_page(p, base="/blog/", noindex=False):
 </article>
 <section class="wrap post-end">
 <h2>Free, open source, runs on your machine.</h2>
-<div class="btns"><a class="btn primary" href="/#install">Install calsync</a><a class="btn" href="{DOCS_URL}/">Read the docs</a></div>
+<div class="btns"><a class="btn primary" href="/#install">Install CalSync</a><a class="btn" href="{DOCS_URL}/">Read the docs</a></div>
 </section>"""
-    return page(f'{p["title"]} | calsync', p["description"], f'{base}{p["slug"]}/', main, noindex=noindex, article=p)
+    return page(f'{p["title"]} | CalSync', p["description"], f'{base}{p["slug"]}/', main, noindex=noindex, article=p)
 
 
 def write(path, text):
@@ -273,14 +273,14 @@ def feed(posts):
 <pubDate>{email.utils.format_datetime(datetime.datetime(p["date"].year, p["date"].month, p["date"].day, 14, tzinfo=datetime.timezone.utc))}</pubDate>
 <description>{esc(p["description"])}</description></item>""" for p in posts[:20])
     return f"""<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0"><channel><title>calsync blog</title><link>{URL}/blog/</link>
+<rss version="2.0"><channel><title>CalSync blog</title><link>{URL}/blog/</link>
 <description>How calendar sync works, and how to set it up.</description><language>en</language>{items}
 </channel></rss>
 """
 
 
 def llms(posts):
-    lines = ["# calsync", "", "> A free, open source, self-hosted tool that keeps Google and Microsoft 365 calendars in two-way sync.",
+    lines = ["# CalSync", "", "> A free, open source, self-hosted tool that keeps Google and Microsoft 365 calendars in two-way sync.",
              "> There is no hosted version. It runs on your own machine.", "", "## Docs", ""]
     lines += [f"- [{u}]({u})" for u, _ in docs_entries()]
     if posts:
@@ -308,7 +308,7 @@ def build(today, drafts_dir=None):
         base = "/blog/drafts/"
         main = f'<section class="wrap blog-top"><p class="eyebrow">Not published</p><h1>Drafts.</h1></section>\n' \
                f'<section class="wrap blog-list">{rows(drafts, base, " <span class=tag>Draft</span>")}</section>'
-        write(os.path.join(out, "drafts", "index.html"), page("Drafts | calsync", "Drafts, not published.", base, main, noindex=True))
+        write(os.path.join(out, "drafts", "index.html"), page("Drafts | CalSync", "Drafts, not published.", base, main, noindex=True))
         for p in drafts:
             write(os.path.join(out, "drafts", p["slug"], "index.html"), post_page(p, base, noindex=True))
     return live, drafts

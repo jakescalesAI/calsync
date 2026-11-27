@@ -114,15 +114,9 @@ def white_arrows():
 def glyph_light_svg():
     """The white calendar: white page with an ink outline, ink rings, bar and sync arrows. The site's header uses it."""
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="104 80 304 330" role="img" aria-label="calsync">'
-            f'<rect x="124" y="154" width="264" height="236" rx="52" fill="#fff" stroke="{INK}" stroke-width="9"/>'
-            f'<rect x="153" y="96" width="62" height="108" rx="31" fill="#fff"/><rect x="165" y="108" width="38" height="84" rx="19" fill="{INK}"/>'
-            f'<rect x="297" y="96" width="62" height="108" rx="31" fill="#fff"/><rect x="309" y="108" width="38" height="84" rx="19" fill="{INK}"/>'
+            f'<rect x="124" y="154" width="264" height="236" rx="52" fill="#fff" stroke="{INK}" stroke-width="14"/>'
+            f'<rect x="153" y="96" width="62" height="108" rx="31" fill="{INK}"/><rect x="297" y="96" width="62" height="108" rx="31" fill="{INK}"/>'
             f'<rect x="120" y="212" width="272" height="10" fill="{INK}"/>{white_arrows()}</svg>')
-
-
-def page_arrows_svg():
-    """Just the arrows, framed on the calendar's page (below the bar), for the page the site's intro tears off."""
-    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="120 222 272 172" aria-hidden="true">{white_arrows()}</svg>'
 
 
 FILES = {
@@ -133,7 +127,6 @@ FILES = {
     "glyph-black.svg": lambda: glyph_svg("#000000"),
     "glyph-dark.svg": glyph_dark_svg,
     "glyph-light.svg": glyph_light_svg,
-    "page-arrows.svg": page_arrows_svg,
 }
 
 PNGS = {   # file: (source svg, size)
@@ -146,7 +139,7 @@ PNGS = {   # file: (source svg, size)
 }
 
 COPIES = {   # where each file goes besides brand/
-    "site": ["mark.svg", "mark-small.svg", "glyph-light.svg", "page-arrows.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon-32.png", "favicon.ico", "og.png"],
+    "site": ["mark.svg", "mark-small.svg", "glyph-light.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon-32.png", "favicon.ico", "og.png"],
     "docs-site": ["mark.svg", "mark-small.svg", "apple-touch-icon.png", "favicon-32.png", "favicon.ico"],
 }
 
@@ -175,20 +168,19 @@ def render(svg_path, size, out_path):
 OG = """<html><head><style>
 @font-face {{ font-family: Inter; src: url("file:///{fonts}/inter-600.woff2"); font-weight: 600; }}
 body {{ margin: 0; width: 1200px; height: 630px; background: #fff; color: #1d1d1f; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  font-family: Inter, -apple-system, "Segoe UI", sans-serif; font-weight: 600; letter-spacing: -.05em;
-  background-image: radial-gradient(700px 260px at 50% 118%, rgba(0,113,227,.12), rgba(94,92,230,.04) 60%, transparent); }}
-h1 {{ margin: 0; font-size: 168px; line-height: 1.06; white-space: nowrap; }}
-img {{ display: inline-block; width: .86em; height: .86em; margin: 0 .05em 0 .08em; vertical-align: -.1em; border-radius: 22.5%; box-shadow: 0 24px 48px -16px rgba(11,15,22,.45); }}
-p {{ margin: 18px 0 0; font-size: 54px; letter-spacing: -.035em; }} span {{ color: #6e6e73; }}
-</style></head><body><h1>cal<img src="file:///{mark}">sync</h1><p>Every calendar. <span>Always in sync.</span></p></body></html>"""
+  font-family: Inter, -apple-system, "Segoe UI", sans-serif; font-weight: 600; letter-spacing: -.04em; }}
+.lock {{ display: flex; align-items: center; gap: 26px; font-size: 92px; letter-spacing: -.035em; }}
+img {{ width: 96px; height: 104px; }}
+p {{ margin: 44px 0 0; max-width: 980px; text-align: center; font-size: 60px; line-height: 1.05; }} span {{ color: #6e6e73; }}
+</style></head><body><div class="lock"><img src="file:///{mark}">CalSync</div><p>All your calendars, <span>synced the way they should be.</span></p></body></html>"""
 
 
 def render_og(out_path):
-    """The 1200 by 630 picture links show when shared: the wordmark with the tile in it, as on the site."""
+    """The 1200 by 630 picture links show when shared: the white calendar and CalSync, over the site's headline."""
     with tempfile.TemporaryDirectory() as tmp:
         page = os.path.join(tmp, "og.html")
         with open(page, "w", encoding="utf-8") as fh:
-            fh.write(OG.format(fonts=os.path.join(ROOT, "site", "fonts").replace(os.sep, "/"), mark=os.path.join(BRAND, "mark.svg").replace(os.sep, "/")))
+            fh.write(OG.format(fonts=os.path.join(ROOT, "site", "fonts").replace(os.sep, "/"), mark=os.path.join(BRAND, "glyph-light.svg").replace(os.sep, "/")))
         shot = os.path.join(tmp, "s.png")
         subprocess.run([browser(), "--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1", "--allow-file-access-from-files",
                         "--window-size=1200,630", f"--screenshot={shot}", f"--user-data-dir={os.path.join(tmp, 'u')}", "file:///" + page.replace(os.sep, "/")],

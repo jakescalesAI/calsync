@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Install with Docker | calsync docs</title>
-<meta name="description" content="Run calsync with Docker Compose and finish setup on a web page at localhost:8484.">
+<title>Install with Docker | CalSync docs</title>
+<meta name="description" content="Run CalSync with Docker Compose and finish setup on a web page at localhost:8484.">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://docs.getcalsync.app/docker/">
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Install with Docker | calsync docs">
-<meta property="og:description" content="Run calsync with Docker Compose and finish setup on a web page at localhost:8484.">
+<meta property="og:title" content="Install with Docker | CalSync docs">
+<meta property="og:description" content="Run CalSync with Docker Compose and finish setup on a web page at localhost:8484.">
 <meta property="og:url" content="https://docs.getcalsync.app/docker/">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap bar hd">
-<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a>
+<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a>
 <nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="/">Overview</a>
 <a href="/docker/">Install with Docker</a>
 <a href="/python/">Install without Docker</a>
@@ -59,7 +59,7 @@
 <main id="main" class="doc">
 
 <h1>Install with Docker</h1>
-<p class="lede">Docker Compose runs calsync and its setup page. This is the easiest route.</p>
+<p class="lede">Docker Compose runs CalSync and its setup page. This is the easiest route.</p>
 <h2>Start it</h2>
 <p>You need Docker with the Compose plugin.</p>
 <pre><code>git clone https://github.com/jakescalesAI/calsync
@@ -86,27 +86,27 @@ docker compose up -d</code></pre>
 <h2>Options on each calendar</h2>
 <dl class="kv">
 <div><dt>Copies here only say Busy</dt><dd>Copies on this calendar have no title or location.</dd></div>
-<div><dt>Never write to this calendar</dt><dd>Read only. calsync uses it as a source and never writes to it.</dd></div>
+<div><dt>Never write to this calendar</dt><dd>Read only. CalSync uses it as a source and never writes to it.</dd></div>
 <div><dt>Don't copy X here</dt><dd>One switch for every other calendar, named X. Events from X are not copied here.</dd></div>
 </dl>
 <h2>How often it runs</h2>
 <p>In the settings, choose every 2, 5, 10, 15, 30 or 60 minutes. The default is 5.</p>
 <h2>The way out</h2>
-<p>On each calendar, "Delete the copies calsync made here" removes every copy calsync made on it. It touches nothing else. From the command line, <code>calsync purge</code> does the same.</p>
+<p>On each calendar, "Delete the copies CalSync made here" removes every copy CalSync made on it. It touches nothing else. From the command line, <code>calsync purge</code> does the same.</p>
 <h2>Everyday commands</h2>
 <pre><code>docker compose ps           # is it running?
 docker compose logs calsync  # what has it done?
 docker compose down          # stop it
 git pull &amp;&amp; docker compose up -d --build   # update</code></pre>
 <p>Your sign-ins and calendar data live in the Docker volume <code>calsync-data</code>, on your machine. To change the port, time zone or allowed host names, see <a href="/settings/">Settings and environment</a>.</p>
-<div class="callout"><p>Put calsync behind your own HTTPS proxy before you expose it to the internet.</p></div>
+<div class="callout"><p>Put CalSync behind your own HTTPS proxy before you expose it to the internet.</p></div>
 
 <div class="pager"><a href="/">Back: Overview</a><a href="/python/">Next: Install without Docker</a></div>
 </main>
 </div>
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img src="/mark-small.svg" alt="" width="30" height="30">calsync</a>
+<a class="brand" href="/" aria-label="CalSync home"><img src="/mark-small.svg" alt="" width="30" height="30">CalSync</a>
 <p>This page has no trackers, analytics or cookies.</p>
 </div>
 </footer>

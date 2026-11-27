@@ -349,60 +349,61 @@ code { background: var(--panel); color: var(--text); }
   .foot .wrap { flex-wrap: wrap; gap: 14px 22px; }
   .foot p { margin-left: 0; width: 100%; }
 }
-/* Intro, home page only: calsync's white calendar, outlined in ink, arrives; its sync page tears along the perforation,
-   the right side lifting first, and swings away to the left; the view zooms straight into the blank page under it.
-   Only transform and opacity animate (no filters, shadows or colour changes), so it stays smooth. The reveal moves only
-   the header and the hero, not the whole long page. A one-line script in the head adds html.seen after the first view
-   in a session. Reduced motion never plays it. The page underneath is ordinary HTML. Grid: the icon's, 272 x 298. */
-.intro { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: #fff; pointer-events: none; overflow: hidden;
-  animation: ti-gone .45s ease 2.8s forwards; }
-.ti-cal { position: relative; width: 160px; height: 175px; opacity: 0; transform-origin: 50% 71.1%; perspective: 700px; will-change: transform, opacity;
-  animation: ti-arrive .55s cubic-bezier(.2, .8, .2, 1) .1s forwards, ti-dive .9s cubic-bezier(.75, 0, .2, 1) 2.05s forwards; }
-.ti-cal > * { position: absolute; }
-.ti-body { left: 0; right: 0; top: 18.1%; bottom: 0; background: #fff; border-radius: 20.6% / 23%; }
-.ti-frame { left: 0; right: 0; top: 18.1%; bottom: 0; border: 5px solid #1b2230; border-radius: 20.6% / 23%; z-index: 4; animation: ti-gone .3s ease 2.15s forwards; }
-.ti-ring { top: 0; width: 22.8%; height: 36.2%; border-radius: 999px; background: #1b2230; z-index: 5; animation: ti-gone .3s ease 2.15s forwards; }
-.ti-l { left: 12.1%; } .ti-r { right: 12.1%; }
-.ti-bar { left: 0; right: 0; top: 38.9%; height: 3.4%; background: #1b2230; z-index: 5; animation: ti-gone .3s ease 2.15s forwards; }
-.ti-page { left: 5px; right: 5px; top: 42.3%; bottom: 5px; background: #fff; border-radius: 0 0 17% 17% / 0 0 30% 30%; }
-.ti-next { z-index: 1; }
-.ti-front { z-index: 6; transform-origin: 4% 0; will-change: transform, opacity; animation: ti-tear 1.05s cubic-bezier(.45, 0, .6, 1) .85s forwards;
-  clip-path: polygon(0 3%, 4% 0, 8% 3%, 12% 0, 16% 3%, 20% 0, 24% 3%, 28% 0, 32% 3%, 36% 0, 40% 3%, 44% 0, 48% 3%, 52% 0, 56% 3%, 60% 0, 64% 3%, 68% 0, 72% 3%, 76% 0, 80% 3%, 84% 0, 88% 3%, 92% 0, 96% 3%, 100% 0, 100% 100%, 0 100%); }   /* the perforation */
-.ti-front img { position: absolute; inset: 0; width: 100%; height: 100%; }
-.ti-front::after { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, rgba(27, 34, 48, 0) 40%, rgba(27, 34, 48, .16)); opacity: 0; animation: ti-shade 1.05s ease .85s forwards; }
-.ti-front::before { content: ""; position: absolute; inset: 0; border: 3px solid #1b2230; border-radius: inherit; opacity: 0; z-index: 1; animation: ti-show .15s ease 1s forwards; }   /* reads against white once free */
-.ti-stub { left: 5px; right: 5px; top: 42.3%; height: 4%; z-index: 2; opacity: 0; background: #fff; animation: ti-show .01s linear 1.25s forwards, ti-gone .3s ease 2.15s forwards;
-  clip-path: polygon(0 0, 100% 0, 100% 40%, 96% 100%, 92% 40%, 88% 100%, 84% 40%, 80% 100%, 76% 40%, 72% 100%, 68% 40%, 64% 100%, 60% 40%, 56% 100%, 52% 40%, 48% 100%, 44% 40%, 40% 100%, 36% 40%, 32% 100%, 28% 40%, 24% 100%, 20% 40%, 16% 100%, 12% 40%, 8% 100%, 4% 40%, 0 100%); }   /* the torn stub under the bar */
-.intro ~ main .hero { animation: ti-reveal .6s ease-out 2.75s both; }
-/* While the intro plays, the page under it isn't drawn at all: its frosted header, glow and spinning bits would cost
-   frames for nothing. Hidden until 2.75 s, then shown as the reveal starts. The header just appears, under the fading
-   white: moving or fading its frosted glass costs about 200 ms in one frame. */
-.intro ~ .top, .intro ~ main, .intro ~ .foot { animation: ti-hold 0s linear 2.75s backwards; }
-.intro ~ main .win { animation-delay: 2.9s; }
-@keyframes ti-arrive { from { opacity: 0; transform: scale(.8) translateY(14px); } to { opacity: 1; transform: none; } }
-@keyframes ti-tear {     /* a tug, the right side lifts free first, then the sheet swings away to the left and drops */
-  0% { transform: none; opacity: 1; }
-  14% { transform: rotateZ(2deg) translateY(-2%); }
-  34% { transform: rotateZ(-7deg) rotateY(-14deg) translate(-3%, 1%); }
-  60% { transform: rotateZ(-20deg) rotateY(-32deg) translate(-55%, -4%); opacity: 1; }
-  100% { transform: rotateZ(-38deg) rotateY(-58deg) translate(-210%, 8%); opacity: 0; } }
-@keyframes ti-shade { 40%, 100% { opacity: 1; } }
-@keyframes ti-dive { from { opacity: 1; transform: none; } to { opacity: 1; transform: translateY(-21.1%) scale(32); } }   /* the blank page outgrows a 4K screen */
-@keyframes ti-show { to { opacity: 1; } }
-@keyframes ti-gone { to { opacity: 0; visibility: hidden; } }
-@keyframes ti-reveal { from { opacity: 0; transform: translateY(10px); visibility: hidden; } to { opacity: 1; transform: none; visibility: visible; } }
-@keyframes ti-hold { from, to { visibility: hidden; } }
+/* Intro, home page only ("arrows draw"): the sync arrows draw and spin while the calendar draws around them, the
+   name opens to the right, and the pair glides into the header's logo, exactly. The lockup is the header logo at
+   1/s its size (s = logo height / 130); the end-of-page script measures the header and sets s, the gap, the word size
+   and the docking move, then adds html.ti-go. The head script adds html.ti-js only on the first view in a session and not
+   for reduced motion, so without JS there's simply no intro. Animates transform, opacity, clip-path and a small SVG's
+   stroke only; the page under it isn't drawn until the reveal, and the frosted header itself never animates. */
+.intro { display: none; }
+.ti-js .intro { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; pointer-events: none; }
 .seen .intro { display: none; }
-.seen .intro ~ .top, .seen .intro ~ main .hero, .seen .intro ~ main, .seen .intro ~ .foot { animation: none; }
-.seen .intro ~ main .win { animation-delay: .15s; }
+.ti-bg { position: absolute; inset: 0; background: #fff; }
+.ti-lock { position: relative; display: flex; align-items: center; gap: var(--g, 39px); transform-origin: 0 50%; will-change: transform; }
+.ti-mark { display: block; flex: none; width: 120px; height: 130px; overflow: visible; }
+.ti-word { font-size: var(--fs, 65px); font-weight: 600; line-height: 1; letter-spacing: -.015em; color: var(--text); white-space: nowrap; clip-path: inset(0 100% 0 0); opacity: 0; }
+.ti-arc { stroke-dasharray: 190; stroke-dashoffset: 190; }
+.ti-head, .ti-ring, .ti-bar { opacity: 0; }
+.ti-frame { stroke-dasharray: 1100; stroke-dashoffset: 1100; }
+.ti-spin { transform-origin: 256px 308px; }
+.ti-go .ti-arc { animation: ti-draw .55s cubic-bezier(.5, 0, .3, 1) .15s forwards; }
+.ti-go .ti-head { animation: ti-on .18s ease .62s forwards; }
+.ti-go .ti-spin { animation: ti-turn .85s cubic-bezier(.6, 0, .35, 1) .8s; }
+.ti-go .ti-frame { animation: ti-draw .85s cubic-bezier(.6, 0, .35, 1) .8s forwards; }      /* same length and easing as the spin */
+.ti-go .ti-ring, .ti-go .ti-bar { animation: ti-on .22s ease 1.5s forwards; }
+.ti-go .ti-lock { animation: ti-open .6s cubic-bezier(.65, 0, .35, 1) 1.75s both, ti-dock .7s cubic-bezier(.7, 0, .2, 1) 2.55s forwards; }
+.ti-go .ti-word { animation: ti-word .6s cubic-bezier(.65, 0, .35, 1) 1.75s forwards; }
+.ti-go .ti-bg { animation: ti-off .55s ease 2.6s forwards; }
+.ti-go .intro { animation: ti-gone 0s linear 3.25s forwards; }
+/* the page underneath: not drawn until it's needed */
+.ti-go .intro ~ .top { animation: ti-hold 0s linear 2.55s backwards; }
+.ti-go .intro ~ .top .brand { animation: ti-hold 0s linear 3.25s backwards; }        /* the real logo takes over from the docked one */
+.ti-go .intro ~ .top nav, .ti-go .intro ~ .top .burger { animation: ti-rise .6s ease-out 2.65s both; }
+.ti-go .intro ~ main, .ti-go .intro ~ .foot { animation: ti-hold 0s linear 2.65s backwards; }
+.ti-go .intro ~ main .hero { animation: ti-rise .6s ease-out 2.65s both; }
+.ti-go .intro ~ main .win { animation-delay: 2.9s; }
+/* failsafe: JS marked the page but the docking script never ran, so show everything after a moment */
+.ti-js:not(.ti-go) .intro { animation: ti-gone 0s linear 1.5s forwards; }
+.ti-js:not(.ti-go) .intro ~ .top, .ti-js:not(.ti-go) .intro ~ main, .ti-js:not(.ti-go) .intro ~ .foot { animation: ti-hold 0s linear 1.5s backwards; }
+@keyframes ti-draw { to { stroke-dashoffset: 0; } }
+@keyframes ti-turn { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+@keyframes ti-on { to { opacity: 1; } }
+@keyframes ti-off { to { opacity: 0; } }
+@keyframes ti-open { from { transform: translateX(var(--half, 0px)); } to { transform: none; } }     /* the mark starts centred alone; the pair ends centred */
+@keyframes ti-word { from { clip-path: inset(0 100% 0 0); opacity: 0; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
+@keyframes ti-dock { from { transform: none; } to { transform: translate(var(--dx, 0px), var(--dy, 0px)) scale(var(--ds, 1)); } }
+@keyframes ti-gone { to { visibility: hidden; } }
+@keyframes ti-hold { from, to { visibility: hidden; } }
+@keyframes ti-rise { from { opacity: 0; transform: translateY(10px); visibility: hidden; } to { opacity: 1; transform: none; visibility: visible; } }
+
 /* the headline that took the name's place (the header carries the name) */
 .hero h1.headline { max-width: 15ch; margin-top: 26px; font-size: clamp(40px, 6.6vw, 86px); line-height: 1.02; letter-spacing: -.045em; }
 .hero h1.headline .dim { display: inline; padding: 0; }
 .brand img.glyph { width: auto; border-radius: 0; }
 
 @media (prefers-reduced-motion: reduce) {
-  .intro { display: none; }
-  .intro ~ .top, .intro ~ main .hero, .intro ~ main, .intro ~ .foot { animation: none; }
+  .intro { display: none !important; }
+  .intro ~ .top, .intro ~ .top *, .intro ~ main, .intro ~ main .hero, .intro ~ .foot { animation: none !important; }
   .menu:target { animation: none; }
   html { scroll-behavior: auto; }
   .win, .spin, .tag.live::before { animation: none; }

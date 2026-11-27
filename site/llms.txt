@@ -1,4 +1,4 @@
-# calsync
+# CalSync
 
 > A free, open source, self-hosted tool that keeps Google and Microsoft 365 calendars in two-way sync.
 > There is no hosted version. It runs on your own machine.

@@ -90,7 +90,7 @@ def reset_password_here(argv=()):
     Whoever can run this can already read calsync's folder, so it gives nothing away. It signs everyone out
     and makes a new recovery code."""
     import getpass
-    new = getpass.getpass("New password for the calsync page (at least 10 characters, hidden): ")
+    new = getpass.getpass("New password for the CalSync page (at least 10 characters, hidden): ")
     if len(new) < 10:
         raise SystemExit("Use at least 10 characters. Nothing changed.")
     if getpass.getpass("Type it again: ") != new:
@@ -166,7 +166,7 @@ def is_loopback(ip):
 
 # brand/mark.svg (made by tools/build_icons.py; mark-small.svg is the same artwork), sent inside the page so the content policy can stay closed
 MARK = "data:image/svg+xml;base64," + base64.b64encode((
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="calsync"><defs><linearGradient id="t" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="512"><stop offset="0" stop-color="#2c3648"/><stop offset="1" stop-color="#0b0f16"/></linearGradient><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="104" x2="0" y2="394"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d9e1ec"/></linearGradient></defs><rect width="512" height="512" rx="114" fill="url(#t)"/><rect x="120" y="150" width="272" height="244" rx="56" fill="url(#g)"/><rect x="153" y="96" width="62" height="108" rx="31" fill="url(#t)"/><rect x="165" y="108" width="38" height="84" rx="19" fill="url(#g)"/><rect x="297" y="96" width="62" height="108" rx="31" fill="url(#t)"/><rect x="309" y="108" width="38" height="84" rx="19" fill="url(#g)"/><rect x="120" y="212" width="272" height="10" fill="url(#t)"/><g fill="url(#t)" stroke="url(#t)"><path d="M201.5 288.2A58 58 0 0 1 303.2 274.3" fill="none" stroke-width="23" stroke-linecap="round"/><path d="M315.3 301.6L327.2 269.8L284.6 287.1Z" stroke-width="8" stroke-linejoin="round"/><path d="M310.5 327.8A58 58 0 0 1 208.8 341.7" fill="none" stroke-width="23" stroke-linecap="round"/><path d="M196.7 314.4L184.8 346.2L227.4 328.9Z" stroke-width="8" stroke-linejoin="round"/></g></svg>'
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CalSync"><defs><linearGradient id="t" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="512"><stop offset="0" stop-color="#2c3648"/><stop offset="1" stop-color="#0b0f16"/></linearGradient><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="104" x2="0" y2="394"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d9e1ec"/></linearGradient></defs><rect width="512" height="512" rx="114" fill="url(#t)"/><rect x="120" y="150" width="272" height="244" rx="56" fill="url(#g)"/><rect x="153" y="96" width="62" height="108" rx="31" fill="url(#t)"/><rect x="165" y="108" width="38" height="84" rx="19" fill="url(#g)"/><rect x="297" y="96" width="62" height="108" rx="31" fill="url(#t)"/><rect x="309" y="108" width="38" height="84" rx="19" fill="url(#g)"/><rect x="120" y="212" width="272" height="10" fill="url(#t)"/><g fill="url(#t)" stroke="url(#t)"><path d="M201.5 288.2A58 58 0 0 1 303.2 274.3" fill="none" stroke-width="23" stroke-linecap="round"/><path d="M315.3 301.6L327.2 269.8L284.6 287.1Z" stroke-width="8" stroke-linejoin="round"/><path d="M310.5 327.8A58 58 0 0 1 208.8 341.7" fill="none" stroke-width="23" stroke-linecap="round"/><path d="M196.7 314.4L184.8 346.2L227.4 328.9Z" stroke-width="8" stroke-linejoin="round"/></g></svg>'
 ).encode()).decode()
 
 CSS = """
@@ -263,8 +263,8 @@ def page(title, body, signed_in=False, flash=None, refresh=None, at="", wide=Fal
     note = f'<p class="flash" role="status">{esc(flash)}</p>' if flash else ""
     size = 32 if signed_in else 64
     return (f'<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="theme-color" content="#ffffff">{meta}'
-            f'<title>{esc(title)} · calsync</title><link rel="stylesheet" href="/app.css"><link rel="icon" href="{MARK}">'
-            f'<body class="{"in" if signed_in else "out"}"><header><div class="bar"><a class="brand" href="/"><img src="{MARK}" alt="" width="{size}" height="{size}">calsync</a>{nav}</div></header>'
+            f'<title>{esc(title)} · CalSync</title><link rel="stylesheet" href="/app.css"><link rel="icon" href="{MARK}">'
+            f'<body class="{"in" if signed_in else "out"}"><header><div class="bar"><a class="brand" href="/"><img src="{MARK}" alt="" width="{size}" height="{size}">CalSync</a>{nav}</div></header>'
             f'<main{" class=wide" if wide else ""}>{note}{body}</main></html>')
 
 
@@ -277,7 +277,7 @@ GOOGLE_STEPS = """
 <ol>
 <li>Open <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer">console.cloud.google.com</a> and create a project called calsync.</li>
 <li>Go to APIs &amp; Services, Library, find <b>Google Calendar API</b> and click Enable.</li>
-<li>Go to Google Auth Platform and click Get started. Name it calsync, pick your email, choose <b>External</b>.</li>
+<li>Go to Google Auth Platform and click Get started. Name it CalSync, pick your email, choose <b>External</b>.</li>
 <li>Go to Audience and click <b>Publish app</b>. Unverified is fine. An app left in Testing signs you out every 7 days.</li>
 <li>Go to Clients, Create client, type <b>Desktop app</b>. Copy the client ID and secret here.</li>
 </ol>"""
@@ -285,7 +285,7 @@ GOOGLE_STEPS = """
 MICROSOFT_STEPS = """
 <ol>
 <li>Open <a href="https://entra.microsoft.com/" target="_blank" rel="noreferrer">entra.microsoft.com</a>, then App registrations, New registration.</li>
-<li>Name it calsync and choose <b>Accounts in any organizational directory and personal Microsoft accounts</b>. Leave the redirect empty.</li>
+<li>Name it CalSync and choose <b>Accounts in any organizational directory and personal Microsoft accounts</b>. Leave the redirect empty.</li>
 <li>Under Authentication, turn on <b>Allow public client flows</b> and save.</li>
 <li>Under API permissions, add Microsoft Graph, Delegated, <b>Calendars.ReadWrite</b> and <b>offline_access</b>.</li>
 <li>Copy the Application (client) ID here.</li>
@@ -320,9 +320,9 @@ def dashboard(csrf, flash=None, preview=None):
 <label class="check"><input type="checkbox" name="read_only"{" checked" if c.get("read_only") else ""}> Never write to this calendar</label>
 {skip}<div class="actions"><button>Save</button></div></form>
 <div class="actions"><form class="inline" method="post" action="/calendar/remove"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(c["name"])}"><button class="plain">Stop syncing this calendar</button></form>
-<form class="inline" method="post" action="/purge"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(c["name"])}"><button class="danger">Delete the copies calsync made here</button></form></div></div></details></section>''')
+<form class="inline" method="post" action="/purge"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(c["name"])}"><button class="danger">Delete the copies CalSync made here</button></form></div></div></details></section>''')
     if len(cals) < 2:
-        out.append('<section class="note">Add at least two calendars and calsync can start.</section>')
+        out.append('<section class="note">Add at least two calendars and CalSync can start.</section>')
     out.append(f'<div class="actions"><a class="button plain" href="#add">Add a calendar</a><a class="button plain" href="/calendar">See them on a calendar</a></div>'
                f'<h2 id="add" class="big">Add a calendar</h2>{connect_body(csrf)}</div><div><h2>Sync</h2>')
     state = "Running in the background every " + str(cfg.get("interval_minutes", 5)) + " minutes." if cfg.get("enabled") else "Not running yet. Preview first, then start it."
@@ -366,7 +366,7 @@ def connect_body(csrf):
 <div class="row"><div><b>Outlook or Microsoft 365</b></div><a class="button" href="/connect/microsoft">Connect</a></div>
 {caldav}</section>
 <section class="list"><div class="row long"><div><b>Published .ics link</b> <span class="soft">Read-only: its events are copied out, nothing is written back. For Proton Calendar, an Exchange server, or an organization that blocks outside apps.</span></div><a class="button" href="/connect/ics">Add link</a></div>
-<div class="row long"><div><b>Calendly, Cal.com or another booking app</b> <span class="soft">Nothing to add here. Connect the booking app to any calendar above. calsync keeps that calendar showing your busy times from all the others.</span></div><a class="button plain" href="https://docs.getcalsync.app/booking-apps/">How it works</a></div></section>'''
+<div class="row long"><div><b>Calendly, Cal.com or another booking app</b> <span class="soft">Nothing to add here. Connect the booking app to any calendar above. CalSync keeps that calendar showing your busy times from all the others.</span></div><a class="button plain" href="https://docs.getcalsync.app/booking-apps/">How it works</a></div></section>'''
 
 
 def connect_page(csrf, flash=None):
@@ -402,7 +402,7 @@ def microsoft_page(csrf, flash=None):
 
 
 def ics_page(csrf, flash=None):
-    return page("Add an .ics link", f'''<h1>Add a published .ics link</h1><section><p>calsync saves this link and never shows it again, since anyone who has it can read that calendar.</p>
+    return page("Add an .ics link", f'''<h1>Add a published .ics link</h1><section><p>CalSync saves this link and never shows it again, since anyone who has it can read that calendar.</p>
 <form method="post" action="/connect/ics/save" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
 <label for="label">A short name</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="classes">
 <label for="url">Calendar link</label><input type="password" id="url" name="url" required>
@@ -412,7 +412,7 @@ def ics_page(csrf, flash=None):
 def caldav_page(kind, csrf, flash=None):
     name, server, note = engine.CALDAV_SERVERS[kind]
     address = "" if server else '<label for="server">Server address</label><input type="text" id="server" name="server" required placeholder="https://cloud.example.com">'
-    return page(f"Connect {name}", f'''<h1>Connect {name}</h1><section><p>{note}</p><p>calsync saves this password on this machine and never shows it again.</p>
+    return page(f"Connect {name}", f'''<h1>Connect {name}</h1><section><p>{note}</p><p>CalSync saves this password on this machine and never shows it again.</p>
 <form method="post" action="/connect/caldav/save" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="kind" value="{kind}">
 <label for="label">A short name</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="personal">
 {address}<label for="username">Username</label><input type="text" id="username" name="username" required>
@@ -434,9 +434,9 @@ def account_page(label, csrf, flash=None):
         if (label, c["id"]) in used:
             rows.append(f'<section class="list"><div class="row">{tile(c["name"])}<div><b>{esc(c["name"])}</b></div><span class="chip">already syncing</span></div></section>')
             continue
-        ro = "" if c["writable"] else '<p class="soft">calsync can read this one but not write to it.</p>'
+        ro = "" if c["writable"] else '<p class="soft">CalSync can read this one but not write to it.</p>'
         rows.append(f'''<section><p class="head">{tile(c["name"])}<b>{esc(c["name"])}</b></p>{ro}<form method="post" action="/calendar/add"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="account" value="{esc(label)}"><input type="hidden" name="calendar_id" value="{esc(c["id"])}">
-<label for="n{i}">Name in calsync</label><input type="text" id="n{i}" name="name" value="{esc(slug)}" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*">
+<label for="n{i}">Name in CalSync</label><input type="text" id="n{i}" name="name" value="{esc(slug)}" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*">
 {'<label class="check"><input type="checkbox" name="busy_only"> Copies here only say Busy</label>' if c["writable"] else ""}
 <div class="actions"><button>Sync this calendar</button></div></form></section>''')
     listed = "".join(rows) or '<section class="note">This account has no calendars.</section>'
@@ -591,10 +591,10 @@ def calendar_page(csrf, q, flash=None, quick=None):
     legend = [f'<a href="{esc(link(show=""))}"{" aria-current=page" if not show else ""}>Everything</a>']
     legend += [f'<a class="{colour[n]}" href="{esc(link(show=n))}"{" aria-current=page" if show == n else ""}><span class="dot"></span>{esc(label[n])}</a>' for n in names]
     if show:
-        explain = (f"What is on {esc(label[show])} right now. Its own events are solid; striped ones are copies calsync made, "
+        explain = (f"What is on {esc(label[show])} right now. Its own events are solid; striped ones are copies CalSync made, "
                    f"in the colour of the calendar they came from.")
     else:
-        explain = "Your own events from every calendar, one colour each. Once synced, every calendar calsync writes to holds all of these."
+        explain = "Your own events from every calendar, one colour each. Once synced, every calendar CalSync writes to holds all of these."
 
     cells = []
     if view == "month":
@@ -647,7 +647,7 @@ def chip(view, csrf, item, back):
     else:
         action = (f'<form method="post" action="/skip">{hidden}<input type="hidden" name="title" value="{esc(t)}">'
                   f'<input type="hidden" name="start" value="{esc(start)}"><button class="plain">Skip this one</button></form>')
-        note = ("A copy calsync made. " if cp else "") + "Skipping it removes its copies, so the time opens on your other calendars. The original stays."
+        note = ("A copy CalSync made. " if cp else "") + "Skipping it removes its copies, so the time opens on your other calendars. The original stays."
     return f'<details class="evd"><summary class="{cls}">{label}</summary><div class="evm"><p><b>From {esc(who)}</b></p><p class="soft">{note}</p>{action}</div></details>'
 
 
@@ -951,7 +951,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             cals = [c for c in engine.load_json(engine.CONFIG, {"calendars": []})["calendars"] if c["name"] == get("name")]
             if not get("confirm"):
                 count = engine.purge(cals, {c["name"]: engine.make_adapter(c) for c in cals}, dry_run=True, log=lambda *_: None)["deleted"]
-                return self.send(200, page("Delete copies", f'''<h1>Delete {copies(count)} from {esc(get("name"))}?</h1><section><p>This removes only events calsync made. If syncing is still on, the next run makes them again, so stop syncing this calendar too if you're done with it.</p>
+                return self.send(200, page("Delete copies", f'''<h1>Delete {copies(count)} from {esc(get("name"))}?</h1><section><p>This removes only events CalSync made. If syncing is still on, the next run makes them again, so stop syncing this calendar too if you're done with it.</p>
 <form method="post" action="/purge"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(get("name"))}"><input type="hidden" name="confirm" value="1"><div class="actions"><button class="danger">Delete {copies(count)}</button><a class="button plain" href="/">Keep them</a></div></form></section>''', True, at="/"))
             s = engine.purge(cals, {c["name"]: engine.make_adapter(c) for c in cals}, log=lambda *_: None)
             return self.send(200, page("Copies deleted", f'<h1>Deleted {copies(s["deleted"])}</h1><section>{esc(s["errors"])} problems.</section><a class="button plain" href="/">Back</a>', True, at="/"))
@@ -1059,7 +1059,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def first_run_page(self, flash=None):
         code = ('<label for="code">Setup code</label><input type="text" id="code" name="code" required autocomplete="off">'
                 '<p class="soft">It\'s in the logs: <code>docker compose logs calsync</code>. It proves you\'re the one who started this.</p>') if self.needs_code() else ""
-        return page("Welcome", f'''<h1>Welcome to calsync</h1><section><p>Choose a password for this page. Your sign-ins stay on this machine, so this password is what guards them.</p>
+        return page("Welcome", f'''<h1>Welcome to CalSync</h1><section><p>Choose a password for this page. Your sign-ins stay on this machine, so this password is what guards them.</p>
 <form method="post" action="/first-run" autocomplete="off">{code}<label for="pw">Password, at least 10 characters</label><input type="password" id="pw" name="password" required minlength="10"><div class="actions"><button>Continue</button></div></form></section>''', flash=flash)
 
     def first_run(self, get):
@@ -1088,14 +1088,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         form = ('''<h2>With your recovery code</h2><section><p>You were given a recovery code when you chose your password. It works only on this computer.</p>
 <form method="post" action="/forgot" autocomplete="off"><label for="rc">Recovery code</label><input type="text" id="rc" name="code" required placeholder="ABCD-EFGH-JKLM-NPQR" autocapitalize="characters" spellcheck="false">
 <label for="np">New password, at least 10 characters</label><input type="password" id="np" name="password" required minlength="10" autocomplete="new-password"><div class="actions"><button>Reset password</button></div></form></section>'''
-                if here else '<h2>With your recovery code</h2><section class="note">For safety, a recovery code only works on the computer calsync runs on. Open this page there, or use the command below.</section>')
-        return page("Forgot password", f'''<h1>Forgot your password?</h1><section><p>calsync runs on your own computer, so there is no account and no email reset. You can still get back in from the computer it runs on.</p></section>
+                if here else '<h2>With your recovery code</h2><section class="note">For safety, a recovery code only works on the computer CalSync runs on. Open this page there, or use the command below.</section>')
+        return page("Forgot password", f'''<h1>Forgot your password?</h1><section><p>CalSync runs on your own computer, so there is no account and no email reset. You can still get back in from the computer it runs on.</p></section>
 <h2>From the computer it runs on</h2><section><p>Open a terminal there and run:</p><pre>calsync reset-password</pre><p class="soft">With Docker: <code>docker compose exec calsync calsync reset-password</code>. You choose a new password, every browser is signed out, and you get a new recovery code.</p></section>
 {form}<div class="actions"><a class="button plain" href="/">Back to sign in</a></div>''', flash=flash)
 
     def forgot(self, cfg, get):
         if self.needs_code():       # never from another machine, a proxy or the Docker port
-            return self.send(403, self.forgot_page("A recovery code only works on the computer calsync runs on."))
+            return self.send(403, self.forgot_page("A recovery code only works on the computer CalSync runs on."))
         ip = self.client_address[0]
         stamp = take_try("recover", ip)
         if stamp is None:
@@ -1139,7 +1139,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pending_google[state] = {"label": label, "redirect": redirect, "origin": "http://" + self.headers["Host"] if not PUBLIC_URL else PUBLIC_URL, "expires": time.time() + 900}
         link = engine.google_auth_url(client["client_id"], redirect, state)
         return self.send(200, page("Connect Google", f'''<h1>Sign in to Google</h1><section><ol><li><a class="button" href="{esc(link)}" target="_blank" rel="noreferrer noopener">Open Google sign-in</a></li>
-<li>Google warns that the app isn't verified, because it's yours. Click Advanced, Go to calsync, then Allow.</li>
+<li>Google warns that the app isn't verified, because it's yours. Click Advanced, Go to CalSync, then Allow.</li>
 <li>If the browser ends on a page that won't load, copy that page's whole address and paste it here.</li></ol>
 <form method="post" action="/connect/google/paste" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}"><label for="addr">Address from the browser</label><input type="text" id="addr" name="address" required><div class="actions"><button class="plain">Finish sign-in</button></div></form></section>''', True, at="/"))
 
@@ -1241,7 +1241,7 @@ def serve():
     signal.signal(signal.SIGTERM, stop_now)
     stop = threading.Event()
     threading.Thread(target=scheduler, args=(stop,), daemon=True).start()
-    print(f"calsync is on port {PORT} (open http://localhost:{PORT})", flush=True)
+    print(f"CalSync is on port {PORT} (open http://localhost:{PORT})", flush=True)
     if not web_config():
         print(f"First-time setup code: {setup_code}", flush=True)
     try:

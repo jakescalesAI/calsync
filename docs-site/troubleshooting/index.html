@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Troubleshooting | calsync docs</title>
-<meta name="description" content="Fixes for common calsync problems with Google, Microsoft, Docker, Python and stopped runs.">
+<title>Troubleshooting | CalSync docs</title>
+<meta name="description" content="Fixes for common CalSync problems with Google, Microsoft, Docker, Python and stopped runs.">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://docs.getcalsync.app/troubleshooting/">
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Troubleshooting | calsync docs">
-<meta property="og:description" content="Fixes for common calsync problems with Google, Microsoft, Docker, Python and stopped runs.">
+<meta property="og:title" content="Troubleshooting | CalSync docs">
+<meta property="og:description" content="Fixes for common CalSync problems with Google, Microsoft, Docker, Python and stopped runs.">
 <meta property="og:url" content="https://docs.getcalsync.app/troubleshooting/">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap bar hd">
-<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a>
+<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a>
 <nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="/">Overview</a>
 <a href="/docker/">Install with Docker</a>
 <a href="/python/">Install without Docker</a>
@@ -59,7 +59,7 @@
 <main id="main" class="doc">
 
 <h1>Troubleshooting</h1>
-<p class="lede">Start with Preview changes. It shows what calsync sees and what it plans, and changes nothing. From the command line, use <code>calsync run --dry-run</code>. In Docker, <code>docker compose logs calsync</code> shows what it has done.</p>
+<p class="lede">Start with Preview changes. It shows what CalSync sees and what it plans, and changes nothing. From the command line, use <code>calsync run --dry-run</code>. In Docker, <code>docker compose logs calsync</code> shows what it has done.</p>
 <h2>Google</h2>
 <dl class="q">
 <dt>I get signed out every week</dt>
@@ -67,7 +67,7 @@
 <dt>Google says it has not verified the app</dt>
 <dd>That is expected. The app is yours. Click Advanced, then Go to your app name, then Allow.</dd>
 <dt>After I allow it, the browser shows a page that won't load</dt>
-<dd>That happens when calsync runs on another machine. Copy that page's whole address and paste it into the box on the calsync sign-in page.</dd>
+<dd>That happens when CalSync runs on another machine. Copy that page's whole address and paste it into the box on the CalSync sign-in page.</dd>
 <dt>An error says the Calendar API is disabled</dt>
 <dd>Enable Google Calendar API in the same project as your sign-in app.</dd>
 <dt>Sign-in fails with a client error</dt>
@@ -89,7 +89,7 @@
 <dt>It says it would delete N of M copies and skipped</dt>
 <dd>That is the safety stop. A run would have deleted more than half of a calendar's copies. Check what changed: a removed or renamed calendar, a new "Don't copy" switch, a source that came back empty. Run a preview. If the delete is what you want, run <code>calsync run --force</code>.</dd>
 <dt>One calendar was not synced</dt>
-<dd>It failed to load, so calsync left it alone and deleted nothing because of it. Check the sign-in and the network. It tries again next run.</dd>
+<dd>It failed to load, so CalSync left it alone and deleted nothing because of it. Check the sign-in and the network. It tries again next run.</dd>
 </dl>
 <h2>Events missing or odd</h2>
 <ul>
@@ -105,9 +105,9 @@
 <dt>The page at localhost:8484 will not open</dt>
 <dd>Run <code>docker compose ps</code> to see if it is up, and <code>docker compose logs calsync</code> to see why not. Another program may be using port 8484. You can change the port with <code>CALSYNC_PORT</code>.</dd>
 <dt>I lost the setup code</dt>
-<dd>Run <code>docker compose logs calsync</code> and look for the first-time setup code. It changes each time calsync starts until you choose a password, so use the newest one.</dd>
+<dd>Run <code>docker compose logs calsync</code> and look for the first-time setup code. It changes each time CalSync starts until you choose a password, so use the newest one.</dd>
 <dt>I forgot the page password</dt>
-<dd>On the computer calsync runs on, run <code>calsync reset-password</code>, or use your recovery code from Forgot password? on the sign-in page. See <a href="/settings/#forgot">Forgot your password</a>.</dd>
+<dd>On the computer CalSync runs on, run <code>calsync reset-password</code>, or use your recovery code from Forgot password? on the sign-in page. See <a href="/settings/#forgot">Forgot your password</a>.</dd>
 <dt>The page says "Too many tries"</dt>
 <dd>Too many wrong passwords or setup codes came in the last minute, from you or from someone else. Wait a minute. If it keeps happening, someone else can reach the page: move it off the open internet.</dd>
 <dt>The page says "This host name isn't allowed"</dt>
@@ -124,7 +124,7 @@
 </div>
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img src="/mark-small.svg" alt="" width="30" height="30">calsync</a>
+<a class="brand" href="/" aria-label="CalSync home"><img src="/mark-small.svg" alt="" width="30" height="30">CalSync</a>
 <p>This page has no trackers, analytics or cookies.</p>
 </div>
 </footer>

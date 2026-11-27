@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How a sync decides | calsync docs</title>
-<meta name="description" content="What calsync copies, updates and deletes on each run, how it recognises its own copies, and what makes a run stop.">
+<title>How a sync decides | CalSync docs</title>
+<meta name="description" content="What CalSync copies, updates and deletes on each run, how it recognises its own copies, and what makes a run stop.">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://docs.getcalsync.app/how-a-sync-decides/">
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="website">
-<meta property="og:title" content="How a sync decides | calsync docs">
-<meta property="og:description" content="What calsync copies, updates and deletes on each run, how it recognises its own copies, and what makes a run stop.">
+<meta property="og:title" content="How a sync decides | CalSync docs">
+<meta property="og:description" content="What CalSync copies, updates and deletes on each run, how it recognises its own copies, and what makes a run stop.">
 <meta property="og:url" content="https://docs.getcalsync.app/how-a-sync-decides/">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap bar hd">
-<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a>
+<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a>
 <nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="/">Overview</a>
 <a href="/docker/">Install with Docker</a>
 <a href="/python/">Install without Docker</a>
@@ -59,21 +59,21 @@
 <main id="main" class="doc">
 
 <h1>How a sync decides</h1>
-<p class="lede">calsync keeps no database. Each run it reads your calendars and works out what is missing, changed or left over.</p>
+<p class="lede">CalSync keeps no database. Each run it reads your calendars and works out what is missing, changed or left over.</p>
 <h2>One run</h2>
 <ol>
 <li><strong>List.</strong> It reads each calendar for the next 120 days. Events that already ended are ignored.</li>
-<li><strong>Find the real events.</strong> A real event is one calsync did not make. Declined events and cancelled events are not real events, so they are skipped.</li>
+<li><strong>Find the real events.</strong> A real event is one CalSync did not make. Declined events and cancelled events are not real events, so they are skipped.</li>
 <li><strong>Work out the wanted copies.</strong> Each writable calendar should hold one copy of every real event from every other calendar, apart from the exceptions below.</li>
 <li><strong>Compare.</strong> It finds the copies already there by their private tag. It creates the missing ones, updates the changed ones and deletes copies whose original is gone, declined or cancelled.</li>
 </ol>
 <h2>The tag is the state</h2>
-<p>Every copy carries a private tag that only calsync reads. The tag is how calsync finds its own work next time. Nothing else is stored, so there is nothing to migrate and nothing to lose. calsync only ever edits or deletes events that have its tag.</p>
+<p>Every copy carries a private tag that only CalSync reads. The tag is how CalSync finds its own work next time. Nothing else is stored, so there is nothing to migrate and nothing to lose. CalSync only ever edits or deletes events that have its tag.</p>
 <h2>Exceptions</h2>
 <ul>
 <li><strong>Already there by invite.</strong> If a meeting is on a calendar through a shared invite, it is not copied there again.</li>
 <li><strong>Don't copy X here.</strong> A calendar can skip another by name. Events from that source are not copied to it.</li>
-<li><strong>Never write to this calendar.</strong> It is a source only. calsync never writes to it.</li>
+<li><strong>Never write to this calendar.</strong> It is a source only. CalSync never writes to it.</li>
 <li><strong>Copies here only say Busy.</strong> Copies on that calendar have no title or location.</li>
 <li><strong>Private events.</strong> Copies of private events always say Busy, on every calendar.</li>
 </ul>
@@ -99,7 +99,7 @@
 </div>
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img src="/mark-small.svg" alt="" width="30" height="30">calsync</a>
+<a class="brand" href="/" aria-label="CalSync home"><img src="/mark-small.svg" alt="" width="30" height="30">CalSync</a>
 <p>This page has no trackers, analytics or cookies.</p>
 </div>
 </footer>

@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FAQ | calsync docs</title>
-<meta name="description" content="Short answers about calsync: hosting, privacy, sign-in apps, safety, limits and extras.">
+<title>FAQ | CalSync docs</title>
+<meta name="description" content="Short answers about CalSync: hosting, privacy, sign-in apps, safety, limits and extras.">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://docs.getcalsync.app/faq/">
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="website">
-<meta property="og:title" content="FAQ | calsync docs">
-<meta property="og:description" content="Short answers about calsync: hosting, privacy, sign-in apps, safety, limits and extras.">
+<meta property="og:title" content="FAQ | CalSync docs">
+<meta property="og:description" content="Short answers about CalSync: hosting, privacy, sign-in apps, safety, limits and extras.">
 <meta property="og:url" content="https://docs.getcalsync.app/faq/">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap bar hd">
-<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a>
+<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a>
 <nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="/">Overview</a>
 <a href="/docker/">Install with Docker</a>
 <a href="/python/">Install without Docker</a>
@@ -60,17 +60,17 @@
 
 <h1>FAQ</h1>
 <h2>The basics</h2>
-<details><summary>Is there a hosted version?</summary><p>No. You run calsync yourself. There is no calsync cloud and no account with us.</p></details>
-<details><summary>Does anyone else see my calendar?</summary><p>No. calsync runs on your machine and talks to your calendar providers directly. Sign-ins and calendar data stay with you.</p></details>
+<details><summary>Is there a hosted version?</summary><p>No. You run CalSync yourself. There is no CalSync cloud and no account with us.</p></details>
+<details><summary>Does anyone else see my calendar?</summary><p>No. CalSync runs on your machine and talks to your calendar providers directly. Sign-ins and calendar data stay with you.</p></details>
 <details><summary>What does it cost?</summary><p>Nothing. It is open source under the MIT license. It was built because paid sync tools charge monthly to copy events between your own calendars.</p></details>
 <details><summary>Which calendars work?</summary><p>Google Calendar, Outlook or Microsoft 365, Apple iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server, all two-way. Anything else that can publish an .ics link, such as Proton Calendar or an Exchange server, works as a read-only source. You can connect more than two. Each writable calendar gets a copy of every real event from the others.</p></details>
-<details><summary>Why do I have to make my own sign-in app?</summary><p>Because there is no calsync cloud to hold one. Your sign-in app belongs to you, and so do the tokens it makes. See the <a href="/google/">Google</a> and <a href="/microsoft/">Microsoft</a> steps. Each takes about 10 minutes.</p></details>
+<details><summary>Why do I have to make my own sign-in app?</summary><p>Because there is no CalSync cloud to hold one. Your sign-in app belongs to you, and so do the tokens it makes. See the <a href="/google/">Google</a> and <a href="/microsoft/">Microsoft</a> steps. Each takes about 10 minutes.</p></details>
 <details><summary>My work or school blocks outside apps. Now what?</summary><p>Publish the calendar as an .ics link and add it as a source. It works one way and is read only. See <a href="/ics/">Published .ics feeds</a>.</p></details>
 <h2>Safety</h2>
-<details><summary>Can calsync change or delete my own events?</summary><p>No. It only edits or deletes events it created, which carry its private tag.</p></details>
+<details><summary>Can CalSync change or delete my own events?</summary><p>No. It only edits or deletes events it created, which carry its private tag.</p></details>
 <details><summary>What if Google or Microsoft is down during a run?</summary><p>A calendar that cannot load is left alone. Nothing is deleted because of it.</p></details>
 <details><summary>What if something goes badly wrong?</summary><p>If a run would delete more than half of a calendar's copies, it stops and waits. Use Preview changes to see a plan before it happens.</p></details>
-<details><summary>How do I undo everything?</summary><p>On each calendar, press "Delete the copies calsync made here". Or run <code>calsync purge</code>. Your own events stay.</p></details>
+<details><summary>How do I undo everything?</summary><p>On each calendar, press "Delete the copies CalSync made here". Or run <code>calsync purge</code>. Your own events stay.</p></details>
 <h2>What gets copied</h2>
 <details><summary>Will I get duplicate invites?</summary><p>No. A meeting already on a calendar through a shared invite is not copied there again.</p></details>
 <details><summary>Are declined and cancelled events copied?</summary><p>No. They are skipped.</p></details>
@@ -83,15 +83,15 @@
 <details><summary>Can I stop work events reaching my personal calendar?</summary><p>Yes. On the personal calendar, turn on "Don't copy work here".</p></details>
 <h2>Extras</h2>
 <details><summary>Quick add</summary><p>From the command line: <code>calsync new Dentist tomorrow 3pm 1h</code>. It adds the event to your main calendar, then syncs.</p></details>
-<details><summary>Notes for an Obsidian-style vault</summary><p>calsync can write a Markdown agenda note and turn new lines in a quick-add note into events. Both are optional. See <a href="/settings/">Settings and environment</a>.</p></details>
-<details><summary>.ics export</summary><p>calsync can also write one .ics file per source calendar, with real events only. It is optional and set in the config.</p></details>
+<details><summary>Notes for an Obsidian-style vault</summary><p>CalSync can write a Markdown agenda note and turn new lines in a quick-add note into events. Both are optional. See <a href="/settings/">Settings and environment</a>.</p></details>
+<details><summary>.ics export</summary><p>CalSync can also write one .ics file per source calendar, with real events only. It is optional and set in the config.</p></details>
 
 <div class="pager"><a href="/settings/">Back: Settings and environment</a><a href="/troubleshooting/">Next: Troubleshooting</a></div>
 </main>
 </div>
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img src="/mark-small.svg" alt="" width="30" height="30">calsync</a>
+<a class="brand" href="/" aria-label="CalSync home"><img src="/mark-small.svg" alt="" width="30" height="30">CalSync</a>
 <p>This page has no trackers, analytics or cookies.</p>
 </div>
 </footer>

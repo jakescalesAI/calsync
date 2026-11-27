@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Install without Docker | calsync docs</title>
-<meta name="description" content="Install calsync with pipx and run its web page or command line without Docker.">
+<title>Install without Docker | CalSync docs</title>
+<meta name="description" content="Install CalSync with pipx and run its web page or command line without Docker.">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://docs.getcalsync.app/python/">
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Install without Docker | calsync docs">
-<meta property="og:description" content="Install calsync with pipx and run its web page or command line without Docker.">
+<meta property="og:title" content="Install without Docker | CalSync docs">
+<meta property="og:description" content="Install CalSync with pipx and run its web page or command line without Docker.">
 <meta property="og:url" content="https://docs.getcalsync.app/python/">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap bar hd">
-<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a>
+<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a>
 <nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="/">Overview</a>
 <a href="/docker/">Install with Docker</a>
 <a href="/python/">Install without Docker</a>
@@ -80,7 +80,7 @@ calsync web</code></pre>
 <div><dt><code>calsync add</code></dt><dd>Add a calendar to the sync.</dd></div>
 <div><dt><code>calsync remove</code></dt><dd>Take a calendar out of the sync.</dd></div>
 <div><dt><code>calsync run</code></dt><dd>One sync pass. Add <code>--dry-run</code> to preview.</dd></div>
-<div><dt><code>calsync purge</code></dt><dd>Delete the copies calsync made.</dd></div>
+<div><dt><code>calsync purge</code></dt><dd>Delete the copies CalSync made.</dd></div>
 <div><dt><code>calsync status</code></dt><dd>Show the calendars and the last run.</dd></div>
 <div><dt><code>calsync new</code></dt><dd>Add an event from plain text.</dd></div>
 <div><dt><code>calsync mcp</code></dt><dd>Tools for AI agents. See <a href="/agents/">AI agents</a>.</dd></div>
@@ -106,7 +106,7 @@ calsync run              # one sync pass</code></pre>
 <pre><code>*/5 * * * * calsync run &gt;&gt; $HOME/.calsync/run.log 2&gt;&amp;1</code></pre>
 <p>Cron has a small environment. If you set <code>CALSYNC_HOME</code>, set it on the cron line too, and use the full path to <code>calsync</code>.</p>
 <h2>Quick add</h2>
-<p>Add an event from plain text. It goes on your main calendar, then calsync syncs so it appears everywhere.</p>
+<p>Add an event from plain text. It goes on your main calendar, then CalSync syncs so it appears everywhere.</p>
 <pre><code>calsync new Dentist tomorrow 3pm 1h
 calsync new Dentist tomorrow 3pm 1h --check   # show how it was read, add nothing</code></pre>
 <h2>The way out</h2>
@@ -118,7 +118,7 @@ calsync purge             # delete them. Your own events stay.</code></pre>
 </div>
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img src="/mark-small.svg" alt="" width="30" height="30">calsync</a>
+<a class="brand" href="/" aria-label="CalSync home"><img src="/mark-small.svg" alt="" width="30" height="30">CalSync</a>
 <p>This page has no trackers, analytics or cookies.</p>
 </div>
 </footer>

@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Settings and environment | calsync docs</title>
-<meta name="description" content="calsync settings: how often it runs, environment variables, time zone, and exposing the page safely behind HTTPS.">
+<title>Settings and environment | CalSync docs</title>
+<meta name="description" content="CalSync settings: how often it runs, environment variables, time zone, and exposing the page safely behind HTTPS.">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://docs.getcalsync.app/settings/">
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Settings and environment | calsync docs">
-<meta property="og:description" content="calsync settings: how often it runs, environment variables, time zone, and exposing the page safely behind HTTPS.">
+<meta property="og:title" content="Settings and environment | CalSync docs">
+<meta property="og:description" content="CalSync settings: how often it runs, environment variables, time zone, and exposing the page safely behind HTTPS.">
 <meta property="og:url" content="https://docs.getcalsync.app/settings/">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap bar hd">
-<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a>
+<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a>
 <nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="/">Overview</a>
 <a href="/docker/">Install with Docker</a>
 <a href="/python/">Install without Docker</a>
@@ -59,9 +59,9 @@
 <main id="main" class="doc">
 
 <h1>Settings and environment</h1>
-<p class="lede">Most settings are on the calsync page. A few live in environment variables.</p>
+<p class="lede">Most settings are on the CalSync page. A few live in environment variables.</p>
 <h2>On the page</h2>
-<p>The page has three tabs. <strong>Sync</strong> lists your calendars, adds new ones and runs the sync. <strong>Calendar</strong> shows a week or a month of what calsync sees: pick one calendar to see what is on it now, with the copies calsync made striped. <strong>Settings</strong> holds the rest.</p>
+<p>The page has three tabs. <strong>Sync</strong> lists your calendars, adds new ones and runs the sync. <strong>Calendar</strong> shows a week or a month of what CalSync sees: pick one calendar to see what is on it now, with the copies CalSync made striped. <strong>Settings</strong> holds the rest.</p>
 <ul>
 <li><strong>How often it runs.</strong> Every 2, 5, 10, 15, 30 or 60 minutes. The default is 5.</li>
 <li><strong>Time zone.</strong> Used for quick add text, agendas and .ics times that name no zone.</li>
@@ -71,15 +71,15 @@
 </ul>
 <h2 id="quick">Quick add, overlaps and skipping</h2>
 <ul>
-<li><strong>Quick add.</strong> Type plain words on the Calendar tab, like <code>breakfast with friends tomorrow 9am for 2 hours</code>. You see a one-line preview first. After you add it, calsync syncs right away.</li>
+<li><strong>Quick add.</strong> Type plain words on the Calendar tab, like <code>breakfast with friends tomorrow 9am for 2 hours</code>. You see a one-line preview first. After you add it, CalSync syncs right away.</li>
 <li><strong>Guests and reminders.</strong> Email addresses become guests, who get a normal invite from your Google calendar only after you tick Send the invites. <code>remind me 1h before</code> sets a reminder.</li>
 <li><strong>Overlaps.</strong> If the time is already busy, the preview names what it overlaps, and the button says Book anyway.</li>
 <li><strong>Skip this one.</strong> In the week view, open an event and skip it, for example a class that's cancelled. Its copies go, so the time opens on your other calendars. The original stays where it is. Skipped events are listed below the calendar with Undo.</li>
 </ul>
 <h2 id="forgot">Forgot your password</h2>
-<p>calsync runs on your own computer, so there is no account and no email reset. Both ways back work only on the computer calsync runs on, never from anywhere else.</p>
+<p>CalSync runs on your own computer, so there is no account and no email reset. Both ways back work only on the computer CalSync runs on, never from anywhere else.</p>
 <ul>
-<li><strong>From a terminal on that computer.</strong> Run <code>calsync reset-password</code>. With Docker, run <code>docker compose exec calsync calsync reset-password</code>. Anyone who can do this can already read calsync's folder, so it gives nothing away.</li>
+<li><strong>From a terminal on that computer.</strong> Run <code>calsync reset-password</code>. With Docker, run <code>docker compose exec calsync calsync reset-password</code>. Anyone who can do this can already read CalSync's folder, so it gives nothing away.</li>
 <li><strong>With your recovery code.</strong> The page showed it once when you chose your password. On the sign-in page, choose Forgot password? and enter it with a new password. Each code works once.</li>
 </ul>
 <p>Either way, every browser is signed out and you get a new recovery code.</p>
@@ -89,16 +89,16 @@
 <div><dt><code>CALSYNC_PORT</code></dt><dd>The port for the page. Default 8484. In Compose, it sets the port published on your machine.</dd></div>
 <div><dt><code>CALSYNC_BIND</code></dt><dd>The address the page listens on. Default <code>127.0.0.1</code>. The Docker image listens on all addresses inside the container, and Compose publishes the port to this machine only.</dd></div>
 <div><dt><code>CALSYNC_HOSTS</code></dt><dd>Extra host names allowed to reach the page, separated by commas.</dd></div>
-<div><dt><code>CALSYNC_PUBLIC_URL</code></dt><dd>The https address, if you put calsync behind your own proxy. It is used as Google's sign-in return address.</dd></div>
+<div><dt><code>CALSYNC_PUBLIC_URL</code></dt><dd>The https address, if you put CalSync behind your own proxy. It is used as Google's sign-in return address.</dd></div>
 <div><dt><code>CALSYNC_TZ</code></dt><dd>The time zone for quick add text, agendas and .ics times that name none.</dd></div>
 </dl>
 <p>With Docker Compose, put these in your shell or in a <code>.env</code> file next to <code>compose.yaml</code>. Compose passes <code>CALSYNC_TZ</code>, <code>CALSYNC_HOSTS</code>, <code>CALSYNC_PUBLIC_URL</code> and <code>CALSYNC_PORT</code> through.</p>
 <h2>Reaching it from other machines</h2>
-<p>By default only the machine running calsync can reach the page. Before you expose it to the internet, put it behind your own HTTPS proxy. Then set <code>CALSYNC_PUBLIC_URL</code> to the proxy's https address and <code>CALSYNC_HOSTS</code> to its host name. Sign-ins and tokens are on that machine, so treat it like a password manager.</p>
+<p>By default only the machine running CalSync can reach the page. Before you expose it to the internet, put it behind your own HTTPS proxy. Then set <code>CALSYNC_PUBLIC_URL</code> to the proxy's https address and <code>CALSYNC_HOSTS</code> to its host name. Sign-ins and tokens are on that machine, so treat it like a password manager.</p>
 <p>Through a proxy, the first visit always asks for the setup code, even though the proxy runs on the same machine. Wrong passwords and setup codes are limited to a few a minute, so the page can't be guessed, and someone hammering it can lock it for a minute at a time. A private network such as a VPN is safer than the open internet.</p>
 <p>Lost a laptop that was signed in? Settings has <b>Sign out on every device</b>, which ends every session at once.</p>
 <h2>Optional notes features</h2>
-<p>Three extras are switched on in <code>config.json</code> inside the calsync folder. They are all optional.</p>
+<p>Three extras are switched on in <code>config.json</code> inside the CalSync folder. They are all optional.</p>
 <dl class="kv">
 <div><dt><code>quick_add</code></dt><dd>New lines starting with "- " in a Markdown note become events.</dd></div>
 <div><dt><code>agenda</code></dt><dd>Writes a Markdown agenda and refreshes the Calendar section of daily notes, for Obsidian-style folders.</dd></div>
@@ -110,7 +110,7 @@
 </div>
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img src="/mark-small.svg" alt="" width="30" height="30">calsync</a>
+<a class="brand" href="/" aria-label="CalSync home"><img src="/mark-small.svg" alt="" width="30" height="30">CalSync</a>
 <p>This page has no trackers, analytics or cookies.</p>
 </div>
 </footer>

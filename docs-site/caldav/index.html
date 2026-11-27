@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>iCloud and CalDAV | calsync docs</title>
-<meta name="description" content="Connect Apple iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud or any CalDAV server to calsync with an app password, for two-way sync.">
+<title>iCloud and CalDAV | CalSync docs</title>
+<meta name="description" content="Connect Apple iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud or any CalDAV server to CalSync with an app password, for two-way sync.">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://docs.getcalsync.app/caldav/">
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="website">
-<meta property="og:title" content="iCloud and CalDAV | calsync docs">
-<meta property="og:description" content="Connect Apple iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud or any CalDAV server to calsync with an app password, for two-way sync.">
+<meta property="og:title" content="iCloud and CalDAV | CalSync docs">
+<meta property="og:description" content="Connect Apple iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud or any CalDAV server to CalSync with an app password, for two-way sync.">
 <meta property="og:url" content="https://docs.getcalsync.app/caldav/">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap bar hd">
-<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a>
+<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a>
 <nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="/">Overview</a>
 <a href="/docker/">Install with Docker</a>
 <a href="/python/">Install without Docker</a>
@@ -59,11 +59,11 @@
 <main id="main" class="doc">
 
 <h1>iCloud and CalDAV</h1>
-<p class="lede">CalDAV is the open standard most calendars speak. calsync reads and writes these calendars both ways, and they only need an app password, not a sign-in app.</p>
+<p class="lede">CalDAV is the open standard most calendars speak. CalSync reads and writes these calendars both ways, and they only need an app password, not a sign-in app.</p>
 <h2>Connect one</h2>
 <ol>
 <li>Make an app password with your provider, using the list below.</li>
-<li>On the calsync page, add a calendar and pick your provider.</li>
+<li>On the CalSync page, add a calendar and pick your provider.</li>
 <li>Give it a short name, then enter your username and the app password.</li>
 <li>Press Check and save, then choose which calendars to sync.</li>
 </ol>
@@ -82,7 +82,7 @@
 <dd>Personal settings, Security, Devices &amp; sessions. Enter your Nextcloud address as the server.</dd>
 </dl>
 <h2>Your own server</h2>
-<p>Pick Another CalDAV server and enter its address. calsync finds your calendars from there. If it can't, try the full CalDAV address:</p>
+<p>Pick Another CalDAV server and enter its address. CalSync finds your calendars from there. If it can't, try the full CalDAV address:</p>
 <dl class="q">
 <dt>Nextcloud</dt><dd><code>https://cloud.example.com/remote.php/dav</code></dd>
 <dt>Radicale</dt><dd><code>https://radicale.example.com:5232/</code></dd>
@@ -90,16 +90,16 @@
 <dt>SOGo</dt><dd><code>https://sogo.example.com/SOGo/dav/</code></dd>
 <dt>Synology</dt><dd><code>https://nas.example.com:5001/caldav/</code></dd>
 </dl>
-<div class="callout"><p>calsync only sends a password over https, except to a server on your own network. It also won't follow a redirect to another site with your password.</p></div>
+<div class="callout"><p>CalSync only sends a password over https, except to a server on your own network. It also won't follow a redirect to another site with your password.</p></div>
 <h2>Calendars with no way in</h2>
 <p>Proton Calendar has no CalDAV, and an Exchange server you run yourself doesn't speak it. Publish those as a <a href="/ics/">published .ics link</a>, which works one way.</p>
 <h2>Good to know</h2>
 <ul>
-<li>Events are copied two ways, the same as Google and Microsoft. Copies carry a hidden tag, and calsync only edits or deletes tagged events.</li>
-<li>A calendar you can only read comes through as a source. calsync won't try to write to it.</li>
+<li>Events are copied two ways, the same as Google and Microsoft. Copies carry a hidden tag, and CalSync only edits or deletes tagged events.</li>
+<li>A calendar you can only read comes through as a source. CalSync won't try to write to it.</li>
 <li>Reminders lists are left out, since they hold tasks and not events.</li>
-<li>If a server throws away calsync's tag, calsync stops writing to that calendar and says so. Turn on Never write to this calendar to keep it as a source.</li>
-<li>The app password is stored in the data folder, readable only by its owner. Sign out in calsync, then revoke the app password with your provider, to cut access.</li>
+<li>If a server throws away CalSync's tag, CalSync stops writing to that calendar and says so. Turn on Never write to this calendar to keep it as a source.</li>
+<li>The app password is stored in the data folder, readable only by its owner. Sign out in CalSync, then revoke the app password with your provider, to cut access.</li>
 </ul>
 
 <div class="pager"><a href="/microsoft/">Back: Microsoft sign-in app</a><a href="/ics/">Next: Published .ics feeds</a></div>
@@ -107,7 +107,7 @@
 </div>
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img src="/mark-small.svg" alt="" width="30" height="30">calsync</a>
+<a class="brand" href="/" aria-label="CalSync home"><img src="/mark-small.svg" alt="" width="30" height="30">CalSync</a>
 <p>This page has no trackers, analytics or cookies.</p>
 </div>
 </footer>

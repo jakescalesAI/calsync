@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI agents | calsync docs</title>
-<meta name="description" content="Let an AI agent read your calendars and, if you allow it, add events. calsync offers its tools over MCP to any agent that speaks it.">
+<title>AI agents | CalSync docs</title>
+<meta name="description" content="Let an AI agent read your calendars and, if you allow it, add events. CalSync offers its tools over MCP to any agent that speaks it.">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://docs.getcalsync.app/agents/">
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="website">
-<meta property="og:title" content="AI agents | calsync docs">
-<meta property="og:description" content="Let an AI agent read your calendars and, if you allow it, add events. calsync offers its tools over MCP to any agent that speaks it.">
+<meta property="og:title" content="AI agents | CalSync docs">
+<meta property="og:description" content="Let an AI agent read your calendars and, if you allow it, add events. CalSync offers its tools over MCP to any agent that speaks it.">
 <meta property="og:url" content="https://docs.getcalsync.app/agents/">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="wrap bar hd">
-<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a>
+<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a>
 <nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="/">Overview</a>
 <a href="/docker/">Install with Docker</a>
 <a href="/python/">Install without Docker</a>
@@ -59,7 +59,7 @@
 <main id="main" class="doc">
 
 <h1>AI agents</h1>
-<p class="lede">An AI agent can read your calendars and, if you allow it, add events. calsync has no AI in it. It offers its tools over MCP, so the agent you already use can call them, whichever one that is.</p>
+<p class="lede">An AI agent can read your calendars and, if you allow it, add events. CalSync has no AI in it. It offers its tools over MCP, so the agent you already use can call them, whichever one that is.</p>
 <h2>What an agent can do</h2>
 <dl class="kv">
 <div><dt><code>calsync_status</code></dt><dd>List the calendars in the sync, and how the last sync went.</dd></div>
@@ -70,7 +70,7 @@
 <div><dt><code>calsync_sync_now</code></dt><dd>Run a sync now, if syncing is on. Only with <code>--allow-write</code>.</dd></div>
 </dl>
 <p>No tool can sign in, remove a calendar, start or resume syncing, or allow a mass delete. A sync run by a tool can remove a few copies whose original is gone, as any sync does. No tool returns a calendar ID, an account name, a token, a .ics link or a server's reply. When something fails, the tool gives one of a few fixed reasons, such as "not signed in" or "refused", and <code>calsync run --dry-run</code> may show you more. Tools do show the names you gave your calendars, so keep addresses out of those.</p>
-<p>"Syncing is on" means you pressed <strong>Apply and keep syncing</strong> on the page. If you run calsync from cron or your own timer instead, <code>calsync_sync_now</code> refuses, and an added event is copied at the next run.</p>
+<p>"Syncing is on" means you pressed <strong>Apply and keep syncing</strong> on the page. If you run CalSync from cron or your own timer instead, <code>calsync_sync_now</code> refuses, and an added event is copied at the next run.</p>
 <h2>An agent on this machine</h2>
 <p>The agent starts <code>calsync mcp</code> itself and talks to it directly. No port, no token. For <a href="https://github.com/NousResearch/hermes-agent">Hermes</a>, an open source agent that runs on your own computer:</p>
 <pre><code>hermes mcp add calsync --command calsync --args mcp</code></pre>
@@ -79,7 +79,7 @@
 <p>Any other agent that takes an MCP command works the same way. With Docker, the command is <code>docker exec -i calsync python calsync.py mcp</code>.</p>
 <p>Hermes doesn't pass your environment to the tools it starts. If you set <code>CALSYNC_HOME</code> or <code>CALSYNC_TZ</code>, add it to the command, before <code>--args</code>: <code>--env CALSYNC_HOME=/your/folder CALSYNC_TZ=Area/City</code>. Use one <code>--env</code> for all of them, because Hermes keeps only the last one. Without it the agent reads the wrong calendars, or none.</p>
 <h2>Let Hermes set it up</h2>
-<p>A skill teaches Hermes how to install calsync, open the setup page with you, connect these tools and use them. You still sign in yourself, and you start syncing yourself, on the page. The skill tells Hermes this, but Hermes can also run commands, so see the note below.</p>
+<p>A skill teaches Hermes how to install CalSync, open the setup page with you, connect these tools and use them. You still sign in yourself, and you start syncing yourself, on the page. The skill tells Hermes this, but Hermes can also run commands, so see the note below.</p>
 <pre><code>hermes skills install https://docs.getcalsync.app/hermes/SKILL.md</code></pre>
 <h2>An agent on another machine</h2>
 <pre><code>calsync mcp --http        # http://127.0.0.1:8485/mcp
@@ -99,17 +99,17 @@ calsync mcp token --new   # replace it; the old one stops working at once</code>
 </dl>
 <p>An event marked private always shows as Busy.</p>
 <h2>Before you connect one</h2>
-<p><strong>These limits are on the tools, not on the agent.</strong> An agent that can also run commands on your computer, as Hermes normally can, runs as you. It could read calsync's data folder or run <code>calsync purge</code> without any of these tools. Read only stops it changing calendars by accident through calsync's tools. It isn't a wall. To make it one, turn off every agent tool that reaches your computer: shell, files, running code and sub-agents. Or run calsync under a different user and connect with <code>--http</code>, because a command the agent starts runs as the agent.</p>
-<p>An agenda isn't proof you're free. An invite carrying calsync's own tag is treated as a copy and left out, and so are events titled "Cancelled:".</p>
+<p><strong>These limits are on the tools, not on the agent.</strong> An agent that can also run commands on your computer, as Hermes normally can, runs as you. It could read CalSync's data folder or run <code>calsync purge</code> without any of these tools. Read only stops it changing calendars by accident through CalSync's tools. It isn't a wall. To make it one, turn off every agent tool that reaches your computer: shell, files, running code and sub-agents. Or run CalSync under a different user and connect with <code>--http</code>, because a command the agent starts runs as the agent.</p>
+<p>An agenda isn't proof you're free. An invite carrying CalSync's own tag is treated as a copy and left out, and so are events titled "Cancelled:".</p>
 <p>What an agent reads goes to whichever model it runs on, so your event titles go there too unless you use <code>--busy-only</code>.</p>
-<p>Anyone can put an event on your calendar by inviting you, so an event title can be written to trick an agent. calsync keeps each title to one short line and tells the agent it is data, not instructions. That helps, but it can't guarantee what a model does. If you turn on <code>--allow-write</code>, use an agent that asks you before it adds something.</p>
+<p>Anyone can put an event on your calendar by inviting you, so an event title can be written to trick an agent. CalSync keeps each title to one short line and tells the agent it is data, not instructions. That helps, but it can't guarantee what a model does. If you turn on <code>--allow-write</code>, use an agent that asks you before it adds something.</p>
 
 <div class="pager"><a href="/booking-apps/">Back: Booking apps</a><a href="/how-a-sync-decides/">Next: How a sync decides</a></div>
 </main>
 </div>
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img src="/mark-small.svg" alt="" width="30" height="30">calsync</a>
+<a class="brand" href="/" aria-label="CalSync home"><img src="/mark-small.svg" alt="" width="30" height="30">CalSync</a>
 <p>This page has no trackers, analytics or cookies.</p>
 </div>
 </footer>

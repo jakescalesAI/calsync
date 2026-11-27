@@ -1,8 +1,9 @@
 <!doctype html>
 <!--
   calsync landing page. Plain static files: no build step, no framework, no trackers, no outside requests.
-  The one script is a single line in the head, allowed by its hash in _headers, that plays the intro once per visit.
-  Without it the intro plays on every load; with reduced motion it never plays. Everything else is in the HTML.
+  Two tiny scripts, each allowed by its hash in _headers: one in the head plays the intro once per visit, and one at the
+  end measures the header logo so the intro's logo docks on it exactly. Without them, or with reduced motion, there is
+  no intro and the page simply shows. Everything is in the HTML.
   Same family as trylocalhub.com, in plain white: the app tile inside the wordmark, Apple's light system colours, blue as the accent.
   Motion is CSS only and stops for people who ask for reduced motion. Inter and JetBrains Mono (OFL) are the fallbacks, served from /fonts.
   The pictures of the app are drawn in HTML from the real setup page's wording, never from a real calendar.
@@ -11,31 +12,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>calsync: every calendar, always in sync</title>
-<meta name="description" content="calsync is free, self-hosted and keeps your Google, Microsoft 365, iCloud and CalDAV calendars in two-way sync. Your sign-ins and calendar data stay on your machine.">
+<title>CalSync: every calendar, always in sync</title>
+<meta name="description" content="CalSync is free, self-hosted and keeps your Google, Microsoft 365, iCloud and CalDAV calendars in two-way sync. Your sign-ins and calendar data stay on your machine.">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#ffffff">
 <link rel="canonical" href="https://getcalsync.app/">
 <link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preload" href="/fonts/inter-600.woff2" as="font" type="font/woff2" crossorigin>
-<script>try{if(sessionStorage.getItem("calsync-intro"))document.documentElement.classList.add("seen");else sessionStorage.setItem("calsync-intro","1")}catch(e){}</script>
+<script>try{var d=document.documentElement;if(sessionStorage.getItem("calsync-intro"))d.classList.add("seen");else{sessionStorage.setItem("calsync-intro","1");if(!matchMedia("(prefers-reduced-motion: reduce)").matches)d.classList.add("ti-js")}}catch(e){}</script>
 <link rel="stylesheet" href="/style.css">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="calsync">
-<meta property="og:title" content="calsync: every calendar, always in sync">
-<meta property="og:description" content="calsync is free, self-hosted and keeps your Google, Microsoft 365, iCloud and CalDAV calendars in two-way sync. Your sign-ins and calendar data stay on your machine.">
+<meta property="og:site_name" content="CalSync">
+<meta property="og:title" content="CalSync: every calendar, always in sync">
+<meta property="og:description" content="CalSync is free, self-hosted and keeps your Google, Microsoft 365, iCloud and CalDAV calendars in two-way sync. Your sign-ins and calendar data stay on your machine.">
 <meta property="og:url" content="https://getcalsync.app/">
 <meta property="og:image" content="https://getcalsync.app/og.png">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="alternate" type="application/rss+xml" title="calsync blog" href="/blog/feed.xml">
+<link rel="alternate" type="application/rss+xml" title="CalSync blog" href="/blog/feed.xml">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="intro" aria-hidden="true"><div class="ti-cal"><div class="ti-body"></div><div class="ti-page ti-next"></div><div class="ti-stub"></div><div class="ti-page ti-front"><img src="/page-arrows.svg" alt="" width="272" height="172"></div><div class="ti-frame"></div><div class="ti-ring ti-l"></div><div class="ti-ring ti-r"></div><div class="ti-bar"></div></div></div>
+<div class="intro" aria-hidden="true"><div class="ti-bg"></div><div class="ti-lock" id="ti-lock"><svg class="ti-mark" viewBox="104 80 304 330" width="120" height="130" aria-hidden="true"><rect class="ti-frame" x="124" y="154" width="264" height="236" rx="52" fill="#fff" stroke="#1b2230" stroke-width="14"/><rect class="ti-ring" x="153" y="96" width="62" height="108" rx="31" fill="#1b2230"/><rect class="ti-ring" x="297" y="96" width="62" height="108" rx="31" fill="#1b2230"/><rect class="ti-bar" x="120" y="212" width="272" height="10" fill="#1b2230"/><g class="ti-spin"><path class="ti-arc" d="M201.5 288.2A58 58 0 0 1 303.2 274.3" fill="none" stroke="#1b2230" stroke-width="23" stroke-linecap="round"/><path class="ti-head" d="M315.3 301.6L327.2 269.8L284.6 287.1Z" fill="#1b2230" stroke="#1b2230" stroke-width="8" stroke-linejoin="round"/><path class="ti-arc" d="M310.5 327.8A58 58 0 0 1 208.8 341.7" fill="none" stroke="#1b2230" stroke-width="23" stroke-linecap="round"/><path class="ti-head" d="M196.7 314.4L184.8 346.2L227.4 328.9Z" fill="#1b2230" stroke="#1b2230" stroke-width="8" stroke-linejoin="round"/></g></svg><span class="ti-word" id="ti-word">CalSync</span></div></div>
 
 <header class="top">
 <div class="wrap">
-<a class="brand" href="/"><img class="glyph" src="/glyph-light.svg" alt="" width="37" height="40">calsync</a>
+<a class="brand" href="/"><img class="glyph" src="/glyph-light.svg" alt="" width="37" height="40">CalSync</a>
 <nav aria-label="Main">
 <a href="#how">How it works</a>
 <a href="#careful">Safety</a>
@@ -49,7 +50,7 @@
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img class="glyph" src="/glyph-light.svg" alt="" width="37" height="40">calsync</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img class="glyph" src="/glyph-light.svg" alt="" width="37" height="40">CalSync</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="#how">How it works</a>
 <a href="#careful">Safety</a>
 <a href="#compare">Compare</a>
@@ -64,7 +65,7 @@
 <p class="pill"><b>MIT</b>Free and open source</p>
 <h1 class="headline">All your calendars, <span class="dim">synced the way they should be.</span></h1>
 <p class="lede">A meeting on your work calendar shows up on your personal one, and the other way round. Google, Microsoft 365, iCloud and any CalDAV or .ics calendar. Nothing hosted, nothing to pay.</p>
-<div class="btns"><a class="btn primary" href="#install">Install calsync</a><a class="btn" href="#how">See how it works</a></div>
+<div class="btns"><a class="btn primary" href="#install">Install CalSync</a><a class="btn" href="#how">See how it works</a></div>
 <div class="setup"><span>or get set up directly with</span>
 <a href="https://claude.ai/new?q=Help%20me%20install%20calsync%20on%20my%20computer.%20It%20is%20free%2C%20open%20source%20software%20that%20keeps%20my%20calendars%20in%20sync.%20Follow%20https%3A%2F%2Fdocs.getcalsync.app%2Fpython%2F%20or%2C%20if%20I%20have%20Docker%2C%20https%3A%2F%2Fdocs.getcalsync.app%2Fdocker%2F.%20Ask%20which%20computer%20I%20use%2C%20then%20give%20me%20one%20step%20at%20a%20time.%20Never%20ask%20me%20to%20paste%20a%20password%2C%20app%20password%20or%20token%20into%20this%20chat." target="_blank" rel="noopener"><img src="/logos/claude.svg" alt="" width="18" height="18">Claude</a>
 <a href="https://chatgpt.com/?q=Help%20me%20install%20calsync%20on%20my%20computer.%20It%20is%20free%2C%20open%20source%20software%20that%20keeps%20my%20calendars%20in%20sync.%20Follow%20https%3A%2F%2Fdocs.getcalsync.app%2Fpython%2F%20or%2C%20if%20I%20have%20Docker%2C%20https%3A%2F%2Fdocs.getcalsync.app%2Fdocker%2F.%20Ask%20which%20computer%20I%20use%2C%20then%20give%20me%20one%20step%20at%20a%20time.%20Never%20ask%20me%20to%20paste%20a%20password%2C%20app%20password%20or%20token%20into%20this%20chat." target="_blank" rel="noopener"><img src="/logos/openai.svg" alt="" width="18" height="18">ChatGPT</a>
@@ -102,11 +103,11 @@
 
 <section class="band" id="why">
 <div class="wrap">
-<p class="eyebrow">Why calsync</p>
+<p class="eyebrow">Why CalSync</p>
 <h2>A meeting on one calendar <span class="dim">is a double-booking on the other.</span></h2>
 <div class="ba">
 <div class="side">
-<p class="side-h"><b>Without calsync</b><span>Thursday</span></p>
+<p class="side-h"><b>Without CalSync</b><span>Thursday</span></p>
 <div class="cols">
 <div class="col"><span class="col-h">Personal</span><div class="e own clash">Dentist<span>10:00</span></div></div>
 <div class="col"><span class="col-h">Work</span><div class="e own clash">Client call<span>10:00</span></div></div>
@@ -114,7 +115,7 @@
 <p class="verdict bad">A colleague booked over the dentist. They couldn't see it.</p>
 </div>
 <div class="side">
-<p class="side-h"><b>With calsync</b><span>Thursday</span></p>
+<p class="side-h"><b>With CalSync</b><span>Thursday</span></p>
 <div class="cols">
 <div class="col"><span class="col-h">Personal</span><div class="e own">Dentist<span>10:00</span></div><div class="e copy">Client call<span>11:00 · copy</span></div></div>
 <div class="col"><span class="col-h">Work</span><div class="e copy">Busy<span>10:00 · copy</span></div><div class="e own">Client call<span>11:00</span></div></div>
@@ -153,11 +154,11 @@
 <h3>Busy only, per calendar</h3><p>Copies can say just Busy, with no title or location. Private events always do.</p></article>
 <article class="card w3"><div class="demo" aria-hidden="true"><div class="warn"><b>Stopped before a big delete</b><span>This run wanted to remove more than half of a calendar's copies. It's waiting for you.</span></div></div>
 <h3>Stops before a big delete</h3><p>Nothing large disappears until you've looked. A calendar that won't load is left alone.</p></article>
-<article class="card"><div class="demo" aria-hidden="true"><div class="tags"><span>yours</span><span>yours</span><span class="mine">calsync copy</span><span>yours</span></div></div>
-<h3>Only its own copies</h3><p>calsync edits and deletes only events it created. Yours are never touched.</p></article>
+<article class="card"><div class="demo" aria-hidden="true"><div class="tags"><span>yours</span><span>yours</span><span class="mine">CalSync copy</span><span>yours</span></div></div>
+<h3>Only its own copies</h3><p>CalSync edits and deletes only events it created. Yours are never touched.</p></article>
 <article class="card"><div class="demo" aria-hidden="true"><div class="invite"><span>Team sync</span><em>already on both · skipped</em></div></div>
 <h3>No double invites</h3><p>A meeting already there through a shared invite isn't copied again.</p></article>
-<article class="card"><div class="demo" aria-hidden="true"><span class="purge">Delete the copies calsync made here</span></div>
+<article class="card"><div class="demo" aria-hidden="true"><span class="purge">Delete the copies CalSync made here</span></div>
 <h3>One-button undo</h3><p>One button, or <code>calsync purge</code>, removes every copy it made.</p></article>
 </div>
 </div>
@@ -189,7 +190,7 @@
 <div><b>$0</b><span>MIT licensed</span></div>
 </div>
 <dl class="facts">
-<div><dt>Your sign-ins</dt><dd>Files on the machine that runs calsync</dd></div>
+<div><dt>Your sign-ins</dt><dd>Files on the machine that runs CalSync</dd></div>
 <div><dt>Who can reach it</dt><dd>This machine, until you change that</dd></div>
 <div><dt>Who it talks to</dt><dd>Your calendars, and nothing else</dd></div>
 <div><dt>Before the internet</dt><dd>Put it behind your own HTTPS proxy</dd></div>
@@ -202,9 +203,9 @@
 <div class="wrap">
 <p class="eyebrow">Compare</p>
 <h2>Same sync. <span class="dim">No subscription.</span></h2>
-<div class="cmp" role="table" aria-label="calsync compared with hosted calendar sync services">
+<div class="cmp" role="table" aria-label="CalSync compared with hosted calendar sync services">
 <div class="r h" role="row"><span role="columnheader">Tool</span><span role="columnheader">Per year</span><span role="columnheader">Two-way</span><span role="columnheader">Busy only</span><span role="columnheader">Your sign-ins</span></div>
-<div class="r us" role="row"><b role="cell">calsync</b><b role="cell">$0</b><span role="cell">Yes</span><span role="cell">Per calendar</span><span role="cell">Stay on your machine</span></div>
+<div class="r us" role="row"><b role="cell">CalSync</b><b role="cell">$0</b><span role="cell">Yes</span><span role="cell">Per calendar</span><span role="cell">Stay on your machine</span></div>
 <div class="r" role="row"><span role="cell">OneCal</span><span role="cell">$60</span><span role="cell">Yes</span><span role="cell">Yes</span><span role="cell">On their servers</span></div>
 <div class="r" role="row"><span role="cell">Reclaim.ai</span><span role="cell">$96</span><span role="cell">Yes</span><span role="cell">Hides details</span><span role="cell">On their servers</span></div>
 <div class="r" role="row"><span role="cell">CalendarBridge</span><span role="cell">about $48</span><span role="cell">Yes</span><span role="cell">Yes</span><span role="cell">On their servers</span></div>
@@ -224,7 +225,7 @@
 <div><dt>Proton</dt><dd>Proton has no way to write in, so its calendars come through a share link, one way.</dd></div>
 <div><dt>Booking apps</dt><dd>Connect Calendly, Cal.com or similar to one synced calendar. There is nothing to add in calsync.</dd></div>
 <div><dt>Window</dt><dd>The next 120 days. Repeating events are copied as single occurrences.</dd></div>
-<div><dt>Hosted version</dt><dd>There isn't one. The machine running calsync needs to be on.</dd></div>
+<div><dt>Hosted version</dt><dd>There isn't one. The machine running CalSync needs to be on.</dd></div>
 </dl>
 </div>
 </section>
@@ -260,17 +261,18 @@ py -m pipx ensurepath</code></pre>
 <div class="arc"></div>
 <div class="wrap">
 <h2>Your calendars,<br>finally on speaking terms.</h2>
-<div class="btns"><a class="btn primary" href="#install">Install calsync</a><a class="btn" href="https://docs.getcalsync.app/">Read the docs</a></div>
+<div class="btns"><a class="btn primary" href="#install">Install CalSync</a><a class="btn" href="https://docs.getcalsync.app/">Read the docs</a></div>
 </div>
 </section>
 </main>
 
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img class="glyph" src="/glyph-light.svg" alt="" width="22" height="24">calsync</a>
+<a class="brand" href="/" aria-label="CalSync home"><img class="glyph" src="/glyph-light.svg" alt="" width="22" height="24">CalSync</a>
 <nav aria-label="Footer"><a href="/blog/">Blog</a><a href="https://docs.getcalsync.app/">Docs</a><a href="https://docs.getcalsync.app/faq/">FAQ</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav>
 <p>MIT licence. This page has no trackers, analytics or cookies.</p>
 </div>
 </footer>
+<script>(function(){var d=document.documentElement;if(!d.classList.contains("ti-js"))return;var lock=document.getElementById("ti-lock"),word=document.getElementById("ti-word"),brand=document.querySelector(".top .brand"),img=brand&&brand.querySelector("img");function go(){if(!lock||!img)return;var B=img.getBoundingClientRect(),s=B.height/130,cs=getComputedStyle(brand),gap=parseFloat(cs.columnGap)||12,fs=parseFloat(cs.fontSize)||20;lock.style.setProperty("--g",gap/s+"px");word.style.setProperty("--fs",fs/s+"px");var L=lock.getBoundingClientRect(),W=word.getBoundingClientRect().width;lock.style.setProperty("--half",(W+gap/s)/2+"px");lock.style.setProperty("--ds",s);lock.style.setProperty("--dx",B.left-L.left+"px");lock.style.setProperty("--dy",B.top+B.height/2-(L.top+L.height/2)+"px");d.classList.add("ti-go")}Promise.race([document.fonts?document.fonts.ready:0,new Promise(function(r){setTimeout(r,700)})]).then(function(){requestAnimationFrame(go)})})();</script>
 </body>
 </html>

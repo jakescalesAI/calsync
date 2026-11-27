@@ -1,4 +1,4 @@
-# calsync
+# CalSync
 
 Keep your Google, Outlook, iCloud and other CalDAV calendars showing the same events. You run it yourself, and your sign-ins stay on your machine.
 
@@ -36,12 +36,12 @@ py -m pipx ensurepath
 
 ## Booking apps
 
-Calendly, Cal.com and other booking apps need nothing extra. Connect the app to any calendar calsync keeps in sync. It
+Calendly, Cal.com and other booking apps need nothing extra. Connect the app to any calendar CalSync keeps in sync. It
 sees your busy times from every other calendar, and each new booking is copied out to the rest.
 
 ## AI agents
 
-calsync has no AI in it, but any agent that speaks MCP can use it: Claude Code, Hermes and others. `calsync mcp` lets an agent see all your calendars as one list. It's read only unless you add `--allow-write`, and no tool can sign in, start syncing or allow a mass delete. Those limits are on the tools: an agent that can run commands as you can still reach calsync's data folder. Setup is in the [docs](https://docs.getcalsync.app/agents/).
+CalSync has no AI in it, but any agent that speaks MCP can use it: Claude Code, Hermes and others. `calsync mcp` lets an agent see all your calendars as one list. It's read only unless you add `--allow-write`, and no tool can sign in, start syncing or allow a mass delete. Those limits are on the tools: an agent that can run commands as you can still reach CalSync's data folder. Setup is in the [docs](https://docs.getcalsync.app/agents/).
 
 ## What keeps your calendars safe
 
