@@ -93,12 +93,47 @@ def glyph_svg(color):
             f'<rect x="96" y="88" width="320" height="320" fill="{color}" mask="url(#m)"/></svg>')
 
 
+def glyph_dark_svg():
+    """The calendar on its own, no tile: a dark page with white rings' gaps, bar and arrows, for white backgrounds.
+    The same drawing as the icon with its two colours swapped, so it always matches it."""
+    g = glyph().replace("url(#g)", "url(#D)").replace("url(#t)", "#fff")
+    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="104 80 304 330" role="img" aria-label="calsync">'
+            '<defs><linearGradient id="D" gradientUnits="userSpaceOnUse" x1="0" y1="96" x2="0" y2="400">'
+            f'<stop offset="0" stop-color="{TILE_TOP}"/><stop offset="1" stop-color="{TILE_BOTTOM}"/></linearGradient></defs>{g}</svg>')
+
+
+INK = "#1b2230"     # calsync is white: an ink outline, rings, bar and arrows on a white page
+
+
+def white_arrows():
+    """The sync arrows alone, in ink, at the icon's own place on the 512 grid (centred between bar and bottom)."""
+    g = glyph()
+    return g[g.index('<g fill="url(#t)"'):].replace("url(#t)", INK)
+
+
+def glyph_light_svg():
+    """The white calendar: white page with an ink outline, ink rings, bar and sync arrows. The site's header uses it."""
+    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="104 80 304 330" role="img" aria-label="calsync">'
+            f'<rect x="124" y="154" width="264" height="236" rx="52" fill="#fff" stroke="{INK}" stroke-width="9"/>'
+            f'<rect x="153" y="96" width="62" height="108" rx="31" fill="#fff"/><rect x="165" y="108" width="38" height="84" rx="19" fill="{INK}"/>'
+            f'<rect x="297" y="96" width="62" height="108" rx="31" fill="#fff"/><rect x="309" y="108" width="38" height="84" rx="19" fill="{INK}"/>'
+            f'<rect x="120" y="212" width="272" height="10" fill="{INK}"/>{white_arrows()}</svg>')
+
+
+def page_arrows_svg():
+    """Just the arrows, framed on the calendar's page (below the bar), for the page the site's intro tears off."""
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="120 222 272 172" aria-hidden="true">{white_arrows()}</svg>'
+
+
 FILES = {
     "mark.svg": lambda: tile_svg(),
     "mark-small.svg": lambda: tile_svg(),     # the same artwork as mark.svg, kept under this name for headers and tabs
     "mark-square.svg": lambda: tile_svg(square=True),
     "glyph-white.svg": lambda: glyph_svg("#ffffff"),
     "glyph-black.svg": lambda: glyph_svg("#000000"),
+    "glyph-dark.svg": glyph_dark_svg,
+    "glyph-light.svg": glyph_light_svg,
+    "page-arrows.svg": page_arrows_svg,
 }
 
 PNGS = {   # file: (source svg, size)
@@ -111,7 +146,7 @@ PNGS = {   # file: (source svg, size)
 }
 
 COPIES = {   # where each file goes besides brand/
-    "site": ["mark.svg", "mark-small.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon-32.png", "favicon.ico", "og.png"],
+    "site": ["mark.svg", "mark-small.svg", "glyph-light.svg", "page-arrows.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon-32.png", "favicon.ico", "og.png"],
     "docs-site": ["mark.svg", "mark-small.svg", "apple-touch-icon.png", "favicon-32.png", "favicon.ico"],
 }
 

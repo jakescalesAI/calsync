@@ -155,7 +155,7 @@ def page(title, description, path, main, *, noindex=False, article=None):
 
 <header class="top">
 <div class="wrap">
-<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync</a>
+<a class="brand" href="/"><img class="glyph" src="/glyph-light.svg" alt="" width="37" height="40">calsync</a>
 <nav aria-label="Main">
 <a href="/#how">How it works</a>
 <a href="/#careful">Safety</a>
@@ -169,7 +169,7 @@ def page(title, description, path, main, *, noindex=False, article=None):
 </header>
 <span id="shut" hidden></span>
 <nav class="menu" id="menu" aria-label="Menu">
-<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">calsync</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<div class="menu-top"><a class="brand" href="/"><img class="glyph" src="/glyph-light.svg" alt="" width="37" height="40">calsync</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
 <a href="/#how">How it works</a>
 <a href="/#careful">Safety</a>
 <a href="/#compare">Compare</a>
@@ -184,7 +184,7 @@ def page(title, description, path, main, *, noindex=False, article=None):
 
 <footer class="foot">
 <div class="wrap">
-<a class="brand" href="/" aria-label="calsync home"><img src="/mark-small.svg" alt="" width="24" height="24">calsync</a>
+<a class="brand" href="/" aria-label="calsync home"><img class="glyph" src="/glyph-light.svg" alt="" width="22" height="24">calsync</a>
 <nav aria-label="Footer"><a href="/blog/">Blog</a><a href="{DOCS_URL}/">Docs</a><a href="{DOCS_URL}/faq/">FAQ</a><a href="https://github.com/{OWNER}/calsync">GitHub</a></nav>
 <p>MIT licence. This page has no trackers, analytics or cookies.</p>
 </div>

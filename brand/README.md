@@ -18,6 +18,8 @@ One icon at every size: the small files are the same artwork, only scaled.
 | `mark-small.svg` | The same artwork as `mark.svg`, under the name the headers, tabs and setup page use. |
 | `mark-square.svg` | Square corners, for systems that round icons themselves (iOS, Android). |
 | `glyph-white.svg` / `glyph-black.svg` | The calendar alone, one colour, see-through arrows. On photos or next to text. |
+| `glyph-light.svg` | The white calendar: white page with a soft grey edge, dark rings, bar and arrows. calsync is white: the site's wordmark uses it. |
+| `page-arrows.svg` | Only the arrows, framed on the calendar's page. The page the site's intro tears off. |
 | `mark-1024.png`, `icon-512.png`, `icon-192.png` | PNG exports of `mark.svg`. |
 | `apple-touch-icon.png` | 180 px from `mark-square.svg`. |
 | `favicon-32.png`, `favicon-16.png`, `favicon.ico` | Browser tabs, the same artwork scaled down. |
