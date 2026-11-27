@@ -48,6 +48,7 @@ class WebTests(unittest.TestCase):
                 os.remove(os.path.join(root, f))
         calsync_web.failed_logins.clear()
         calsync_web.pending_google.clear()
+        calsync_web.pending_ops.clear()      # an edit queued by one test must never land in the next
         self.cookie = None
 
     def req(self, method, path, form=None, host=None, origin=None, cookie=True, headers=None):
