@@ -185,11 +185,12 @@ class WebTests(unittest.TestCase):
         calsync_web.CAL_CACHE.clear()
         with mock.patch.object(calsync, "make_adapter", side_effect=lambda c: Fake([own] if c["name"] == "work" else [copy])):
             text = self.req("GET", "/calendar")[1]
-            self.assertEqual(text.count("Dentist &lt;b&gt;</summary>"), 1)      # Everything: the copy on home isn't shown twice
-            self.assertIn('class="ev k0"', text)
+            self.assertEqual(text.count("Dentist &lt;b&gt;</a>"), 1)      # Everything: the copy on home isn't shown twice
+            self.assertIn('class="ev k0 s', text)
             calsync_web.CAL_CACHE.clear()
             text = self.req("GET", "/calendar?view=month&show=home")[1]
             self.assertIn('class="ev k0 copy"', text)                  # a copy, in the colour of where it came from
+            self.assertIn("/event?cal=work&amp;uid=1", text)             # opening the copy opens its original
         with mock.patch.object(calsync, "make_adapter", side_effect=RuntimeError("no way in")):
             calsync_web.CAL_CACHE.clear()
             self.assertIn("no way in", self.req("GET", "/calendar")[1])
