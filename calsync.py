@@ -1535,7 +1535,7 @@ def sync(cals, adapters, dry_run=False, force=False, log=print, now=None, cfg=No
 
     def tell(src, dst, ev, copied, reason, action=""):
         if decisions is not None:
-            decisions.append({"src": src, "dst": dst, "title": ev.get("title") or "(no title)", "start": ev["start"], "all_day": ev["all_day"],
+            decisions.append({"src": src, "dst": dst, "title": ev.get("title") or "(no title)", "start": ev["start"], "end": ev["end"], "all_day": ev["all_day"],
                               "private": bool(ev.get("private")), "copied": copied, "reason": reason, "action": action})
 
     def count(src, dst, what):
@@ -1626,7 +1626,7 @@ def sync(cals, adapters, dry_run=False, force=False, log=print, now=None, cfg=No
             try:
                 log(f"- {name}: {ev['title']} {ev['start']}")
                 if decisions is not None:
-                    decisions.append({"src": src, "dst": name, "title": ev.get("title") or "", "start": ev["start"], "all_day": ev["all_day"],
+                    decisions.append({"src": src, "dst": name, "title": ev.get("title") or "", "start": ev["start"], "end": ev["end"], "all_day": ev["all_day"],
                                       "private": False, "copied": False, "action": "remove",
                                       "reason": "its original is gone, or changed so a rule now leaves it out, or its calendar left CalSync"})
                 if not dry_run:

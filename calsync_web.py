@@ -281,10 +281,10 @@ textarea{min-height:96px;resize:vertical}.days{display:flex;flex-wrap:wrap;gap:6
 .toggles{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}.toggles button{min-height:30px;padding:4px 12px;font-size:13px;background:var(--panel);color:var(--text);font-weight:500}.toggles button[aria-pressed=true]{background:var(--text);color:#fff}
 .tg{display:grid;border-radius:16px;overflow:hidden;box-shadow:0 0 0 1px var(--line);background:#fff}
 .tg-head,.tg-all,.tg-body{display:grid;grid-template-columns:var(--gut,56px) repeat(var(--n,7),minmax(0,1fr))}
-.tg.d1{--n:1}.tg.d5{--n:5}.tg.d7{--n:7}.tg.tz2{--gut:104px}
+.tg.d1{--n:1}.tg.d5{--n:5}.tg.d7{--n:7}.tg.tz2{--gut:128px}.tg-hours span{white-space:nowrap}.tg-head .zones{font-size:10px;font-weight:500;color:var(--faint);text-align:right;padding:8px 6px}
 .tg-head>div{padding:8px;background:var(--panel);text-align:center;font-size:13px;color:var(--dim);font-weight:600}.tg-head .today .dn{background:var(--blue);color:#fff}
 .tg-all>div{min-height:28px;padding:3px;border-top:1px solid var(--line);border-left:1px solid var(--line)}.tg-all>div:first-child{border-left:0;font-size:11px;color:var(--faint);text-align:right;padding-right:8px}
-.tg-scroll{max-height:70vh;overflow-y:auto}.tg-body{position:relative}
+.tg-scroll{max-height:70vh;overflow-y:auto;scrollbar-gutter:stable}.tg-head,.tg-all{overflow-y:hidden;scrollbar-gutter:stable}.tg-body{position:relative}
 .tg-hours{display:grid;grid-auto-rows:48px;font-size:11px;color:var(--faint);text-align:right}.tg-hours span{padding:0 8px;transform:translateY(-7px)}
 .tg-hours.two{grid-template-columns:1fr 1fr}
 .tg-day{position:relative;height:1152px;border-left:1px solid var(--line);background:repeating-linear-gradient(#fff 0 47px,var(--line) 47px 48px)}
@@ -300,6 +300,7 @@ textarea{min-height:96px;resize:vertical}.days{display:flex;flex-wrap:wrap;gap:6
 .toast button{min-height:32px;padding:4px 14px;background:rgba(255,255,255,.16);color:#fff;font-size:15px}.toast .soft{color:rgba(255,255,255,.6);font-weight:500}
 .results{padding:0}.results .row{padding:10px 20px}.results .when{flex:0 0 150px;color:var(--dim);font-size:14px;font-variant-numeric:tabular-nums}
 .keys{font-size:13px;color:var(--dim)}kbd{display:inline-block;min-width:20px;padding:1px 6px;border-radius:6px;background:#fff;box-shadow:inset 0 0 0 .5px var(--line),0 1px 0 var(--line);font:600 12px var(--sans);text-align:center}
+@media (max-width:560px){.tg{--gut:38px}.tg.tz2{--gut:76px}.tg-hours span{padding:0 4px;font-size:10px}.tg-head .zones{font-size:0}.tg.d7 .ev .t,.tg.d5 .ev .t{display:none}.tg-day .ev{padding:2px 3px;font-size:10px;border-left-width:2px}}
 @media (max-width:760px){.tg.d7{--n:7}.tg-head>div{padding:6px 0;font-size:11px}.tg-day .ev{font-size:10px;padding:2px 3px}.tools input[type=search]{width:100%}}
 @media print{header,.tools,.toggles,.quick,.legend,.calnote,.toast,.flash,.noprint{display:none!important}main,main.wide{max-width:none;padding:0}.tg-scroll{max-height:none;overflow:visible}body{font-size:12px}.grid,.tg{box-shadow:none;border:1px solid #ccc}}
 """
@@ -711,7 +712,7 @@ def pairs_section(csrf, cfg):
                       if rule["enabled"] and cfg.get("enabled") else "")
             rows.append(f'<div class="pair"><span class="who"><strong>{esc(label[s["name"]])}<span class="arrow">→</span>{esc(label[d["name"]])}</strong>'
                         f'<span class="soft">{esc(rule_summary(rule))}</span></span><span class="st {st}" title="{esc(words)}">{STATUS_WORDS[st]}</span>'
-                        f'<a class="button plain" href="/pair?{q}">Edit</a>{resync}</div>')
+                        f'<a class="button plain" href="/pair?{esc(q)}">Edit</a>{resync}</div>')
     if not rows:
         return ""
     return f'<h2>What goes where</h2><section class="pairs">{"".join(rows)}</section><p class="soft center"><a href="/activity">Activity</a></p>'
@@ -736,7 +737,7 @@ def pair_page(csrf, src, dst, flash=None):
     recent = "".join(f'<li>{esc(local_stamp(r["at"]))}: {esc(", ".join(r.get("lines", [])[:3]) or "no changes")}</li>' for r in runs if r.get("lines")) or "<li>Nothing copied this way yet.</li>"
     other = urllib.parse.urlencode({"src": dst, "dst": src})
     body = f'''<h1>{esc(label[src])} <span class="arrow">→</span> {esc(label[dst])}</h1>
-<p class="soft">What CalSync copies from {esc(label[src])} onto {esc(label[dst])}. The other way has its own rule: <a href="/pair?{other}">{esc(label[dst])} → {esc(label[src])}</a>.</p>
+<p class="soft">What CalSync copies from {esc(label[src])} onto {esc(label[dst])}. The other way has its own rule: <a href="/pair?{esc(other)}">{esc(label[dst])} → {esc(label[src])}</a>.</p>
 <form method="post" action="/pair/save">{hidden_csrf(csrf)}<input type="hidden" name="src" value="{esc(src)}"><input type="hidden" name="dst" value="{esc(dst)}">
 <section>{box("enabled", f"Copy events from {esc(label[src])} to {esc(label[dst])}", rule["enabled"], ' id="enabled"')}
 <div id="keepbox"{"" if not rule["enabled"] else " hidden"}><fieldset><legend>The copies already made</legend>
@@ -1106,7 +1107,8 @@ def time_grid(days, per_day, today, prefs, csrf, show):
     tz = engine.local_tz()
     tz2 = _zone(prefs["tz2"])
     n = len(days)
-    head = ['<div></div>'] + [f'<div class="{"today" if d == today else ""}"><span class="wn">{d.strftime("%a")}</span> <span class="dn">{d.day}</span>'
+    zones = (f'<div class="zones">{esc(prefs["tz2"].split("/")[-1].replace("_", " "))} · {esc(engine.tz_name().split("/")[-1].replace("_", " "))}</div>' if tz2 else '<div></div>')
+    head = [zones] + [f'<div class="{"today" if d == today else ""}"><span class="wn">{d.strftime("%a")}</span> <span class="dn">{d.day}</span>'
                                + (f' <span class="wkn">W{d.isocalendar()[1]}</span>' if prefs["week_numbers"] and (i == 0) else "") + "</div>" for i, d in enumerate(days)]
     alls = ['<div>all day</div>']
     cols = []
@@ -1640,6 +1642,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if url.path == "/calendar":
             with state_lock:
                 problem = op_errors.pop() if op_errors else None
+            if q.get("undo") and not problem:      # the undo bar says it already
+                flash = None
             return self.send(200, calendar_page(csrf, q, problem or flash))
         if url.path == "/event":
             return self.send(200, event_page(csrf, q, flash))

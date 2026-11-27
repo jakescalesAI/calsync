@@ -305,7 +305,7 @@ class WebTests(unittest.TestCase):
         # not no-referrer: that makes browsers send "Origin: null" on the page's own forms (see below)
         self.assertEqual(r.getheader("Referrer-Policy"), "same-origin")
         self.assertEqual(r.getheader("Cache-Control"), "no-store")
-        self.assertNotIn("<script", text)
+        self.assertNotIn("<script", text)       # signed out: no script at all; signed in, only /app.js (see below)
         self.assertNotIn("<style", text)
 
     def test_cookie_flags(self):
@@ -572,6 +572,136 @@ class WebTests(unittest.TestCase):
 
     def test_health_needs_nothing(self):
         self.assertEqual(self.req("GET", "/healthz", host="anything.example")[1], "ok")
+
+
+    # --- sync rules, the why, activity, the Calendar tab's own events
+
+    def test_a_rule_saves_per_direction_and_keeps_the_old_setting_in_step(self):
+        self.start()
+        self.two_calendars()
+        self.assertIn("a <span class=\"arrow\">→</span> b", self.req("GET", "/pair?src=a&dst=b")[1])
+        self.assertEqual(self.req("GET", "/pair?src=a&dst=a")[0].status, 404)
+        r, _ = self.post("/pair/save", src="a", dst="b", copy_title="", title_text="Held <b>", tag="[A]", colour="red",
+                         f_keywords="lunch, gym", f_keyword_mode="exclude", f_days=["0", "1"], f_from="09:00", copy_location="1")
+        self.assertEqual(r.getheader("Location"), "/?m=rulesaved")
+        cfg = calsync.load_json(calsync.CONFIG, {})
+        rule = cfg["rules"]["a>b"]
+        self.assertEqual((rule["enabled"], rule["copy"]["title"], rule["copy"]["title_text"], rule["tag"], rule["colour"]), (False, False, "Held <b>", "[A]", "red"))
+        self.assertEqual((rule["filters"]["keywords"], rule["filters"]["days"], rule["filters"]["from"]), (["lunch", "gym"], [0, 1], "09:00"))
+        self.assertEqual(next(c for c in cfg["calendars"] if c["name"] == "b")["skip_sources"], ["a"])     # off, so the old setting says skip too
+        self.post("/pair/save", src="a", dst="b", enabled="1", copy_title="1")
+        self.assertEqual(next(c for c in calsync.load_json(calsync.CONFIG, {})["calendars"] if c["name"] == "b")["skip_sources"], [])
+        page = self.req("GET", "/")[1]
+        self.assertIn("What goes where", page)
+        self.assertIn('href="/pair?src=a&amp;dst=b"', page)
+
+    def test_the_preview_says_why(self):
+        self.start()
+        self.two_calendars()
+        self.cals["a"].events["e"] = native("Team lunch <i>")
+        self.cals["a"].events["f"] = native("Standup")
+        calsync.update_config(lambda c: c.update(rules={"a>b": {"filters": {"keywords": ["lunch"]}}}))
+        with mock.patch.object(calsync, "make_adapter", self.adapter):
+            self.post("/preview")
+            text = self.req("GET", "/")[1]
+        self.assertIn("Why each event is or isn", text)
+        self.assertIn("Team lunch &lt;i&gt;", text)
+        self.assertIn("its title has &quot;lunch&quot;", text)
+        self.assertIn("copied as &quot;Standup&quot;", text)
+
+    def test_resync_and_activity(self):
+        self.start()
+        self.two_calendars()
+        with mock.patch.object(calsync_web, "run_in_background", return_value=True) as run:
+            self.assertEqual(self.post("/resync", pair="a>b")[0].getheader("Location"), "/?m=resyncing")
+            run.assert_called_once_with(pair="a>b", refresh=True, trigger="resync")
+            self.post("/resync", pair="a>nope")
+            self.assertEqual(run.call_count, 1)
+        calsync.record_activity({"at": "2030-01-01T10:00:00Z", "created": 1, "trigger": "manual", "lines": ["+ b: <script>x</script> 2030"]})
+        text = self.req("GET", "/activity")[1]
+        self.assertIn("1 added", text)
+        self.assertIn("&lt;script&gt;x&lt;/script&gt;", text)
+
+    def test_stopping_a_calendar_asks_what_happens_to_its_copies(self):
+        self.start()
+        self.two_calendars()
+        self.assertIn("Keep them", self.post("/calendar/remove", name="a")[1])
+        self.assertEqual(len(calsync.load_json(calsync.CONFIG, {})["calendars"]), 2)
+        self.post("/calendar/remove", name="a", confirm="1", copies="keep")
+        cfg = calsync.load_json(calsync.CONFIG, {})
+        self.assertEqual(([c["name"] for c in cfg["calendars"]], cfg["kept_sources"]), (["b"], ["a"]))
+
+    def test_pages_use_one_same_origin_script_and_still_work_without_it(self):
+        self.start()
+        r, text = self.req("GET", "/calendar")
+        self.assertIn("script-src 'self'", r.getheader("Content-Security-Policy"))
+        self.assertEqual(re.findall(r"<script[^>]*>", text), ['<script src="/app.js" defer>'])
+        self.assertNotIn("style=", text)
+        r, js = self.req("GET", "/app.js")
+        self.assertEqual((r.status, r.getheader("Content-Type")), (200, "text/javascript"))
+        self.assertIn("pointerdown", js)
+
+    def test_new_event_change_and_undo(self):
+        self.start()
+        self.two_calendars()
+        with mock.patch.object(calsync, "event_create", return_value="new1") as create, \
+             mock.patch.object(calsync, "event_delete") as delete, mock.patch.object(calsync, "event_update") as update:
+            r, _ = self.post("/event/create", cal="a", title="Run", date="2030-01-02", start="07:00", end="08:00", repeat="weekdays",
+                             until="2030-01-31", busy="1", notify="1", back="/calendar?view=week&d=2030-01-02")
+            loc = r.getheader("Location")
+            self.assertTrue(loc.startswith("/calendar?view=week&d=2030-01-02&m=added_ev&undo="))
+            name, raw = create.call_args.args
+            self.assertEqual((name, raw["title"], raw["repeat"][:30], raw["start"].hour), ("a", "Run", "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,", 7))
+            token = loc.split("undo=")[1]
+            self.assertIn("Undo", self.req("GET", loc)[1])
+            self.post("/undo", token=token, back="/calendar")
+            delete.assert_called_once_with("a", "new1", "all", False)       # undoing a new event removes it
+            # a change waits, so Undo just drops it
+            r, _ = self.post("/event/save", cal="a", uid="u1", title="Moved", date="2030-01-03", start="09:00", end="10:00", scope="all", back="/calendar")
+            token = r.getheader("Location").split("undo=")[1]
+            self.assertEqual(calsync_web.pending_ops[token]["scope"], "all")
+            self.post("/undo", token=token, back="/calendar")
+            self.assertNotIn(token, calsync_web.pending_ops)
+            # a drag answers with where to go next
+            r, text = self.post("/event/move", cal="a", uid="u2", date="2030-01-03", start="11:00", end="11:30", back="/calendar?view=day")
+            self.assertTrue(json.loads(text)["go"].startswith("/calendar?view=day&m=pending&undo="))
+            op = calsync_web.pending_ops[json.loads(text)["go"].split("undo=")[1]]
+            op["due"] = 0
+            calsync_web.run_op(op)
+            name, uid, changes, scope, notify, href = update.call_args.args
+            self.assertEqual((name, uid, scope, changes["start"].hour, changes["end"].minute), ("a", "u2", "this", 11, 30))
+
+    def test_back_links_only_go_to_the_calendar(self):
+        self.start()
+        with mock.patch.object(calsync, "event_delete"):
+            r, _ = self.post("/event/delete", cal="a", uid="x", back="https://evil.example/")
+        self.assertTrue(r.getheader("Location").startswith("/calendar?m=pending"))
+
+    def test_view_toggles_are_remembered(self):
+        self.start()
+        self.post("/calendar/prefs", pref="hide_weekends", back="/calendar")
+        self.assertTrue(calsync.load_json(calsync.CONFIG, {})["view"]["hide_weekends"])
+        self.post("/calendar/prefs", pref="bogus", back="/calendar")
+        self.assertNotIn("bogus", calsync.load_json(calsync.CONFIG, {})["view"])
+
+    def test_push_hooks_need_their_secret(self):
+        self.assertEqual(self.req("POST", "/hook/microsoft?validationToken=abc%3Cx", form={}, cookie=False)[1], "abc<x")
+        self.assertEqual(self.req("POST", "/hook/google", form={}, cookie=False)[0].status, 404)       # never set up
+        calsync.ensure_home()
+        calsync.save_json(calsync_web.push_file(), {"secret": "s3cret"})
+        calsync_web.pushed.clear()
+        self.assertEqual(self.req("POST", "/hook/google", form={}, headers={"X-Goog-Channel-Token": "nope"}, cookie=False)[0].status, 403)
+        self.assertFalse(calsync_web.pushed.is_set())
+        self.assertEqual(self.req("POST", "/hook/google", form={}, headers={"X-Goog-Channel-Token": "s3cret"}, cookie=False)[0].status, 200)
+        self.assertTrue(calsync_web.pushed.is_set())
+
+    def test_search_page(self):
+        self.start()
+        with mock.patch.object(calsync, "search_events", return_value=([dict(native("Dentist <b>"), calendar="a")], ["b: offline"])) as search:
+            text = self.req("GET", "/search?q=dentist+cal%3Aa")[1]
+        search.assert_called_once()
+        self.assertIn("Dentist &lt;b&gt;", text)
+        self.assertIn("b: offline", text)
 
 
 class HostileConnectionTests(unittest.TestCase):
