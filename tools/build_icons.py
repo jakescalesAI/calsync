@@ -47,12 +47,12 @@ def arrow(cx, cy, r, a0, a1, w, head):
     return line + tri
 
 
-def glyph(small=False):
+def glyph(small=False, cy=308):
     """The calendar and its arrows, on a 512 grid. small=True is heavier, for 16 to 32 pixels."""
     body = (120, 150, 272, 244, 56)                      # x, y, w, h, corner
     ring_w, ring_h, ring_y = (44, 86, 104) if small else (38, 84, 108)
     rings = (184 - ring_w / 2, 328 - ring_w / 2)
-    cx, cy, r = 256, 308, (54 if small else 58)        # cy: halfway between the bar's bottom (222) and the page's (394)
+    cx, r = 256, (54 if small else 58)                 # cy: halfway between the bar's bottom (222) and the page's (394)
     w = 30 if small else 23
     head = 30 if small else 25
     bar = 212 if not small else 216                       # the line under the calendar's top
@@ -106,8 +106,9 @@ INK = "#1b2230"     # calsync is white: an ink outline, rings, bar and arrows on
 
 
 def white_arrows():
-    """The sync arrows alone, in ink, at the icon's own place on the 512 grid (centred between bar and bottom)."""
-    g = glyph()
+    """The sync arrows alone, in ink, centred in the white calendar's body: from the bar's bottom (222) to the middle
+    of the outline at the bottom (390), so at 306."""
+    g = glyph(cy=306)
     return g[g.index('<g fill="url(#t)"'):].replace("url(#t)", INK)
 
 

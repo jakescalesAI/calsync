@@ -352,20 +352,19 @@ code { background: var(--panel); color: var(--text); }
 /* Intro, home page only ("arrows draw"): the sync arrows draw and spin while the calendar draws around them, the
    name opens to the right, and the pair glides into the header's logo, exactly. The lockup is the header logo at
    1/s its size (s = logo height / 130); the end-of-page script measures the header and sets s, the gap, the word size
-   and the docking move, then adds html.ti-go. The head script adds html.ti-js only on the first view in a session and not
+   and the docking move, then adds html.ti-go. The head script adds html.ti-js on every load (held by html.ti-wait while the tab is hidden), but not
    for reduced motion, so without JS there's simply no intro. Animates transform, opacity, clip-path and a small SVG's
    stroke only; the page under it isn't drawn until the reveal, and the frosted header itself never animates. */
 .intro { display: none; }
 .ti-js .intro { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; pointer-events: none; }
-.seen .intro { display: none; }
 .ti-bg { position: absolute; inset: 0; background: #fff; }
-.ti-lock { position: relative; display: flex; align-items: center; gap: var(--g, 39px); transform-origin: 0 50%; will-change: transform; }
-.ti-mark { display: block; flex: none; width: 120px; height: 130px; overflow: visible; }
+.ti-lock { --oy: -10.64px; position: relative; display: flex; align-items: center; gap: var(--g, 39px); transform-origin: 0 50%; will-change: transform; }
+.ti-mark { display: block; flex: none; width: var(--mw, 120px); height: var(--mh, 130px); overflow: visible; }   /* smaller on phones, so the pair fits */
 .ti-word { font-size: var(--fs, 65px); font-weight: 600; line-height: 1; letter-spacing: -.015em; color: var(--text); white-space: nowrap; clip-path: inset(0 100% 0 0); opacity: 0; }
 .ti-arc { stroke-dasharray: 190; stroke-dashoffset: 190; }
 .ti-head, .ti-ring, .ti-bar { opacity: 0; }
 .ti-frame { stroke-dasharray: 1100; stroke-dashoffset: 1100; }
-.ti-spin { transform-origin: 256px 308px; }
+.ti-spin { transform-origin: 256px 306px; }
 .ti-go .ti-arc { animation: ti-draw .55s cubic-bezier(.5, 0, .3, 1) .15s forwards; }
 .ti-go .ti-head { animation: ti-on .18s ease .62s forwards; }
 .ti-go .ti-spin { animation: ti-turn .85s cubic-bezier(.6, 0, .35, 1) .8s; }
@@ -383,15 +382,20 @@ code { background: var(--panel); color: var(--text); }
 .ti-go .intro ~ main .hero { animation: ti-rise .6s ease-out 2.65s both; }
 .ti-go .intro ~ main .win { animation-delay: 2.9s; }
 /* failsafe: JS marked the page but the docking script never ran, so show everything after a moment */
-.ti-js:not(.ti-go) .intro { animation: ti-gone 0s linear 1.5s forwards; }
-.ti-js:not(.ti-go) .intro ~ .top, .ti-js:not(.ti-go) .intro ~ main, .ti-js:not(.ti-go) .intro ~ .foot { animation: ti-hold 0s linear 1.5s backwards; }
+.ti-js:not(.ti-go):not(.ti-wait) .intro { animation: ti-gone 0s linear 1.5s forwards; }
+.ti-js:not(.ti-go):not(.ti-wait) .intro ~ .top, .ti-js:not(.ti-go):not(.ti-wait) .intro ~ main, .ti-js:not(.ti-go):not(.ti-wait) .intro ~ .foot { animation: ti-hold 0s linear 1.5s backwards; }
+.ti-wait .intro ~ .top, .ti-wait .intro ~ main, .ti-wait .intro ~ .foot { visibility: hidden; }  /* a tab opened in the background holds the intro until it's looked at */
+.ti-replay { display: none; margin-left: 10px; text-decoration: underline; text-underline-offset: 2px; }
+.ti-js .ti-replay { display: inline; }   /* only with scripts on and motion allowed */
+.ti-replay:hover { color: var(--text); }
 @keyframes ti-draw { to { stroke-dashoffset: 0; } }
 @keyframes ti-turn { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 @keyframes ti-on { to { opacity: 1; } }
 @keyframes ti-off { to { opacity: 0; } }
-@keyframes ti-open { from { transform: translateX(var(--half, 0px)); } to { transform: none; } }     /* the mark starts centred alone; the pair ends centred */
+/* --oy lifts the pair so the calendar frame, not frame plus rings, sits on the centre: (frame middle 272 - box middle 245) x 130/330 */
+@keyframes ti-open { from { transform: translate(var(--half, 0px), var(--oy)); } to { transform: translateY(var(--oy)); } }     /* the mark starts centred alone; the pair ends centred */
 @keyframes ti-word { from { clip-path: inset(0 100% 0 0); opacity: 0; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
-@keyframes ti-dock { from { transform: none; } to { transform: translate(var(--dx, 0px), var(--dy, 0px)) scale(var(--ds, 1)); } }
+@keyframes ti-dock { from { transform: translateY(var(--oy)); } to { transform: translate(var(--dx, 0px), var(--dy, 0px)) scale(var(--ds, 1)); } }
 @keyframes ti-gone { to { visibility: hidden; } }
 @keyframes ti-hold { from, to { visibility: hidden; } }
 @keyframes ti-rise { from { opacity: 0; transform: translateY(10px); visibility: hidden; } to { opacity: 1; transform: none; visibility: visible; } }
