@@ -1,0 +1,7 @@
+node_modules/
+.build/
+engine-dist/
+src-tauri/target/
+src-tauri/gen/
+ui/mark.svg
+out/

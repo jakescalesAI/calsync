@@ -9,6 +9,18 @@ Every run makes each writable calendar hold one tagged copy of every real event 
 
 ## Run it
 
+### Desktop app (Windows)
+
+CalSync as an app: it runs on your computer in its own window, keeps syncing from the tray after you close the window, and can start when you sign in. There's no download yet, so you build the installer once. With Python 3.10+, Node 18+ and [Rust](https://rustup.rs/) installed:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File desktop\build.ps1
+```
+
+If Windows Smart App Control is on, add `-Docker` (it needs WSL with Docker instead of Rust). Then run `desktop\out\CalSync_0.1.0_x64-setup.exe`. It installs for you only, without admin rights. The installer isn't signed yet, so if SmartScreen stops it, press **More info**, then **Run anyway**. Details, the tray menu and where your data lives are in [desktop/README.md](desktop/README.md). A Mac build is next.
+
+### Docker
+
 ```bash
 git clone https://github.com/jakescalesAI/calsync.git
 cd calsync
@@ -19,6 +31,8 @@ docker compose logs calsync
 Open http://localhost:8484 and enter the setup code from the logs. Choose a password, add your calendars, press **Preview changes**, then **Apply and keep syncing**. Save the recovery code it shows you: if you forget the password, it lets you pick a new one on that computer, and so does `calsync reset-password`. There is no account and no email reset.
 
 Google and Microsoft each need a free sign-in app of your own. The page walks you through it in about 10 minutes. iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server only need an app password.
+
+### Python
 
 Without Docker, using Python 3.10 or newer:
 

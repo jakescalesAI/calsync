@@ -1,0 +1,3 @@
+# The container build runs these on Linux.
+*.sh text eol=lf
+cross/Dockerfile text eol=lf

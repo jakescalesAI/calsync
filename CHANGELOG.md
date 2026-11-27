@@ -5,6 +5,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- A desktop app for Windows (`desktop/`, Tauri 2). It runs the engine and the setup page on 127.0.0.1 in an app window,
+  with a tray icon: Open CalSync, Sync now, Pause, the last sync and its problems, Keep syncing in the background,
+  Start on login, and Quit. `desktop\build.ps1` makes the installer; it isn't signed or released yet.
+
 ## [0.1.0] - 2026-11-27 (beta)
 
 The first beta. Highlights:
