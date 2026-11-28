@@ -7,13 +7,13 @@ and talks to it over stdin and stdout, so there is no second port to guard:
   stdout:                  "@@calsync " + a JSON status line, at start, every few seconds and after each command
 
 When stdin closes (the app quit or crashed), this exits at once, so it never outlives the app.
-The engine and the web page are unchanged; the only difference from `calsync web` is the scheduler,
-which here also honours Pause from the tray.
+The engine, the page and its scheduler are unchanged. Pause from the tray only stops the scheduler's own thread
+from starting runs (the interval, the one-minute check and push); Sync now, and syncs started from the page, still run.
 """
 import calendar, json, os, sys, threading, time
 
 def default_home():
-    """The same folder the app uses (lib.rs data_dir), so `calsync-engine reset-password` in a terminal just works."""
+    """The same folder the app uses (lib.rs data_dir), so `calsync-engine status` in a terminal just works."""
     app = "app.getcalsync.desktop"
     if sys.platform == "win32":
         base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
@@ -28,7 +28,7 @@ os.environ.setdefault("CALSYNC_HOME", default_home())
 if os.environ.get("CALSYNC_BIND", "127.0.0.1") not in ("127.0.0.1", "::1", "localhost"):
     sys.exit("The desktop engine only listens on 127.0.0.1.")
 os.environ["CALSYNC_BIND"] = "127.0.0.1"
-for name in ("CALSYNC_PUBLIC_URL", "CALSYNC_HOSTS"):     # nothing from outside widens who can reach it
+for name in ("CALSYNC_PUBLIC_URL", "CALSYNC_HOSTS", "CALSYNC_ALLOW_REMOTE"):     # nothing from outside widens who can reach it
     os.environ.pop(name, None)
 
 import calsync as engine          # noqa: E402  (reads CALSYNC_HOME at import)
@@ -82,16 +82,21 @@ def say_status():
         say({"port": web.PORT, "status_error": web.short_error(e)})
 
 
+real_scheduler = web.scheduler
+real_run = web.run_in_background
+scheduler_thread = []
+
+
 def scheduler(stop):
-    """calsync_web.scheduler, plus Pause. `last` starts at 0 so the first run is right after start."""
-    last = 0.0
-    while not stop.wait(15):
-        if paused.is_set():
-            continue
-        cfg = engine.load_json(engine.CONFIG, {"calendars": []})
-        every = cfg.get("interval_minutes", 5) * 60
-        if cfg.get("enabled") and time.time() - last >= every and web.run_in_background():
-            last = time.time()
+    """The page's own scheduler, run as is; its thread is noted so Pause can tell its runs from the others."""
+    scheduler_thread.append(threading.get_ident())
+    return real_scheduler(stop)
+
+
+def run_in_background(*args, **kwargs):
+    if paused.is_set() and threading.get_ident() in scheduler_thread:
+        return False
+    return real_run(*args, **kwargs)
 
 
 def commands():
@@ -99,7 +104,7 @@ def commands():
         word = raw.strip().lower()
         if word == "sync":      # only once sync is started on the page, which comes after its preview
             if engine.load_json(engine.CONFIG, {}).get("enabled"):
-                web.run_in_background()
+                real_run(trigger="manual")
         elif word == "pause":
             paused.set()
         elif word == "resume":
@@ -120,13 +125,14 @@ def main():
     for stream in (sys.stdout, sys.stderr):
         if stream is not None:
             stream.reconfigure(errors="replace")
-    web.scheduler = scheduler   # serve() starts the module's scheduler by name
+    web.scheduler = scheduler                   # serve() starts the module's scheduler by name,
+    web.run_in_background = run_in_background   # and the scheduler calls this one by name too
     threading.Thread(target=commands, daemon=True).start()
     threading.Thread(target=ticker, daemon=True).start()
     return web.serve()
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:       # `calsync-engine reset-password`, `status`, ...: the plain CLI on the app's data
+    if len(sys.argv) > 1:       # `calsync-engine status`, `run --dry-run`, ...: the plain CLI on the app's data
         engine.cli()
     raise SystemExit(main())

@@ -117,7 +117,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
                             crate::on_status(&app, &s);
                         }
                     }
-                } else if !line.to_lowercase().contains("setup code") {
+                } else {
                     log::info!("engine: {line}");
                 }
             }

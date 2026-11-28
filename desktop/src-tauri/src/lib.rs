@@ -59,8 +59,11 @@ fn is_inside(url: &Url, port: u16) -> bool {
 
 fn open_outside<R: Runtime>(app: &AppHandle<R>, url: &Url) {
     if matches!(url.scheme(), "http" | "https" | "mailto") {
-        if let Err(e) = app.opener().open_url(url.as_str(), None::<&str>) {
-            log::warn!("open in browser: {e}");
+        // Host and path only: a sign-in link's query holds its one-use state.
+        let shown = format!("{}://{}{}", url.scheme(), url.host_str().unwrap_or(""), url.path());
+        match app.opener().open_url(url.as_str(), None::<&str>) {
+            Ok(()) => log::info!("opened in the browser: {shown}"),
+            Err(e) => log::warn!("couldn't open {shown} in the browser: {e}"),
         }
     }
 }
@@ -241,7 +244,10 @@ pub fn run() {
                 .max_file_size(1_000_000)
                 .build(),
         )
-        .plugin(tauri_plugin_opener::init())
+        // No link script: it catches target=_blank clicks and calls the app over IPC, which the page's strict
+        // content policy blocks (and the page has no IPC rights anyway), so the click did nothing. Links that leave
+        // the page reach on_new_window and on_navigation instead, which open them in the browser.
+        .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![BACKGROUND_ARG])))
         .manage(engine::Engine::default())
         .setup(move |app| {

@@ -26,7 +26,7 @@ Either way the installer lands in `desktop\out\CalSync_0.1.0_x64-setup.exe` (abo
 
 ## Using it
 
-Open CalSync from the Start menu. The first time, choose a password and add your calendars, the same as on the web page.
+Open CalSync from the Start menu. It opens straight on the Sync tab, with no password: the page only answers on this computer. Add your calendars there, the same as on the web page.
 
 The tray icon's menu has:
 
@@ -42,7 +42,7 @@ The tray icon's menu has:
 
 If a sync that was fine starts having problems, Windows shows a notification once.
 
-Google and Microsoft sign-in pages open in your normal browser, not in the app window. When you've finished there, come back to the app.
+**Sign in with Google** and **Sign in with Microsoft** open your normal browser, not the app window. When you've allowed CalSync there, the browser comes back to the app's page on 127.0.0.1 and the app window moves on by itself.
 
 From a terminal or a script, `CalSync.exe --tray <item>` does what that menu item does in the running app: `open`, `sync`, `pause` (toggles), `background` (toggles), `login` (toggles) or `quit`.
 
@@ -54,24 +54,20 @@ From a terminal or a script, `CalSync.exe --tray <item>` does what that menu ite
 
 ### Next to a CalSync in WSL or Docker
 
-The app never uses port 8484, the one `calsync web` and the Docker image use. A CalSync in WSL answers on Windows' `127.0.0.1:8484` too, and the two stay separate: the app has its own data folder, port and password. Don't let both sync the same calendars, or each will copy the other's events.
+The app never uses port 8484, the one `calsync web` and the Docker image use. A CalSync in WSL answers on Windows' `127.0.0.1:8484` too, and the two stay separate: the app has its own data folder and port. Don't let both sync the same calendars, or each will copy the other's events.
 
-One thing they share: browsers keep sign-in cookies per address, not per port. If you open both pages in the same browser (rather than the app window), signing in to one signs you out of the other.
+### The command line
 
-### Forgot the password
-
-In a terminal, run the engine that came with the app. It finds the app's data folder by itself:
+The engine that came with the app takes the commands from the main README, and finds the app's data folder by itself:
 
 ```powershell
-& "$env:LOCALAPPDATA\CalSync\engine\calsync-engine.exe" reset-password
+& "$env:LOCALAPPDATA\CalSync\engine\calsync-engine.exe" status
 ```
-
-The other commands from the main README work the same way, for example `calsync-engine.exe status`.
 
 ## How it's built
 
 - **Tauri 2**, the same as Quartzi's desktop app. The window is the system web view (WebView2 on Windows), and the app itself is a small Rust program (`src-tauri/`, 3.8 MB). It uses Tauri's tray icon, the autostart plugin (Start on login: a per-user Run entry on Windows, a LaunchAgent on a Mac), single instance (opening it again brings up the running one) and an NSIS per-user installer.
-- **The engine** is `sidecar/calsync_desktop.py`, built with PyInstaller into `calsync-engine.exe` and bundled as a resource. It's `calsync web` with the engine and the page unchanged; only its scheduler also honours Pause. The app talks to it over stdin and stdout, so there's no second port to guard. When the app exits or crashes, stdin closes and the engine exits too. If the engine stops by itself, the app restarts it, up to five times in ten minutes.
+- **The engine** is `sidecar/calsync_desktop.py`, built with PyInstaller into `calsync-engine.exe` and bundled as a resource. It's `calsync web`, with the engine, the page and its scheduler unchanged. Pause only stops the scheduler's own runs (the interval, the one-minute check and push), so Sync now and syncs started from the page still work. The app talks to it over stdin and stdout, so there's no second port to guard. When the app exits or crashes, stdin closes and the engine exits too. If the engine stops by itself, the app restarts it, up to five times in ten minutes.
 - **Why Tauri and not Electron:** the whole installer is about 9 MB, engine included. Electron would add about 80 MB of Chromium. The tray, autostart and installer pieces are the ones Quartzi already ships on Windows. Python stays the only engine, so the app, `calsync web` and Docker share one sync code path.
 - **`-Docker` builds** compile for `x86_64-pc-windows-gnu` with mingw-w64, using only open-source tools (`cross/`). The MSVC build (plain `build.ps1`, and CI in `.github/workflows/desktop.yml`) is the usual one. Both make the same app.
 
