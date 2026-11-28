@@ -74,7 +74,7 @@ class WebTests(unittest.TestCase):
     def start(self):
         r, text = self.req("POST", "/first-run", {"password": "correct horse battery"})
         self.assertEqual(r.status, 200)
-        self.recovery = re.search(r'<p class="code">([A-Z0-9-]+)</p>', text).group(1)     # shown once, at setup
+        self.recovery = re.search(r'<p class="code rcode" id="rcode">([A-Z0-9-]+)</p>', text).group(1)     # shown once, at setup
 
     def csrf(self, path="/settings"):
         return re.search(r'name="csrf" value="(\w+)"', self.req("GET", path)[1]).group(1)
@@ -93,7 +93,7 @@ class WebTests(unittest.TestCase):
         r, text = self.req("POST", "/forgot", {"code": self.recovery.lower().replace("-", " "), "password": "brand new password"})
         self.assertEqual(r.status, 200)
         self.assertIsNotNone(self.cookie)
-        fresh = re.search(r'<p class="code">([A-Z0-9-]+)</p>', text).group(1)
+        fresh = re.search(r'<p class="code rcode" id="rcode">([A-Z0-9-]+)</p>', text).group(1)
         self.assertNotEqual(fresh, self.recovery)
         self.cookie = None
         self.req("POST", "/login", {"password": "brand new password"})
@@ -128,7 +128,7 @@ class WebTests(unittest.TestCase):
         self.assertIn("isn&#x27;t right", self.post("/settings/recovery", old="wrong password")[1])
         _, text = self.post("/settings/recovery", old="correct horse battery")
         self.assertFalse(calsync_web.recovery_ok(calsync_web.web_config(), self.recovery))
-        self.assertTrue(calsync_web.recovery_ok(calsync_web.web_config(), re.search(r'<p class="code">([A-Z0-9-]+)</p>', text).group(1)))
+        self.assertTrue(calsync_web.recovery_ok(calsync_web.web_config(), re.search(r'<p class="code rcode" id="rcode">([A-Z0-9-]+)</p>', text).group(1)))
         self.assertNotIn(self.recovery.replace("-", ""), json.dumps(calsync_web.web_config()))     # only its hash is kept
 
     def test_adding_a_calendar_is_on_the_sync_page(self):
@@ -311,7 +311,7 @@ class WebTests(unittest.TestCase):
         self.assertNotIn('height="64">CalSync', text)
         self.assertIn('type="password"', text)                 # without JS the field is a plain password field
         js = self.req("GET", "/app.js")[1]
-        for bit in ("input[type=password]", "'Show '", "'Hide '", "aria-pressed", "b.type='button'"):
+        for bit in ("input[type=password]", "'Show '", "'Hide '", "aria-pressed", "b.type='button'", "Copy recovery code", "'Copied'", ".rcode"):
             self.assertIn(bit, js)
         self.assertNotIn("<style", text)
 
