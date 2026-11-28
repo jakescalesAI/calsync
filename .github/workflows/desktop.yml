@@ -1,0 +1,38 @@
+name: desktop
+# Builds the Windows desktop app (desktop/) and keeps the installer as a build artifact for 14 days.
+# No signing and no release here: both wait for a decision on a signing account and a download page.
+on:
+  push:
+    branches: [main]
+    paths: ["desktop/**", "calsync.py", "calsync_web.py", "brand/**", ".github/workflows/desktop.yml"]
+  pull_request:
+    paths: ["desktop/**", "calsync.py", "calsync_web.py", "brand/**", ".github/workflows/desktop.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: desktop/src-tauri
+      - name: Build
+        run: powershell -ExecutionPolicy Bypass -File desktop\build.ps1
+      - name: Tests (after the build, which makes the engine and icons they need)
+        run: cargo test --manifest-path desktop/src-tauri/Cargo.toml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: calsync-windows-installer
+          path: desktop/out/*.exe
+          retention-days: 14

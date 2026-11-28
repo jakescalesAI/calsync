@@ -1,0 +1,16 @@
+{
+  "name": "calsync-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CalSync for Windows and Mac (Tauri 2). See desktop/README.md",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icons": "tauri icon ../brand/mark-1024.png -o src-tauri/icons",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.1"
+  }
+}

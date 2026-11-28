@@ -1,0 +1,9 @@
+node_modules/
+.build/
+engine-dist/
+src-tauri/target/
+src-tauri/gen/
+ui/mark.svg
+out/
+# The repo ignores *.lock (calsync run.lock); the app's dependency lock is kept.
+!src-tauri/Cargo.lock

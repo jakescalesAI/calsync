@@ -7,7 +7,6 @@ recognised by a private tag, so they are never copied again, and calsync never
 edits or deletes an event it did not create. Stateless: the tags are the state.
 
   calsync web                        web setup page and background sync (http://localhost:8484)
-  calsync reset-password             forgot the page password: set a new one, on this computer only
   calsync setup google|microsoft     store your OAuth client (hidden prompts)
   calsync auth google LABEL          sign in a Google account (paste-back flow)
   calsync auth outlook LABEL [TENANT] sign in a Microsoft account (device code)
@@ -35,17 +34,29 @@ except ImportError:  # Windows
     fcntl = None
     import msvcrt
 
-HOME = os.environ.get("CALSYNC_HOME") or os.path.expanduser("~/.calsync")
-SECRETS = os.path.join(HOME, "secrets")
-CONFIG = os.path.join(HOME, "config.json")
-LASTRUN = os.path.join(HOME, "last-run.json")
+def set_home(path):
+    """Point calsync at a settings folder. For using the engine as a library (the desktop app, the hosted plan):
+    call this before anything else, instead of setting CALSYNC_HOME."""
+    global HOME, SECRETS, CONFIG, LASTRUN, ACTIVITY
+    HOME = os.path.abspath(os.path.expanduser(path))
+    SECRETS = os.path.join(HOME, "secrets")
+    CONFIG = os.path.join(HOME, "config.json")
+    LASTRUN = os.path.join(HOME, "last-run.json")
+    ACTIVITY = os.path.join(HOME, "activity.jsonl")
+    return HOME
+
+
+set_home(os.environ.get("CALSYNC_HOME") or "~/.calsync")
 TAG = "calsync"                      # Google private extended property key
+TAG_X = "calsync_x"                  # a hash of what else a copy carries (notes, colour, privacy, reminders), so a change there is seen
 ICS_TAG = "X-CALSYNC"                # the same tag on a CalDAV event
+ICS_TAG_X = "X-CALSYNC-X"
 COPY_UID = "calsync-"                # every CalDAV copy's UID starts with this, so a copy is known even if a server drops ICS_TAG
 COPY_NOTE = re.compile(r"Synced from \S{1,60} by calsync\. Edit the original there")   # the note every copy carries: a published
 #   feed keeps it even where it drops the tag (Google's secret address does), so a copy read back through a link is still known
 MS_PROP = "String {6f8f3c3e-7a51-4d0b-9a8e-2c1f5b7d9e44} Name calsync"  # Graph extended property id
-PAST_DAYS, FUTURE_DAYS = 0, 120  # events that already ended are neither copied nor cleaned up
+MS_PROP_X = "String {6f8f3c3e-7a51-4d0b-9a8e-2c1f5b7d9e44} Name calsync_x"
+PAST_DAYS, FUTURE_DAYS = 0, 120  # the default sync window: events that already ended are neither copied nor cleaned up
 GOOGLE_REDIRECT = "http://127.0.0.1:8765/"
 GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly"
 MS_SCOPES = "offline_access Calendars.ReadWrite"
@@ -146,21 +157,180 @@ def to_utc_z(s):
 # A normalised event: dict(uid, ical, title, start, end, all_day, busy, location,
 #   private, declined, copy_of)  ical = the iCalendar UID shared by every invitee's copy of a meeting.  start/end are 'YYYY-MM-DD' (all-day) or UTC 'Z' strings.
 # copy_of is "SOURCE_NAME|SOURCE_UID" for calsync copies, else None.
+# Optional, where the provider says: description, conference (a join link), attendees [emails], organizer, me_organizer,
+#   rsvp ("yes" | "maybe" | "none" | "no", "" when it's yours), kind ("" | "birthday" | "ooo" | "focus"), colours [names],
+#   series (the repeating event it belongs to), href (CalDAV), extra (a copy's TAG_X).
 
-def render(ev, src_name, dst_cfg):
-    """What the copy of ev on dst should look like (comparable fields only)."""
-    hide = dst_cfg.get("busy_only") or ev["private"]
-    return {
-        "title": "Busy" if hide else (ev["title"] or "(no title)"),
-        "start": ev["start"], "end": ev["end"], "all_day": ev["all_day"],
-        "busy": ev["busy"],
-        "location": "" if hide else (ev["location"] or ""),
-    }
+CORE = ("title", "start", "end", "all_day", "busy", "location")
+# One palette for calendar colours, copy colours and colour filters. Google's event colour ids are mapped to the nearest.
+PALETTE = {"blue": ("#0071e3", "9"), "green": ("#34c759", "2"), "orange": ("#ff9500", "6"), "purple": ("#af52de", "3"),
+           "pink": ("#ff2d55", "4"), "teal": ("#30b0c7", "7"), "indigo": ("#5856d6", "1"), "brown": ("#a2845e", "8"),
+           "red": ("#e3342f", "11"), "yellow": ("#ffcc00", "5"), "forest": ("#248a3d", "10"), "grey": ("#8e8e93", "8")}
+GOOGLE_COLOUR = {"1": "indigo", "2": "green", "3": "purple", "4": "pink", "5": "yellow", "6": "orange", "7": "teal",
+                 "8": "grey", "9": "blue", "10": "forest", "11": "red"}
+DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+DEFAULT_COPY = {"title": True, "title_text": "Busy", "description": False, "location": True, "conference": False,
+                "attendees": False, "reminders": False, "private": False}
+DEFAULT_FILTERS = {"free": False, "tentative": False, "unanswered": False, "all_day": False, "birthdays": True, "ooo": False,
+                   "colours": [], "colour_mode": "exclude", "keywords": [], "keyword_mode": "exclude",
+                   "days": [], "from": "", "until": ""}
+
+
+def rule_for(src, dst, cfg=None):
+    """The rule for copying from calendar src to calendar dst (names or configs). A rule saved in cfg["rules"]["src>dst"]
+    wins; anything it leaves out comes from the older per-calendar settings, so a config from before rules keeps doing
+    exactly what it did: busy_only on dst hides title and location, skip_sources turns the direction off."""
+    cfg = cfg or {}
+    by_name = {c["name"]: c for c in cfg.get("calendars", [])}
+    s = by_name.get(src, {"name": src}) if isinstance(src, str) else dict({"name": ""}, **src)
+    d = by_name.get(dst, {"name": dst}) if isinstance(dst, str) else dict({"name": ""}, **dst)
+    busy = bool(d.get("busy_only"))
+    rule = {"enabled": s["name"] not in d.get("skip_sources", []), "keep_copies": False, "tag": "", "colour": "",
+            "copy": dict(DEFAULT_COPY, title=not busy, location=not busy), "filters": dict(DEFAULT_FILTERS)}
+    saved = cfg.get("rules", {}).get(f"{s['name']}>{d['name']}") or {}
+    for k in ("enabled", "keep_copies", "tag", "colour"):
+        if k in saved:
+            rule[k] = saved[k]
+    rule["copy"].update({k: v for k, v in (saved.get("copy") or {}).items() if k in DEFAULT_COPY})
+    rule["filters"].update({k: v for k, v in (saved.get("filters") or {}).items() if k in DEFAULT_FILTERS})
+    return rule
+
+
+def clean_rule(raw):
+    """A rule from a form or an agent, held to known keys and sane values before it's saved."""
+    raw = raw or {}
+    c, f = raw.get("copy") or {}, raw.get("filters") or {}
+    words = lambda v: [w.strip()[:60] for w in (v if isinstance(v, list) else str(v or "").split(",")) if w.strip()][:30]
+    hhmm = lambda v: v if re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", str(v or "")) else ""
+    colour = str(raw.get("colour") or "")
+    return {"enabled": bool(raw.get("enabled", True)), "keep_copies": bool(raw.get("keep_copies")),
+            "tag": re.sub(r"[\x00-\x1f\x7f]", "", str(raw.get("tag") or ""))[:40],
+            "colour": colour if colour in PALETTE or colour == "match" else "",
+            "copy": {**{k: bool(c.get(k, DEFAULT_COPY[k])) for k in DEFAULT_COPY if k != "title_text"},
+                     "title_text": re.sub(r"[\x00-\x1f\x7f]", "", str(c.get("title_text") or "Busy")).strip()[:60] or "Busy"},
+            "filters": {**{k: bool(f.get(k, DEFAULT_FILTERS[k])) for k in ("free", "tentative", "unanswered", "all_day", "birthdays", "ooo")},
+                        "colours": [x for x in words(f.get("colours")) if x in PALETTE] if f.get("colours") else [],
+                        "colour_mode": "only" if f.get("colour_mode") == "only" else "exclude",
+                        "keywords": words(f.get("keywords")), "keyword_mode": "only" if f.get("keyword_mode") == "only" else "exclude",
+                        "days": sorted({int(x) for x in (f.get("days") or []) if str(x).isdigit() and 0 <= int(x) <= 6}),
+                        "from": hhmm(f.get("from")), "until": hhmm(f.get("until"))}}
+
+
+def sync_window(cfg=None, now=None):
+    """(tmin, tmax) for a sync: cfg["window"] = {"past_days", "future_days"}, by default 0 back and 120 ahead."""
+    w = (cfg or {}).get("window") or {}
+    past = min(max(int(w.get("past_days", PAST_DAYS)), 0), 365)
+    future = min(max(int(w.get("future_days", FUTURE_DAYS)), 1), 730)
+    now = now or now_utc()
+    z = lambda t: t.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return z(now - dt.timedelta(days=past)), z(now + dt.timedelta(days=future))
+
+
+def _local_start(ev):
+    if ev["all_day"]:
+        return dt.datetime.fromisoformat(ev["start"][:10])
+    return dt.datetime.strptime(ev["start"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc).astimezone(local_tz())
+
+
+def filtered_out(ev, rule):
+    """Why the rule's filters leave ev out, or None. Plain words: the Preview shows them."""
+    f = rule["filters"]
+    title = (ev.get("title") or "").lower()
+    if f["free"] and not ev.get("busy", True):
+        return "it's marked free"
+    if f["tentative"] and ev.get("rsvp") == "maybe":
+        return "you answered Maybe"
+    if f["unanswered"] and ev.get("rsvp") == "none":
+        return "you haven't answered the invite"
+    if f["all_day"] and ev.get("all_day"):
+        return "it's an all-day event"
+    if f["birthdays"] and ev.get("kind") == "birthday":
+        return "it's a birthday"
+    if f["ooo"] and ev.get("kind") == "ooo":
+        return "it's out of office"
+    if f["colours"]:
+        has = [c for c in ev.get("colours") or [] if c in f["colours"]]
+        if f["colour_mode"] == "only" and not has:
+            return "its colour isn't one of " + ", ".join(f["colours"])
+        if f["colour_mode"] == "exclude" and has:
+            return f"it's {has[0]}"
+    if f["keywords"]:
+        hit = next((w for w in f["keywords"] if w.lower() in title), None)
+        if f["keyword_mode"] == "only" and not hit:
+            return "its title has none of: " + ", ".join(f["keywords"])
+        if f["keyword_mode"] == "exclude" and hit:
+            return f'its title has "{hit}"'
+    if f["days"] or f["from"] or f["until"]:
+        start = _local_start(ev)
+        if f["days"] and start.weekday() not in f["days"]:
+            return f"it's on a {DAYS[start.weekday()]}"
+        if not ev.get("all_day") and (f["from"] or f["until"]):
+            hm = start.strftime("%H:%M")
+            if (f["from"] and hm < f["from"]) or (f["until"] and hm >= f["until"]):
+                return f"it starts at {hm}, outside {f['from'] or '00:00'} to {f['until'] or '24:00'}"
+    return None
+
+
+def not_a_source(ev, src, skips=()):
+    """Why an event is never copied anywhere, or None."""
+    if ev.get("copy_of"):
+        return "it's a copy CalSync made"
+    if ev.get("declined"):
+        return "you declined it"
+    if _canceled(ev):
+        return "it was cancelled"
+    if f"{src}|{ev['uid']}" in skips:
+        return "you skipped this one"
+    return None
+
+
+def render(ev, src_name, dst_cfg, rule=None, src_label=None):
+    """What the copy of ev on dst should look like. The CORE fields are compared with what's there; everything else
+    a rule can add (notes, privacy, colour, reminders) is summed up in "extra", so a copy made before rules has none
+    and isn't rewritten. A private event always says Busy, whatever the rule."""
+    rule = rule or rule_for(src_name, dst_cfg, {"calendars": [dst_cfg]})
+    cp = rule["copy"]
+    private = bool(ev.get("private"))
+    show = cp["title"] and not private
+    title = (ev.get("title") or "(no title)") if show else cp["title_text"]
+    if rule.get("tag"):
+        title = f"{rule['tag']} {title}"
+    fields = {"title": title, "start": ev["start"], "end": ev["end"], "all_day": ev["all_day"], "busy": ev.get("busy", True),
+              "location": (ev.get("location") or "") if cp["location"] and not private else ""}
+    notes = []
+    if not private:
+        if cp["description"] and (ev.get("description") or "").strip():
+            notes.append(ev["description"].strip()[:4000])
+        if cp["conference"] and ev.get("conference"):
+            notes.append("Join: " + ev["conference"])
+        if cp["attendees"] and ev.get("attendees"):
+            notes.append("Guests: " + ", ".join(ev["attendees"][:50]))
+    colour = rule.get("colour") or ""
+    if colour == "match":
+        colour = next((c for c in ev.get("colours") or [] if c in PALETTE), "")
+    extra = {"notes": "\n\n".join(notes), "private": bool(cp["private"]), "colour": colour, "reminders": bool(cp["reminders"])}
+    if any(extra.values()):
+        fields.update(extra)
+        fields["extra"] = hashlib.sha256(json.dumps(extra, sort_keys=True).encode()).hexdigest()[:16]
+    fields["label"] = src_label if show else "another calendar"   # a Busy copy doesn't say which calendar it came from either
+    return fields
+
+
+def copy_note(label, fields=None):
+    """The description every copy carries. COPY_NOTE matches its first line, so a copy read back through a link is known."""
+    note = f"Synced from {label} by calsync. Edit the original there; changes here are overwritten."
+    extra = (fields or {}).get("notes")
+    return f"{note}\n\n{extra}" if extra else note
 
 
 def comparable(ev):
     return {"title": ev.get("title") or "", "start": ev["start"], "end": ev["end"],
             "all_day": ev["all_day"], "busy": ev["busy"], "location": ev.get("location") or ""}
+
+
+def same_copy(have, fields):
+    return comparable(have) == {k: fields[k] for k in CORE} and (have.get("extra") or None) == (fields.get("extra") or None)
 
 
 # ---------- adapters ----------
@@ -197,11 +367,16 @@ class GoogleCalendar:
 
     @staticmethod
     def _norm(it):
-        if it.get("status") == "cancelled" or it.get("eventType") in ("workingLocation", "birthday"):
+        if it.get("status") == "cancelled" or it.get("eventType") == "workingLocation":
             return None
         s, e = it.get("start", {}), it.get("end", {})
         all_day = "date" in s
-        declined = any(a.get("self") and a.get("responseStatus") == "declined" for a in it.get("attendees", []))
+        people = it.get("attendees", [])
+        me = next((a for a in people if a.get("self")), None)
+        declined = bool(me) and me.get("responseStatus") == "declined"
+        mine = not me or bool(me.get("organizer")) or bool(it.get("organizer", {}).get("self"))
+        conf = it.get("hangoutLink") or next((p.get("uri", "") for p in it.get("conferenceData", {}).get("entryPoints", []) if p.get("entryPointType") == "video"), "")
+        props = it.get("extendedProperties", {}).get("private", {})
         return {
             "uid": it["id"], "ical": it.get("iCalUID"), "title": it.get("summary", ""),
             "start": s["date"] if all_day else to_utc_z(s["dateTime"]),
@@ -209,19 +384,31 @@ class GoogleCalendar:
             "all_day": all_day, "busy": it.get("transparency") != "transparent",
             "location": it.get("location", ""), "private": it.get("visibility") in ("private", "confidential"),
             "declined": declined,
-            "copy_of": it.get("extendedProperties", {}).get("private", {}).get(TAG),
+            "copy_of": props.get(TAG), "extra": props.get(TAG_X),
+            "description": it.get("description", ""), "conference": conf,
+            "attendees": [a["email"] for a in people if a.get("email") and not a.get("resource") and not a.get("self")],
+            "organizer": it.get("organizer", {}).get("email", ""), "me_organizer": mine,
+            "rsvp": "" if mine else {"accepted": "yes", "tentative": "maybe", "needsAction": "none", "declined": "no"}.get(me.get("responseStatus"), "none"),
+            "kind": {"birthday": "birthday", "outOfOffice": "ooo", "focusTime": "focus"}.get(it.get("eventType"), ""),
+            "colours": [GOOGLE_COLOUR[it["colorId"]]] if it.get("colorId") in GOOGLE_COLOUR else [],
+            "series": it.get("recurringEventId"), "recurrence": it.get("recurrence"),
         }
 
     def _body(self, fields, copy_of, src_label):
         when = (lambda d: {"date": d}) if fields["all_day"] else (lambda t: {"dateTime": t, "timeZone": "UTC"})
-        return {
+        body = {
             "summary": fields["title"], "location": fields["location"],
-            "description": f"Synced from {src_label} by calsync. Edit the original there; changes here are overwritten.",
+            "description": copy_note(src_label, fields),
             "start": when(fields["start"]), "end": when(fields["end"]),
             "transparency": "opaque" if fields["busy"] else "transparent",
-            "reminders": {"useDefault": False, "overrides": []},
-            "extendedProperties": {"private": {TAG: copy_of}},
+            "reminders": {"useDefault": True} if fields.get("reminders") else {"useDefault": False, "overrides": []},
+            "extendedProperties": {"private": {TAG: copy_of, **({TAG_X: fields["extra"]} if fields.get("extra") else {})}},
         }
+        if fields.get("private"):
+            body["visibility"] = "private"
+        if fields.get("colour") in PALETTE:
+            body["colorId"] = PALETTE[fields["colour"]][1]
+        return body
 
     def create(self, fields, copy_of, src_label):
         return http("POST", self._url(), self.token(), self._body(fields, copy_of, src_label))["id"]
@@ -249,6 +436,135 @@ class GoogleCalendar:
             if "-> 410" not in str(e) and "-> 404" not in str(e):
                 raise
 
+    # real events, from the Calendar tab: untagged, so the next sync copies them out through the rules
+
+    def _one(self, uid, q=""):
+        return http("GET", self._url("/" + urllib.parse.quote(uid, safe="") + q), self.token())
+
+    def get(self, uid):
+        return self._norm(self._one(uid))
+
+    @staticmethod
+    def _fields(ch):
+        when = lambda v, all_day: {"date": _day(v)} if all_day else {"dateTime": _aware(v).isoformat(), "timeZone": tz_name()}
+        b = {}
+        if "title" in ch:
+            b["summary"] = ch["title"]
+        if "start" in ch:
+            b["start"], b["end"] = when(ch["start"], ch.get("all_day")), when(ch["end"], ch.get("all_day"))
+        for k, g in (("location", "location"), ("description", "description")):
+            if k in ch:
+                b[g] = ch[k]
+        if "busy" in ch:
+            b["transparency"] = "opaque" if ch["busy"] else "transparent"
+        if "private" in ch:
+            b["visibility"] = "private" if ch["private"] else "default"
+        if "colour" in ch:
+            b["colorId"] = PALETTE[ch["colour"]][1] if ch["colour"] in PALETTE else None
+        if "guests" in ch:
+            b["attendees"] = [{"email": g} for g in ch["guests"]]
+        if ch.get("repeat") is not None and "repeat" in ch:
+            b["recurrence"] = [f"RRULE:{ch['repeat']}"] if ch["repeat"] else []
+        if ch.get("remind_minutes") is not None:
+            b["reminders"] = {"useDefault": False, "overrides": [{"method": "popup", "minutes": ch["remind_minutes"]}]}
+        if ch.get("conference") == "meet":
+            b["conferenceData"] = {"createRequest": {"requestId": uuid.uuid4().hex, "conferenceSolutionKey": {"type": "hangoutsMeet"}}}
+        elif ch.get("conference"):
+            b["location"] = ch.get("location") or ch["conference"]
+        return b
+
+    def create_event(self, ev, notify=True):
+        b = self._fields(ev)
+        b.setdefault("extendedProperties", {"private": {"calsync_made": "1"}})
+        q = {"conferenceDataVersion": "1", "sendUpdates": "all" if notify and ev.get("guests") else "none"}
+        return http("POST", self._url("?" + urllib.parse.urlencode(q)), self.token(), b)["id"]
+
+    def update_event(self, uid, ch, scope="this", notify=True):
+        q = "?" + urllib.parse.urlencode({"conferenceDataVersion": "1", "sendUpdates": "all" if notify else "none"})
+        it = self._one(uid)
+        master_id = it.get("recurringEventId")
+        if scope == "this" or not (master_id or it.get("recurrence")):
+            return http("PATCH", self._url("/" + urllib.parse.quote(uid, safe="") + q), self.token(), self._fields(ch))
+        master = self._one(master_id) if master_id else it
+        mid = master["id"]
+        if scope == "all":
+            body = self._fields({k: v for k, v in ch.items() if k not in ("start", "end")})
+            if "start" in ch:       # move every occurrence by as much as this one moved
+                shift = _aware(ch["start"]) - _g_start(it)
+                length = _aware(ch["end"]) - _aware(ch["start"])
+                ms = _g_start(master) + shift
+                body.update(self._fields({"start": ms, "end": ms + length, "all_day": ch.get("all_day")}))
+            return http("PATCH", self._url("/" + urllib.parse.quote(mid, safe="") + q), self.token(), body)
+        # this and following: end the series before this one, then start a new series here
+        orig = _g_start({"start": it.get("originalStartTime") or it["start"]})
+        rules = [r for r in master.get("recurrence", []) if r.startswith("RRULE:")]
+        http("PATCH", self._url("/" + urllib.parse.quote(mid, safe="") + q), self.token(),
+             {"recurrence": [_until(r, orig) for r in master.get("recurrence", [])]})
+        new = {k: master[k] for k in ("summary", "description", "location", "transparency", "visibility", "colorId", "attendees") if k in master}
+        new.update(start=it["start"], end=it["end"], recurrence=[re.sub(r";COUNT=\d+", "", r) for r in rules])
+        new.update(self._fields(ch))
+        return http("POST", self._url(q), self.token(), new)
+
+    def delete_event(self, uid, scope="this", notify=True):
+        q = "?sendUpdates=" + ("all" if notify else "none")
+        it = self._one(uid)
+        master_id = it.get("recurringEventId")
+        if scope == "this" or not (master_id or it.get("recurrence")):
+            return http("DELETE", self._url("/" + urllib.parse.quote(uid, safe="") + q), self.token())
+        if scope == "all":
+            return http("DELETE", self._url("/" + urllib.parse.quote(master_id or uid, safe="") + q), self.token())
+        master = self._one(master_id)
+        orig = _g_start({"start": it.get("originalStartTime") or it["start"]})
+        http("PATCH", self._url("/" + urllib.parse.quote(master_id, safe="") + q), self.token(),
+             {"recurrence": [_until(r, orig) for r in master.get("recurrence", [])]})
+
+    def respond(self, uid, answer):
+        it = self._one(uid)
+        status = {"yes": "accepted", "maybe": "tentative", "no": "declined"}[answer]
+        people = [dict(a, responseStatus=status) if a.get("self") else a for a in it.get("attendees", [])]
+        http("PATCH", self._url("/" + urllib.parse.quote(uid, safe="") + "?sendUpdates=all"), self.token(), {"attendees": people})
+
+    def changed_since(self, since):
+        """Whether anything on this calendar changed after since (UTC 'Z'): one small request, for a quick check."""
+        q = {"updatedMin": since, "showDeleted": "true", "maxResults": "1", "fields": "items(id)"}
+        return bool(http("GET", self._url("?" + urllib.parse.urlencode(q)), self.token()).get("items"))
+
+    def watch(self, address, token, channel):
+        """Ask Google to call address when this calendar changes (needs a public https address). -> expiry (ms)."""
+        r = http("POST", self._url("/watch"), self.token(), {"id": channel, "type": "web_hook", "address": address, "token": token,
+                                                           "params": {"ttl": "604800"}})
+        return {"id": channel, "resource": r.get("resourceId"), "expires": int(r.get("expiration", 0)) // 1000}
+
+    def unwatch(self, ch):
+        http("POST", f"{self.API}/channels/stop", self.token(), {"id": ch["id"], "resourceId": ch.get("resource")})
+
+
+def _aware(v):
+    """A datetime, date or ISO text -> an aware datetime (local zone when none is given)."""
+    if isinstance(v, str):
+        v = dt.datetime.fromisoformat(v.replace("Z", "+00:00")) if "T" in v else dt.date.fromisoformat(v)
+    if not isinstance(v, dt.datetime):
+        v = dt.datetime.combine(v, dt.time())
+    return v if v.tzinfo else v.replace(tzinfo=local_tz())
+
+
+def _day(v):
+    return v[:10] if isinstance(v, str) else (v.date() if isinstance(v, dt.datetime) else v).isoformat()
+
+
+def _g_start(it):
+    s = it["start"]
+    return _aware(s["dateTime"]) if "dateTime" in s else _aware(s["date"])
+
+
+def _until(line, before):
+    """A recurrence line that stops just before the datetime before. Other lines (EXDATE...) pass through."""
+    if not line.startswith("RRULE:"):
+        return line
+    parts = [p for p in line[6:].split(";") if not p.startswith(("UNTIL=", "COUNT="))]
+    stop = (before - dt.timedelta(seconds=1)).astimezone(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return "RRULE:" + ";".join(parts + [f"UNTIL={stop}"])
+
 
 class OutlookCalendar:
     API = "https://graph.microsoft.com/v1.0/me"
@@ -268,10 +584,10 @@ class OutlookCalendar:
     def list(self, tmin, tmax):
         out = []
         q = {"startDateTime": tmin, "endDateTime": tmax, "$top": "500",
-             "$expand": f"singleValueExtendedProperties($filter=id eq '{MS_PROP}')"}
+             "$expand": f"singleValueExtendedProperties($filter=id eq '{MS_PROP}' or id eq '{MS_PROP_X}')"}
         url = self._cal() + "/calendarView?" + urllib.parse.urlencode(q)
         while url:
-            r = http("GET", url, self.token(), headers={"Prefer": 'outlook.timezone="UTC"'})
+            r = http("GET", url, self.token(), headers={"Prefer": 'outlook.timezone="UTC", outlook.body-content-type="text"'})
             for it in r.get("value", []):
                 ev = self._norm(it)
                 if ev:
@@ -287,25 +603,38 @@ class OutlookCalendar:
         def when(x):
             t = x["dateTime"][:19]
             return t[:10] if all_day else t + "Z"
-        tag = next((p["value"] for p in it.get("singleValueExtendedProperties", []) if p.get("id", "").lower() == MS_PROP.lower()), None)
+        prop = lambda pid: next((p["value"] for p in it.get("singleValueExtendedProperties", []) if p.get("id", "").lower() == pid.lower()), None)
+        answer = (it.get("responseStatus") or {}).get("response")
+        mine = bool(it.get("isOrganizer", True)) or answer in (None, "organizer")
         return {
             "uid": it["id"], "ical": it.get("iCalUId"), "title": it.get("subject", ""),
             "start": when(it["start"]), "end": when(it["end"]), "all_day": all_day,
             "busy": it.get("showAs") not in ("free", "workingElsewhere"),
             "location": (it.get("location") or {}).get("displayName", ""),
             "private": it.get("sensitivity") in ("private", "confidential"),
-            "declined": (it.get("responseStatus") or {}).get("response") == "declined",
-            "copy_of": tag,
+            "declined": answer == "declined",
+            "copy_of": prop(MS_PROP), "extra": prop(MS_PROP_X),
+            "description": (it.get("body") or {}).get("content", "") if (it.get("body") or {}).get("contentType") == "text" else "",
+            "conference": (it.get("onlineMeeting") or {}).get("joinUrl", "") or it.get("onlineMeetingUrl") or "",
+            "attendees": [a["emailAddress"]["address"] for a in it.get("attendees", []) if (a.get("emailAddress") or {}).get("address")],
+            "organizer": ((it.get("organizer") or {}).get("emailAddress") or {}).get("address", ""), "me_organizer": mine,
+            "rsvp": "" if mine else {"accepted": "yes", "tentativelyAccepted": "maybe", "notResponded": "none", "none": "none", "declined": "no"}.get(answer, "none"),
+            "kind": "ooo" if it.get("showAs") == "oof" else "",
+            "colours": [c.lower() for c in it.get("categories", [])],
+            "series": it.get("seriesMasterId"),
         }
 
     def _body(self, fields, copy_of, src_label):
         t = (lambda d: {"dateTime": d + "T00:00:00", "timeZone": "UTC"}) if fields["all_day"] else (lambda z: {"dateTime": z[:-1], "timeZone": "UTC"})
+        props = [{"id": MS_PROP, "value": copy_of}] + ([{"id": MS_PROP_X, "value": fields["extra"]}] if fields.get("extra") else [])
         return {
             "subject": fields["title"], "location": {"displayName": fields["location"]},
-            "body": {"contentType": "text", "content": f"Synced from {src_label} by calsync. Edit the original there; changes here are overwritten."},
+            "body": {"contentType": "text", "content": copy_note(src_label, fields)},
             "start": t(fields["start"]), "end": t(fields["end"]), "isAllDay": fields["all_day"],
-            "showAs": "busy" if fields["busy"] else "free", "isReminderOn": False,
-            "singleValueExtendedProperties": [{"id": MS_PROP, "value": copy_of}],
+            "showAs": "busy" if fields["busy"] else "free", "isReminderOn": bool(fields.get("reminders")),
+            "sensitivity": "private" if fields.get("private") else "normal",
+            "categories": [fields["colour"].title()] if fields.get("colour") in PALETTE else [],
+            "singleValueExtendedProperties": props,
         }
 
     def create(self, fields, copy_of, src_label):
@@ -330,6 +659,129 @@ class OutlookCalendar:
         except RuntimeError as e:
             if "-> 404" not in str(e):
                 raise
+
+    # real events, from the Calendar tab. Graph tells guests about changes itself; it has no way to stay quiet.
+
+    def _ev(self, uid, method="GET", body=None, suffix=""):
+        return http(method, f"{self.API}/events/{urllib.parse.quote(uid, safe='')}{suffix}", self.token(), body,
+                    headers={"Prefer": 'outlook.timezone="UTC", outlook.body-content-type="text"'})
+
+    def get(self, uid):
+        return self._norm(self._ev(uid))
+
+    @staticmethod
+    def _fields(ch):
+        def when(v, all_day):
+            if all_day:
+                return {"dateTime": _day(v) + "T00:00:00", "timeZone": tz_name()}
+            return {"dateTime": _aware(v).astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "UTC"}
+        b = {}
+        if "title" in ch:
+            b["subject"] = ch["title"]
+        if "start" in ch:
+            b.update(start=when(ch["start"], ch.get("all_day")), end=when(ch["end"], ch.get("all_day")), isAllDay=bool(ch.get("all_day")))
+        if "location" in ch:
+            b["location"] = {"displayName": ch["location"]}
+        if "description" in ch:
+            b["body"] = {"contentType": "text", "content": ch["description"]}
+        if "busy" in ch:
+            b["showAs"] = "busy" if ch["busy"] else "free"
+        if "private" in ch:
+            b["sensitivity"] = "private" if ch["private"] else "normal"
+        if "colour" in ch:
+            b["categories"] = [ch["colour"].title()] if ch["colour"] in PALETTE else []
+        if "guests" in ch:
+            b["attendees"] = [{"emailAddress": {"address": g}, "type": "required"} for g in ch["guests"]]
+        if ch.get("conference") == "teams":
+            b.update(isOnlineMeeting=True, onlineMeetingProvider="teamsForBusiness")
+        elif ch.get("conference") and ch["conference"] != "meet":
+            b["location"] = {"displayName": ch.get("location") or ch["conference"]}
+        if ch.get("repeat") and "start" in ch:
+            b["recurrence"] = _graph_recurrence(ch["repeat"], _aware(ch["start"]))
+        if ch.get("remind_minutes") is not None:
+            b.update(isReminderOn=True, reminderMinutesBeforeStart=ch["remind_minutes"])
+        return b
+
+    def create_event(self, ev, notify=True):
+        return http("POST", self._cal() + "/events", self.token(), self._fields(ev))["id"]
+
+    def update_event(self, uid, ch, scope="this", notify=True):
+        it = self._ev(uid)
+        master = it.get("seriesMasterId")
+        if scope == "this" or not master and it.get("type") != "seriesMaster":
+            return self._ev(uid, "PATCH", self._fields(ch))
+        mid = master or uid
+        if scope == "all":
+            body = self._fields({k: v for k, v in ch.items() if k not in ("start", "end")})
+            if "start" in ch:
+                m = self._ev(mid)
+                shift = _aware(ch["start"]) - _aware(it["start"]["dateTime"][:19] + "+00:00")
+                length = _aware(ch["end"]) - _aware(ch["start"])
+                ms = _aware(m["start"]["dateTime"][:19] + "+00:00") + shift
+                body.update(self._fields({"start": ms, "end": ms + length, "all_day": ch.get("all_day")}))
+            return self._ev(mid, "PATCH", body)
+        m = self._ev(mid)
+        first = _aware(it["start"]["dateTime"][:19] + "+00:00")
+        rec = m["recurrence"]
+        self._ev(mid, "PATCH", {"recurrence": {"pattern": rec["pattern"], "range": dict(rec["range"], type="endDate",
+                 endDate=(first.astimezone(local_tz()).date() - dt.timedelta(days=1)).isoformat())}})
+        new = {k: m[k] for k in ("subject", "body", "location", "showAs", "sensitivity", "categories", "attendees") if k in m}
+        new.update(start=it["start"], end=it["end"], recurrence={"pattern": rec["pattern"], "range": {"type": "noEnd", "startDate": first.astimezone(local_tz()).date().isoformat()}})
+        new.update(self._fields({k: v for k, v in ch.items() if k != "repeat"}))
+        return http("POST", self._cal() + "/events", self.token(), new)
+
+    def delete_event(self, uid, scope="this", notify=True):
+        it = self._ev(uid)
+        master = it.get("seriesMasterId")
+        if scope == "this" or not master:
+            return self.delete(uid)
+        if scope == "all":
+            return self.delete(master)
+        m = self._ev(master)
+        first = _aware(it["start"]["dateTime"][:19] + "+00:00").astimezone(local_tz()).date()
+        self._ev(master, "PATCH", {"recurrence": {"pattern": m["recurrence"]["pattern"],
+                 "range": dict(m["recurrence"]["range"], type="endDate", endDate=(first - dt.timedelta(days=1)).isoformat())}})
+
+    def respond(self, uid, answer):
+        verb = {"yes": "accept", "maybe": "tentativelyAccept", "no": "decline"}[answer]
+        self._ev(uid, "POST", {"sendResponse": True}, "/" + verb)
+
+    def changed_since(self, since):
+        q = {"$filter": f"lastModifiedDateTime ge {since}", "$top": "1", "$select": "id"}
+        return bool(http("GET", self._cal() + "/events?" + urllib.parse.urlencode(q), self.token()).get("value"))
+
+    def watch(self, address, token, channel):
+        """A Graph subscription (needs a public https address); Graph allows about three days, then it's renewed."""
+        until = (now_utc() + dt.timedelta(minutes=4000)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        r = http("POST", "https://graph.microsoft.com/v1.0/subscriptions", self.token(), {
+            "changeType": "created,updated,deleted", "notificationUrl": address, "clientState": token,
+            "resource": f"me/calendars/{self.cal_id}/events", "expirationDateTime": until})
+        ends = dt.datetime.strptime(r["expirationDateTime"][:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=dt.timezone.utc)
+        return {"id": r["id"], "expires": int(ends.timestamp())}
+
+    def unwatch(self, ch):
+        http("DELETE", f"https://graph.microsoft.com/v1.0/subscriptions/{ch['id']}", self.token())
+
+
+def _graph_recurrence(rule, start):
+    """An RRULE (the few the Calendar tab offers) as Graph's recurrence."""
+    p = dict(x.split("=", 1) for x in rule.split(";") if "=" in x)
+    freq, every = p.get("FREQ", "WEEKLY"), int(p.get("INTERVAL", "1"))
+    names = {"MO": "monday", "TU": "tuesday", "WE": "wednesday", "TH": "thursday", "FR": "friday", "SA": "saturday", "SU": "sunday"}
+    local = start.astimezone(local_tz())
+    pattern = {"type": {"DAILY": "daily", "WEEKLY": "weekly", "MONTHLY": "absoluteMonthly", "YEARLY": "absoluteYearly"}[freq], "interval": every}
+    if freq == "WEEKLY":
+        pattern["daysOfWeek"] = [names[d] for d in p.get("BYDAY", DAYS[local.weekday()][:2].upper()).split(",") if d in names]
+    if freq in ("MONTHLY", "YEARLY"):
+        pattern["dayOfMonth"] = local.day
+    if freq == "YEARLY":
+        pattern["month"] = local.month
+    rng = {"type": "noEnd", "startDate": local.date().isoformat()}
+    if "UNTIL" in p:
+        rng.update(type="endDate", endDate=f"{p['UNTIL'][:4]}-{p['UNTIL'][4:6]}-{p['UNTIL'][6:8]}")
+    elif "COUNT" in p:
+        rng.update(type="numbered", numberOfOccurrences=int(p["COUNT"]))
+    return {"pattern": pattern, "range": rng}
 
 
 # ---------- read-only published calendars (.ics links, e.g. an Outlook account that blocks outside apps) ----------
@@ -496,12 +948,25 @@ def ics_events(text, tmin, tmax, me=(), deadline=None):
             fe = end.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         busy = first(ev, "X-MICROSOFT-CDO-BUSYSTATUS")[1].upper() not in ("FREE", "WORKINGELSEWHERE") and first(ev, "TRANSP")[1].upper() != "TRANSPARENT"
         tag = _unescape(first(ev, ICS_TAG)[1]) or (f"?|{uid}" if uid.startswith(COPY_UID) or COPY_NOTE.match(_unescape(first(ev, "DESCRIPTION")[1])) else None)
-        declined = any(p.get("PARTSTAT", "").upper() == "DECLINED" and v.lower().removeprefix("mailto:") in me for p, v in ev.get("ATTENDEE", []))
+        mine = [p.get("PARTSTAT", "").upper() for p, v in ev.get("ATTENDEE", []) if v.lower().removeprefix("mailto:") in me]
+        organizer = first(ev, "ORGANIZER")[1].lower().removeprefix("mailto:")
+        desc = _unescape(first(ev, "DESCRIPTION")[1])
+        conf = next((_unescape(first(ev, k)[1]) for k in ("X-GOOGLE-CONFERENCE", "X-MICROSOFT-SKYPETEAMSMEETINGURL", "URL") if first(ev, k)[1]), "")
+        conf = conf or next(iter(re.findall(r"https://[^\s<>\"]*(?:zoom\.us/j|meet\.google\.com|teams\.microsoft\.com/l/meetup-join|webex\.com)[^\s<>\"]*", desc)), "")
+        cats = [c.strip().lower() for _, v in ev.get("CATEGORIES", []) for c in _unescape(v).split(",") if c.strip()]
+        colour = first(ev, "COLOR")[1].strip().lower()
         return {"uid": f"{uid}|{orig}", "ical": uid, "title": _unescape(first(ev, "SUMMARY")[1]),
                 "start": fs, "end": fe, "all_day": all_day, "busy": busy,
                 "location": _unescape(first(ev, "LOCATION")[1]),
                 "private": first(ev, "CLASS")[1].upper() in ("PRIVATE", "CONFIDENTIAL"),
-                "declined": declined, "copy_of": tag}
+                "declined": "DECLINED" in mine, "copy_of": tag, "extra": first(ev, ICS_TAG_X)[1] or None,
+                "description": desc, "conference": conf,
+                "attendees": [v.lower().removeprefix("mailto:") for p, v in ev.get("ATTENDEE", []) if v.lower().removeprefix("mailto:") not in me],
+                "organizer": organizer, "me_organizer": not mine or organizer in me,
+                "rsvp": "" if not mine or organizer in me else {"ACCEPTED": "yes", "TENTATIVE": "maybe", "DECLINED": "no"}.get(mine[0], "none"),
+                "kind": "ooo" if first(ev, "X-MICROSOFT-CDO-BUSYSTATUS")[1].upper() == "OOF" else ("birthday" if "birthday" in cats else ""),
+                "colours": cats + ([colour] if colour in PALETTE else []),
+                "series": uid if "RRULE" in ev or "RECURRENCE-ID" in ev else None}
 
     def expand(ev):
         uid = first(ev, "UID")[1]
@@ -872,10 +1337,90 @@ class CalDavCalendar:
                     _skipped.count = getattr(_skipped, "count", 0) + 1
                 continue
             for ev in ics_events(data.text, tmin, tmax, self.me, deadline):
+                ev["href"] = urllib.parse.urljoin(final, href)
                 if ev["copy_of"]:
-                    ev["uid"] = urllib.parse.urljoin(final, href)  # what update and delete need
+                    ev["uid"] = ev["href"]  # what update and delete need
                 out.append(ev)
         return out
+
+    # real events, from the Calendar tab. Guests aren't invited from here: CalDAV servers differ too much in how they send invites.
+
+    def _mine(self, href):
+        href = urllib.parse.urljoin(self.url, href or "")
+        if not href.startswith(self.url) or not href.endswith(".ics"):
+            raise RuntimeError("that event isn't on this calendar")
+        status, raw, _ = self.client.request("GET", href)
+        if status != 200:
+            raise RuntimeError(f"reading this event -> {status}")
+        return href, raw.decode("utf-8", errors="replace")
+
+    def create_event(self, ev, notify=True):
+        uid = f"made-{uuid.uuid4().hex}@calsync"
+        href = f"{self.url}{uid.split('@')[0]}.ics"
+        self._put(href, [f"UID:{uid}", *_vevent_lines(ev)])
+        return href
+
+    def update_event(self, uid, ch, scope="this", notify=True, href=None):
+        href, text = self._mine(href)
+        blocks = _vevents(text)
+        orig = uid.split("|", 1)[1] if "|" in uid else ""
+        master = _master(blocks)
+        repeats = bool(_prop(master, "RRULE") or _prop(master, "RDATE"))
+        if not repeats or scope == "all":
+            changes = dict(ch)
+            if repeats and "start" in ch and orig:
+                shift = _aware(ch["start"]) - _aware(orig)
+                length = _aware(ch["end"]) - _aware(ch["start"])
+                ms = _ics_time(*_param_value(_prop(master, "DTSTART")))[0]
+                ms = _aware(ms) + shift
+                changes.update(start=ms, end=ms + length)
+            blocks[blocks.index(master)] = _vevent_edit(master, changes)
+        elif scope == "this":
+            o = _aware(orig)
+            rid = _ics_when("RECURRENCE-ID", o.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if not ch.get("all_day") else o.date().isoformat(), ch.get("all_day"))
+            old = next((b for b in blocks if b[0] == "BEGIN:VEVENT" and _prop(b, "RECURRENCE-ID") and _aware(_ics_time(*_param_value(_prop(b, "RECURRENCE-ID")))[0]) == o), None)
+            base = old or [l for l in master[:-1] if not l.startswith(("RRULE", "RDATE", "EXDATE"))] + [rid, master[-1]]
+            if not old and "start" not in ch:
+                length = _aware(_ics_time(*_param_value(_prop(master, "DTEND")))[0]) - _aware(_ics_time(*_param_value(_prop(master, "DTSTART")))[0]) if _prop(master, "DTEND") else dt.timedelta(hours=1)
+                ch = dict(ch, start=o, end=o + length)
+            edited = _vevent_edit(base, ch)
+            blocks = [b for b in blocks if b is not old] + [edited]
+        else:                   # this and following: stop the old series before this one, start a new one here
+            o = _aware(orig)
+            blocks[blocks.index(master)] = [_until(l, o) if l.startswith("RRULE") else l for l in master]
+            new_uid = f"made-{uuid.uuid4().hex}@calsync"
+            fresh = [l for l in master if not l.startswith(("UID", "EXDATE", "RECURRENCE-ID"))]
+            fresh.insert(1, f"UID:{new_uid}")
+            fresh = [re.sub(r";COUNT=\d+", "", l) if l.startswith("RRULE") else l for l in fresh]
+            if "start" not in ch:
+                length = _aware(_ics_time(*_param_value(_prop(master, "DTEND")))[0]) - _aware(_ics_time(*_param_value(_prop(master, "DTSTART")))[0]) if _prop(master, "DTEND") else dt.timedelta(hours=1)
+                ch = dict(ch, start=o, end=o + length)
+            self._put_raw(f"{self.url}{new_uid.split('@')[0]}.ics", [b for b in blocks if b[0] != "BEGIN:VEVENT"] + [_vevent_edit(fresh, ch)])
+        self._put_raw(href, blocks)
+
+    def delete_event(self, uid, scope="this", notify=True, href=None):
+        href, text = self._mine(href)
+        blocks = _vevents(text)
+        master = _master(blocks)
+        orig = uid.split("|", 1)[1] if "|" in uid else ""
+        if scope == "all" or not (_prop(master, "RRULE") or _prop(master, "RDATE")) or not orig:
+            return self.delete(href)
+        o = _aware(orig)
+        if scope == "this":
+            master.insert(-1, "EXDATE:" + o.astimezone(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+        else:
+            blocks[blocks.index(master)] = [_until(l, o) if l.startswith("RRULE") else l for l in master]
+        self._put_raw(href, blocks)
+
+    def _put_raw(self, href, blocks):
+        lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//calsync//calendar//EN", "CALSCALE:GREGORIAN", *[l for b in blocks for l in b], "END:VCALENDAR"]
+        body = "".join(part + "\r\n" for line in lines for part in _ics_fold(line))
+        status, raw, _ = self.client.request("PUT", href, body, {"Content-Type": "text/calendar; charset=utf-8"})
+        if status not in (200, 201, 204):
+            raise RuntimeError(f"writing to this calendar -> {status} {raw[:200].decode(errors='replace')}")
+
+    def changed_since(self, since):
+        return True     # CalDAV has no cheap check that every server supports; it syncs on the interval
 
     def _put(self, href, lines):
         stamp = now_utc().strftime("%Y%m%dT%H%M%SZ")
@@ -888,10 +1433,18 @@ class CalDavCalendar:
     def _copy(self, href, fields, copy_of, src_label):
         lines = [f"UID:{self._copy_uid(copy_of)}", _ics_when("DTSTART", fields["start"], fields["all_day"]), _ics_when("DTEND", fields["end"], fields["all_day"]),
                  "SUMMARY:" + _ics_escape(fields["title"]), "TRANSP:" + ("OPAQUE" if fields["busy"] else "TRANSPARENT"),
-                 "DESCRIPTION:" + _ics_escape(f"Synced from {src_label} by calsync. Edit the original there; changes here are overwritten."),
+                 "DESCRIPTION:" + _ics_escape(copy_note(src_label, fields)),
                  f"{ICS_TAG}:{_ics_escape(copy_of)}"]
         if fields["location"]:
             lines.append("LOCATION:" + _ics_escape(fields["location"]))
+        if fields.get("extra"):
+            lines.append(f"{ICS_TAG_X}:{fields['extra']}")
+        if fields.get("private"):
+            lines.append("CLASS:PRIVATE")
+        if fields.get("colour") in PALETTE:
+            lines.append(f"COLOR:{fields['colour']}")
+        if fields.get("reminders"):
+            lines += ["BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:Reminder", "TRIGGER:-PT15M", "END:VALARM"]
         self._put(href, lines)
 
     @staticmethod
@@ -947,81 +1500,144 @@ def _canceled(ev):
     return (ev.get("title") or "").lower().startswith(("canceled:", "cancelled:"))
 
 
-def sync(cals, adapters, dry_run=False, force=False, log=print, now=None):
-    """cals: list of calendar configs; adapters: name -> adapter. Returns a summary dict."""
+def sync(cals, adapters, dry_run=False, force=False, log=print, now=None, cfg=None, decisions=None, pair=None, refresh=False):
+    """cals: list of calendar configs; adapters: name -> adapter. Returns a summary dict.
+    cfg: the whole config, for the rules (cfg["rules"]), the window and kept copies; without it the older per-calendar
+    settings apply. decisions: a list that gets, for every source event and every calendar it could go to, whether it
+    was copied and why (the Preview's "why"). pair: "SRC>DST" to sync only that direction; refresh rewrites its copies."""
     now = now or now_utc()
-    tmin = (now - dt.timedelta(days=PAST_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    tmax = (now + dt.timedelta(days=FUTURE_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cfg = dict(cfg or {}, calendars=cals)
+    tmin, tmax = sync_window(cfg, now)
+    only_src, only_dst = pair.split(">", 1) if pair else (None, None)
     listed, failed = {}, set()
     for c in cals:
+        if pair and c["name"] not in (only_src, only_dst):
+            continue
         try:
             listed[c["name"]] = adapters[c["name"]].list(tmin, tmax)
         except Exception as e:  # one bad calendar must not stop the rest, nor delete its copies
             failed.add(c["name"])
             log(f"! {c['name']}: list failed: {e}")
     labels = {c["name"]: c.get("label") or c["name"] for c in cals}
-    skips = skipped()       # occurrences the person marked "Skip this one": not copied, so their copies go
-    sources = {n: [e for e in evs if not e["copy_of"] and not e["declined"] and not _canceled(e) and f"{n}|{e['uid']}" not in skips]
-               for n, evs in listed.items()}
-    summary = {"created": 0, "updated": 0, "deleted": 0, "skipped_deletes": 0, "failed": sorted(failed), "errors": 0}
+    skips = skipped(cfg)    # occurrences the person marked "Skip this one": not copied, so their copies go
+    kept = set(cfg.get("kept_sources", []))     # calendars taken out with "keep the copies": their copies are left alone
+    sources, why_not = {}, []
+    for n, evs in listed.items():
+        sources[n] = []
+        for e in evs:
+            why = not_a_source(e, n, skips)
+            if why is None:
+                sources[n].append(e)
+            elif not e.get("copy_of"):
+                why_not.append((n, e, why))
+    summary = {"created": 0, "updated": 0, "deleted": 0, "skipped_deletes": 0, "failed": sorted(failed), "errors": 0, "pairs": {}}
+
+    def tell(src, dst, ev, copied, reason, action=""):
+        if decisions is not None:
+            decisions.append({"src": src, "dst": dst, "title": ev.get("title") or "(no title)", "start": ev["start"], "end": ev["end"], "all_day": ev["all_day"],
+                              "private": bool(ev.get("private")), "copied": copied, "reason": reason, "action": action})
+
+    def count(src, dst, what):
+        p = summary["pairs"].setdefault(f"{src}>{dst}", {"created": 0, "updated": 0, "deleted": 0, "errors": 0})
+        p[what] += 1
 
     for dst in cals:
         name = dst["name"]
-        if dst.get("read_only") or getattr(adapters[name], "read_only", False) or name in failed:
+        if pair and name != only_dst:
+            continue
+        unwritable = dst.get("read_only") or getattr(adapters[name], "read_only", False)
+        if unwritable or name in failed:
+            for src, evs in sources.items():
+                if src != name and decisions is not None:
+                    for ev in evs:
+                        tell(src, name, ev, False, f"{labels[name]} is never written to" if unwritable else f"{labels[name]} couldn't be read just now")
             continue
         ad = adapters[name]
         # A meeting you were invited to on several accounts already sits on dst natively: don't add a second copy.
         native = {e["ical"] for e in listed[name] if not e["copy_of"] and e.get("ical")}
-        desired = {}
+        desired, rules = {}, {}
         for src, evs in sources.items():
-            if src == name or src in dst.get("skip_sources", []):
+            if src == name or (pair and src != only_src):
                 continue
+            rule = rules[src] = rule_for(src, dst, cfg)
             for ev in evs:
-                if ev.get("ical") and ev["ical"] in native:
+                if not rule["enabled"]:
+                    tell(src, name, ev, False, f"copying from {labels[src]} to {labels[name]} is off")
                     continue
-                hide = dst.get("busy_only") or ev["private"]   # a Busy copy doesn't say which calendar it came from either
-                desired[f"{src}|{ev['uid']}"] = (render(ev, src, dst), "another calendar" if hide else labels[src])
+                if ev.get("ical") and ev["ical"] in native:
+                    tell(src, name, ev, False, f"it's already on {labels[name]} through an invite")
+                    continue
+                why = filtered_out(ev, rule)
+                if why:
+                    tell(src, name, ev, False, why)
+                    continue
+                fields = render(ev, src, dst, rule, labels[src])
+                desired[f"{src}|{ev['uid']}"] = (fields, fields.pop("label"), ev)
         existing = {}
         dupes = []
         for ev in listed[name]:
             if ev["copy_of"]:
+                if pair and ev["copy_of"].split("|", 1)[0] != only_src:
+                    continue
                 if ev["copy_of"] in existing:
                     dupes.append(ev)
                 else:
                     existing[ev["copy_of"]] = ev
-        to_delete = [ev for key, ev in existing.items()
-                     if key not in desired and key.split("|", 1)[0] not in failed] + dupes
+
+        def leave_alone(key):
+            src = key.split("|", 1)[0]
+            r = rules.get(src) or (rule_for(src, dst, cfg) if src in labels else None)
+            return src in failed or src in kept or (r is not None and not r["enabled"] and r["keep_copies"])
+        to_delete = [ev for key, ev in existing.items() if key not in desired and not leave_alone(key)] + dupes
         total_copies = len(existing) + len(dupes)
         if to_delete and not force and len(to_delete) > max(10, total_copies // 2):
             log(f"! {name}: would delete {len(to_delete)} of {total_copies} copies; skipped (run with --force if intended)")
             summary["skipped_deletes"] += len(to_delete)
             to_delete = []
 
-        for key, (fields, label) in desired.items():
+        for key, (fields, label, ev) in desired.items():
             have = existing.get(key)
+            src = key.split("|", 1)[0]
+            shown = '"' + fields["title"] + '"' + (" with details" if fields.get("notes") else "")
             try:
                 if have is None:
                     log(f"+ {name}: {fields['title']} {fields['start']}")
+                    tell(src, name, ev, True, f"copied as {shown}", "add")
                     if not dry_run:
                         ad.create(fields, key, label)
                     summary["created"] += 1
-                elif comparable(have) != fields:
+                    count(src, name, "created")
+                elif refresh or not same_copy(have, fields):
                     log(f"~ {name}: {fields['title']} {fields['start']}")
+                    tell(src, name, ev, True, f"copied as {shown}; the copy there is out of date", "update")
                     if not dry_run:
                         ad.update(have["uid"], fields, key, label)
                     summary["updated"] += 1
+                    count(src, name, "updated")
+                else:
+                    tell(src, name, ev, True, f"copied as {shown}; already up to date")
             except Exception as e:
                 summary["errors"] += 1
+                count(src, name, "errors")
                 log(f"! {name}: write failed for {key}: {e}")
         for ev in to_delete:
+            src = (ev.get("copy_of") or "?|").split("|", 1)[0]
             try:
                 log(f"- {name}: {ev['title']} {ev['start']}")
+                if decisions is not None:
+                    decisions.append({"src": src, "dst": name, "title": ev.get("title") or "", "start": ev["start"], "end": ev["end"], "all_day": ev["all_day"],
+                                      "private": False, "copied": False, "action": "remove",
+                                      "reason": "its original is gone, or changed so a rule now leaves it out, or its calendar left CalSync"})
                 if not dry_run:
                     ad.delete(ev["uid"])
                 summary["deleted"] += 1
+                count(src, name, "deleted")
             except Exception as e:
                 summary["errors"] += 1
+                count(src, name, "errors")
                 log(f"! {name}: delete failed for {ev['uid']}: {e}")
+    for src, ev, why in why_not:
+        tell(src, "", ev, False, why)
     return summary
 
 
@@ -1083,8 +1699,172 @@ def _client(provider):
     return c
 
 
+# ---------- one-click sign-in: CalSync's own Google and Microsoft apps, PKCE and a loopback redirect ----------
+# Like Thunderbird, rclone and gcalcli, CalSync ships its own "installed app" clients, so signing in is one button.
+# Google documents that an installed (Desktop) app's client secret can't be kept secret and isn't treated as one: it
+# only identifies the app. What protects the sign-in is PKCE (RFC 7636): the code Google sends back is useless without
+# the verifier, which never leaves this machine. Microsoft's app is a public client with no secret at all. Both send the
+# browser back to this computer (127.0.0.1 or localhost), so only a CalSync running here can finish the sign-in.
+# Self-hosters can still use their own apps (Advanced on the Connect page), and these can be overridden for testing.
+
+# The CalSync Google project (calsync-516104), "CalSync desktop and self-hosted" Desktop client. Not confidential: see above.
+CALSYNC_GOOGLE_ID = "463893300981-jhvspr3td5p3vj04a6djgr43f7rfgs4g.apps.googleusercontent.com"
+CALSYNC_GOOGLE_SECRET = "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"
+# Until Google verifies the app, it shows "Google hasn't verified this app" first, and at most 100 people can sign in.
+GOOGLE_UNVERIFIED = True
+CALSYNC_MICROSOFT_ID = "a2275ea1-af64-4bbb-b10b-a5841ac41268"     # the CalSync Entra app: public client, redirect http://localhost, no secret
+OAUTH = {
+    "google": {"authorize": "https://accounts.google.com/o/oauth2/v2/auth", "token": "https://oauth2.googleapis.com/token",
+               "scope": GOOGLE_SCOPES, "host": "127.0.0.1", "path": "/oauth/google"},
+    "microsoft": {"authorize": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+                  "token": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+                  "scope": MS_SCOPES, "host": "localhost", "path": ""},
+    # The CalSync Entra app registers exactly "http://localhost": Microsoft lets the port vary for localhost but not the
+    # path, so the redirect is http://localhost:PORT and the browser comes back to "/" (the page sends it on by its state).
+}
+UNVERIFIED_HINT = ("Google may say \"Google hasn't verified this app\". CalSync is waiting for Google's review. "
+                   "To go on, click Advanced, then Go to CalSync, then Continue.")
+ADMIN_ONLY = re.compile(r"AADSTS(65001|90094|90095|50105|530003)|admin(istrator)?\s+(approval|consent)|need[s]?\s+admin", re.I)
+
+
+def builtin_app(provider):
+    """CalSync's own app for google or microsoft: {"client_id", ["client_secret"]}, or None while this build has none."""
+    if provider == "google":
+        cid = os.environ.get("CALSYNC_GOOGLE_CLIENT_ID") or CALSYNC_GOOGLE_ID
+        out = {"client_id": cid, "client_secret": os.environ.get("CALSYNC_GOOGLE_CLIENT_SECRET") or CALSYNC_GOOGLE_SECRET}
+    elif provider == "microsoft":
+        cid = os.environ.get("CALSYNC_MS_CLIENT_ID") or CALSYNC_MICROSOFT_ID
+        out = {"client_id": cid}
+    else:
+        raise ValueError(provider)
+    return None if cid.startswith("REPLACE-") else out
+
+
+def pkce():
+    """-> (verifier, challenge): 64 random bytes as the verifier, its SHA-256 as the S256 challenge."""
+    verifier = base64.urlsafe_b64encode(os.urandom(64)).rstrip(b"=").decode()
+    return verifier, pkce_challenge(verifier)
+
+
+def pkce_challenge(verifier):
+    return base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+
+
+def loopback_redirect(provider, port):
+    o = OAUTH[provider]
+    return f"http://{o['host']}:{int(port)}{o['path']}"
+
+
+def oauth_start(provider, redirect):
+    """Begin a one-click sign-in. -> {"state", "verifier", "url"}: send the person's browser to url, keep the rest."""
+    app = builtin_app(provider)
+    if not app:
+        raise RuntimeError(f"this copy of CalSync has no built-in {provider.title()} sign-in; use your own app under Advanced")
+    o, (verifier, challenge), state = OAUTH[provider], pkce(), base64.urlsafe_b64encode(os.urandom(24)).rstrip(b"=").decode()
+    q = {"client_id": app["client_id"], "redirect_uri": redirect, "response_type": "code", "scope": o["scope"],
+         "state": state, "code_challenge": challenge, "code_challenge_method": "S256"}
+    q.update({"access_type": "offline", "prompt": "consent"} if provider == "google" else {"response_mode": "query", "prompt": "select_account"})
+    return {"state": state, "verifier": verifier, "url": o["authorize"] + "?" + urllib.parse.urlencode(q)}
+
+
+class SignInBlocked(RuntimeError):
+    """A work or school account whose organisation makes an administrator approve outside apps."""
+
+
+def oauth_refused(provider, params):
+    """What the provider's error coming back to the redirect means, in plain words. Raises SignInBlocked for "needs an admin"."""
+    err = (params.get("error") or "").strip()
+    desc = (params.get("error_description") or "").strip()
+    if ADMIN_ONLY.search(desc) or ADMIN_ONLY.search(err) or err == "consent_required":
+        raise SignInBlocked(desc[:300])
+    if err == "access_denied":
+        return "You didn't allow CalSync, so nothing was connected."
+    return f"{provider.title()} didn't finish the sign-in ({err or 'no reason given'}). Nothing was connected."
+
+
+def next_label(provider):
+    """A name for a new account: google, google-2, microsoft... The calendars on it are named when you pick them."""
+    base, have = provider, set(_accounts())
+    return base if base not in have else next(f"{base}-{i}" for i in range(2, 1000) if f"{base}-{i}" not in have)
+
+
+def oauth_finish(provider, code, verifier, redirect, label=None):
+    """Trade the code for a refresh token with the PKCE verifier, and store the account. -> its label."""
+    app = builtin_app(provider)
+    if not app:
+        raise RuntimeError(f"this copy of CalSync has no built-in {provider.title()} sign-in")
+    form = {"client_id": app["client_id"], "code": code, "code_verifier": verifier, "redirect_uri": redirect, "grant_type": "authorization_code"}
+    if provider == "google":
+        form["client_secret"] = app["client_secret"]
+    else:
+        form["scope"] = MS_SCOPES
+    try:
+        r = http("POST", OAUTH[provider]["token"], form=form)
+    except RuntimeError as e:
+        if ADMIN_ONLY.search(str(e)):
+            raise SignInBlocked(str(e)[:300]) from None
+        raise
+    if "refresh_token" not in r:
+        raise RuntimeError(f"{provider.title()} gave no lasting sign-in. Remove CalSync from your account's connected apps and try again.")
+    label = label or next_label(provider)
+    _save_account(label, {"provider": "google" if provider == "google" else "outlook", "app": "calsync", "refresh_token": r["refresh_token"],
+                          **({"tenant": "common"} if provider == "microsoft" else {})})
+    return label
+
+
+def loopback_signin(provider, label=None, open_browser=None, timeout=600, ready=None):
+    """One-click sign-in from the command line: listen on 127.0.0.1 on a random free port for the redirect, open the
+    system browser, wait. -> the account's label. ready(url) is called once listening (tests use it instead of a browser)."""
+    import http.server, socketserver
+    got = {}
+    done = threading.Event()
+
+    class Back(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):          # the address holds the code
+            pass
+
+        def do_GET(self):
+            u = urllib.parse.urlparse(self.path)
+            if u.path != (OAUTH[provider]["path"] or "/"):
+                self.send_response(404)
+                self.end_headers()
+                return
+            got.update({k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()})
+            body = b"<!doctype html><meta charset=utf-8><title>CalSync</title><p style='font:17px system-ui;margin:48px'>Done. You can close this tab and go back to CalSync.</p>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            done.set()
+
+    bind = "127.0.0.1"
+    with socketserver.TCPServer((bind, 0), Back) as srv:
+        redirect = loopback_redirect(provider, srv.server_address[1])
+        flow = oauth_start(provider, redirect)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            if ready:
+                ready(flow["url"])
+            else:
+                import webbrowser
+                (open_browser or webbrowser.open)(flow["url"])
+            if not done.wait(timeout):
+                raise RuntimeError("timed out waiting for the sign-in")
+        finally:
+            srv.shutdown()
+    if got.get("state") != flow["state"]:
+        raise RuntimeError("the sign-in came back for a different request, so it was ignored")
+    if "code" not in got:
+        raise RuntimeError(oauth_refused(provider, got))
+    return oauth_finish(provider, got["code"], flow["verifier"], redirect, label)
+
+
 def google_access_token(label):
-    acct, c = _accounts()[label], _client("google")
+    acct = _accounts()[label]
+    c = (builtin_app("google") or {}) if acct.get("app") == "calsync" else _client("google")
+    if not c:
+        raise RuntimeError("not signed in: this account used CalSync's own Google app, which this copy doesn't have")
     r = http("POST", "https://oauth2.googleapis.com/token", form={
         "client_id": c["client_id"], "client_secret": c["client_secret"],
         "refresh_token": acct["refresh_token"], "grant_type": "refresh_token"})
@@ -1092,10 +1872,14 @@ def google_access_token(label):
 
 
 def microsoft_access_token(label):
-    acct, c = _accounts()[label], _client("microsoft")
-    r = http("POST", f"https://login.microsoftonline.com/{acct.get('tenant', 'common')}/oauth2/v2.0/token", form={
-        "client_id": c["client_id"], "grant_type": "refresh_token", "refresh_token": acct["refresh_token"],
-        "scope": MS_SCOPES})
+    acct = _accounts()[label]
+    c = (builtin_app("microsoft") or {}) if acct.get("app") == "calsync" else _client("microsoft")
+    if not c:
+        raise RuntimeError("not signed in: this account used CalSync's own Microsoft app, which this copy doesn't have")
+    form = {"client_id": c["client_id"], "grant_type": "refresh_token", "refresh_token": acct["refresh_token"], "scope": MS_SCOPES}
+    if acct.get("app") != "calsync" and c.get("client_secret"):     # a web app's secret (CalSync Hosted) only ever goes with its own tokens
+        form["client_secret"] = c["client_secret"]
+    r = http("POST", f"https://login.microsoftonline.com/{acct.get('tenant', 'common')}/oauth2/v2.0/token", form=form)
     if r.get("refresh_token"):  # Microsoft rotates refresh tokens
         acct["refresh_token"] = r["refresh_token"]
         _save_account(label, acct)
@@ -1179,6 +1963,13 @@ def cmd_setup(provider):
 
 
 def cmd_auth_google(label):
+    if builtin_app("google") and not load_json(os.path.join(SECRETS, "google-client.json"), None):
+        print("Opening your browser to sign in to Google...")
+        if GOOGLE_UNVERIFIED:
+            print(UNVERIFIED_HINT)
+        label = loopback_signin("google", label)
+        print(f"Signed in {label!r}. Its calendars:")
+        return _print_calendars(label)
     c = _client("google")
     print("1. Open this link in your browser and sign in as the account for", repr(label) + ":\n\n" + google_auth_url(c["client_id"], GOOGLE_REDIRECT) + "\n")
     print("2. After you click Allow, the browser shows an error page at 127.0.0.1. That's expected.")
@@ -1192,6 +1983,15 @@ def cmd_auth_google(label):
 
 
 def cmd_auth_outlook(label, tenant="common"):
+    if builtin_app("microsoft") and not load_json(os.path.join(SECRETS, "microsoft-client.json"), None):
+        print("Opening your browser to sign in to Microsoft...")
+        try:
+            label = loopback_signin("microsoft", label)
+        except SignInBlocked:
+            raise SystemExit("Your organisation needs an administrator to approve CalSync. You can still sync this calendar one way "
+                             "with a published .ics link: calsync auth ics NAME") from None
+        print(f"Signed in {label!r}. Its calendars:")
+        return _print_calendars(label)
     r = microsoft_device_start(tenant)
     print(r["message"])
     deadline = time.time() + int(r.get("expires_in", 900))
@@ -1525,12 +2325,99 @@ def _ics_when(key, value, all_day):
     return f"{key}:{value.replace('-', '').replace(':', '')}"
 
 
+def _vevents(text):
+    """The components inside a VCALENDAR (VEVENTs, VTIMEZONEs...) as lists of unfolded lines, BEGIN and END included."""
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n ", "").replace("\n\t", "").split("\n")
+    out, cur, depth = [], None, 0
+    for line in lines:
+        if line.startswith("BEGIN:") and line != "BEGIN:VCALENDAR":
+            if depth == 0:
+                cur = []
+            depth += 1
+        if cur is not None:
+            cur.append(line)
+        if line.startswith("END:") and line != "END:VCALENDAR" and depth:
+            depth -= 1
+            if depth == 0:
+                out.append(cur)
+                cur = None
+    return out
+
+
+def _master(blocks):
+    return next(b for b in blocks if b[0] == "BEGIN:VEVENT" and not _prop(b, "RECURRENCE-ID"))
+
+
+def _prop(block, name):
+    """The first top-level line of this property in a component, or None."""
+    depth = 0
+    for line in block[1:-1]:
+        depth += line.startswith("BEGIN:") - line.startswith("END:")
+        if depth == 0 and re.match(re.escape(name) + r"[;:]", line):
+            return line
+    return None
+
+
+def _param_value(line):
+    head, value = line.split(":", 1)
+    params = dict(p.split("=", 1) for p in head.split(";")[1:] if "=" in p)
+    return {k.upper(): v.strip('"') for k, v in params.items()}, value
+
+
+def _ics_time_text(v, all_day):
+    if all_day:
+        return _day(v)
+    return _aware(v).astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _vevent_edit(block, ch):
+    """A VEVENT with the Calendar tab's changes applied: title, start/end, all_day, location, description, busy, private, colour, repeat."""
+    sets = {}
+    if "title" in ch:
+        sets["SUMMARY"] = "SUMMARY:" + _ics_escape(ch["title"])
+    if "start" in ch:
+        sets["DTSTART"] = _ics_when("DTSTART", _ics_time_text(ch["start"], ch.get("all_day")), ch.get("all_day"))
+        sets["DTEND"] = _ics_when("DTEND", _ics_time_text(ch["end"], ch.get("all_day")), ch.get("all_day"))
+        sets["DURATION"] = None
+    if "location" in ch:
+        sets["LOCATION"] = "LOCATION:" + _ics_escape(ch["location"]) if ch["location"] else None
+    if "description" in ch:
+        sets["DESCRIPTION"] = "DESCRIPTION:" + _ics_escape(ch["description"]) if ch["description"] else None
+    if "busy" in ch:
+        sets["TRANSP"] = "TRANSP:" + ("OPAQUE" if ch["busy"] else "TRANSPARENT")
+    if "private" in ch:
+        sets["CLASS"] = "CLASS:" + ("PRIVATE" if ch["private"] else "PUBLIC")
+    if "colour" in ch:
+        sets["COLOR"] = f"COLOR:{ch['colour']}" if ch["colour"] in PALETTE else None
+    if "repeat" in ch:
+        sets["RRULE"] = f"RRULE:{ch['repeat']}" if ch["repeat"] else None
+    out, depth, done = [block[0]], 0, set()
+    for line in block[1:-1]:
+        name = re.match(r"[A-Za-z-]+", line)
+        name = name.group(0).upper() if name else ""
+        depth += line.startswith("BEGIN:") - line.startswith("END:")
+        if depth == 0 and name in sets:
+            if sets[name] and name not in done:
+                out.append(sets[name])
+            done.add(name)
+            continue
+        out.append(line)
+    out += [v for k, v in sets.items() if v and k not in done]
+    return out + [block[-1]]
+
+
+def _vevent_lines(ev):
+    """The lines of a new VEVENT (UID and DTSTAMP are added by the writer)."""
+    block = _vevent_edit(["BEGIN:VEVENT", "END:VEVENT"], {k: ev[k] for k in ("title", "start", "end", "all_day", "location", "description", "busy", "private", "colour", "repeat") if k in ev})
+    return block[1:-1]
+
+
 def ics_file(name, label, events, stamp):
     """A calendar of expanded instances, each with its own UID. Same hiding as a copy: a private event says Busy.
     A location holding a link is left out, since join links can carry passcodes."""
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//calsync//export//EN", "CALSCALE:GREGORIAN", "X-WR-CALNAME:" + _ics_escape(label)]
     for ev in events:
-        f = render(ev, name, {})
+        f = render(ev, name, {"name": ""}, rule_for(name, "", {}))
         uid = hashlib.sha256(f"{name}|{ev['uid']}".encode()).hexdigest()[:32]
         lines += ["BEGIN:VEVENT", f"UID:{uid}@calsync", "DTSTAMP:" + stamp,
                   _ics_when("DTSTART", f["start"], f["all_day"]), _ics_when("DTEND", f["end"], f["all_day"]),
@@ -1554,7 +2441,7 @@ def export_calendars(cfg, cals, adapters, now=None):
     for name in cfg["calendars"]:
         keep = []
         for ev in sorted(list_for_people(adapters[name], tmin, tmax), key=lambda e: (e["start"], e["uid"])):
-            if ev["copy_of"] or ev["declined"] or _canceled(ev):  # the same rule sync uses for a source event
+            if ev["copy_of"] or ev["declined"] or _canceled(ev) or ev.get("kind") == "birthday":  # the same rule sync uses for a source event
                 continue
             key = (ev.get("ical") or f"{name}|{ev['uid']}", ev["start"])
             if key not in seen:
@@ -1574,19 +2461,87 @@ def export_calendars(cfg, cals, adapters, now=None):
 
 # ---------- CLI ----------
 
-def run_once(dry_run=False, force=False, log=print):
-    """One whole pass. Returns the summary, or None if a run is already going. Problems land in summary["problems"]."""
+ACTIVITY_KEEP = 300      # runs kept in the activity log
+
+
+def record_activity(entry):
+    """Add one run to the activity log (activity.jsonl in the settings folder, private to this machine)."""
+    with file_lock("activity.lock"):
+        try:
+            with open(ACTIVITY, encoding="utf-8") as f:
+                rows = f.read().splitlines()[-(ACTIVITY_KEEP - 1):]
+        except FileNotFoundError:
+            rows = []
+        rows.append(json.dumps(entry))
+        tmp = ACTIVITY + ".tmp"
+        with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as f:
+            f.write("\n".join(rows) + "\n")
+        os.replace(tmp, ACTIVITY)
+
+
+def activity(limit=50, pair=None):
+    """The latest runs, newest first. pair="SRC>DST" keeps only runs that changed that direction, and only its lines."""
+    try:
+        with open(ACTIVITY, encoding="utf-8") as f:
+            rows = [json.loads(r) for r in f.read().splitlines() if r.strip()]
+    except (FileNotFoundError, ValueError):
+        return []
+    out = []
+    for r in reversed(rows):
+        if pair:
+            if pair not in r.get("pairs", {}) and not r.get("pair") == pair:
+                continue
+            src, dst = pair.split(">", 1)
+            r = dict(r, lines=[l for l in r.get("lines", []) if l[2:].startswith(dst + ":")])
+        out.append(r)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def pair_status(cfg=None, last=None, running=False):
+    """"SRC>DST" -> ("synced" | "syncing" | "error" | "off" | "waiting", a few words), from the last run."""
+    cfg = cfg or load_json(CONFIG, {"calendars": []})
+    last = last if last is not None else load_json(LASTRUN, None)
+    cals = cfg["calendars"]
+    out = {}
+    for d in cals:
+        for s in cals:
+            if s["name"] == d["name"]:
+                continue
+            key = f"{s['name']}>{d['name']}"
+            rule = rule_for(s["name"], d["name"], cfg)
+            writable = not d.get("read_only")
+            p = (last or {}).get("pairs", {}).get(key, {})
+            if not writable or not rule["enabled"]:
+                out[key] = ("off", "off" if writable else f"{d.get('label') or d['name']} is never written to")
+            elif running:
+                out[key] = ("syncing", "syncing now")
+            elif not last or not cfg.get("enabled"):
+                out[key] = ("waiting", "not started yet")
+            elif s["name"] in last.get("failed", []) or d["name"] in last.get("failed", []) or p.get("errors"):
+                out[key] = ("error", "had a problem at the last run")
+            else:
+                out[key] = ("synced", "synced")
+    return out
+
+
+def run_once(dry_run=False, force=False, log=print, decisions=None, pair=None, refresh=False, trigger="timer"):
+    """One whole pass. Returns the summary, or None if a run is already going. Problems land in summary["problems"].
+    decisions: see sync(). pair and refresh: a Resync of one direction. Real runs are written to the activity log."""
     with file_lock("run.lock", blocking=False) as free:  # one run at a time: the timer, `calsync new` and the web page can overlap
         if not free:
             return None
         cfg = load_json(CONFIG, {"calendars": []})
         cals = cfg["calendars"]
         started = now_utc()
-        problems = []
+        problems, changes = [], []
 
         def note(line):
             if line.startswith("!"):
                 problems.append(line)
+            elif line[:2] in ("+ ", "~ ", "- "):
+                changes.append(line)
             log(line)
 
         if len(cals) < 2:
@@ -1595,24 +2550,24 @@ def run_once(dry_run=False, force=False, log=print):
         else:
             adapters = {c["name"]: make_adapter(c) for c in cals}
             added, qa_errors, qa = 0, 0, cfg.get("quick_add")
-            if qa and not dry_run:  # before the sync, so new events are copied everywhere in this same run
+            if qa and not dry_run and not pair:  # before the sync, so new events are copied everywhere in this same run
                 try:
                     added = quick_add_note(qa["note"], adapters[qa["calendar"]], log=note)
                 except Exception as e:
                     qa_errors = 1
                     note(f"! quick-add: {e}")
-            s = sync(cals, adapters, dry_run=dry_run, force=force, log=note)
+            s = sync(cals, adapters, dry_run=dry_run, force=force, log=note, cfg=cfg, decisions=decisions, pair=pair, refresh=refresh)
             s["errors"] += qa_errors
             s["quick_added"] = added
             ag = cfg.get("agenda")
-            if ag and not dry_run:  # after the sync, so it shows the copies this run just made
+            if ag and not dry_run and not pair:  # after the sync, so it shows the copies this run just made
                 try:
                     s["agenda_files"] = write_agenda(ag, adapters[ag["calendar"]])
                 except Exception as e:
                     s["errors"] += 1
                     note(f"! agenda: {e}")
             ex = cfg.get("export")
-            if ex and not dry_run:
+            if ex and not dry_run and not pair:
                 try:
                     s["exported"] = export_calendars(ex, cals, adapters)
                 except Exception as e:
@@ -1620,7 +2575,17 @@ def run_once(dry_run=False, force=False, log=print):
                     note(f"! export: {e}")
         s.update(at=started.strftime("%Y-%m-%dT%H:%M:%SZ"), dry_run=dry_run, seconds=round((now_utc() - started).total_seconds(), 1), problems=problems[:20])
         if not dry_run:
-            save_json(LASTRUN, s)
+            if pair:        # a Resync of one direction updates that pair's line in the last run, not the whole run
+                last = load_json(LASTRUN, None) or {}
+                last.setdefault("pairs", {})[pair] = s.get("pairs", {}).get(pair, {"created": 0, "updated": 0, "deleted": 0, "errors": 0})
+                save_json(LASTRUN, last if last.get("at") else s)
+            else:
+                save_json(LASTRUN, s)
+            try:
+                record_activity({k: s.get(k) for k in ("at", "created", "updated", "deleted", "errors", "skipped_deletes", "failed", "pairs", "seconds", "problems")}
+                                | {"trigger": trigger, "pair": pair, "lines": changes[:200]})
+            except OSError:
+                pass
         return s
 
 
@@ -1789,6 +2754,205 @@ def main_calendar(cfg):
     raise SystemExit("No calendar to add to yet: add one with `calsync add`.")
 
 
+# ---------- the Calendar tab's own events: create, edit, move, delete, answer; search ----------
+# These write real events, not copies. The next sync copies them out through the rules, like any other event.
+
+REPEATS = {"": "Doesn't repeat", "daily": "Every day", "weekdays": "Every weekday", "weekly": "Every week",
+           "monthly": "Every month", "yearly": "Every year"}
+SCOPES = ("this", "following", "all")
+MAX_TEXT = 4000
+
+
+def repeat_rule(preset, start, until=None, count=None):
+    """A repeat choice from the editor as an RRULE (without "RRULE:"), or "" for none."""
+    if not preset:
+        return ""
+    local = _aware(start).astimezone(local_tz())
+    rule = {"daily": "FREQ=DAILY", "weekdays": "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+            "weekly": f"FREQ=WEEKLY;BYDAY={DAYS[local.weekday()][:2].upper()}",
+            "monthly": "FREQ=MONTHLY", "yearly": "FREQ=YEARLY"}[preset]
+    if until:
+        rule += ";UNTIL=" + _aware(until).replace(hour=23, minute=59).astimezone(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    elif count:
+        rule += f";COUNT={max(1, min(int(count), 730))}"
+    return rule
+
+
+def calendar_named(name, cfg=None):
+    cfg = cfg or load_json(CONFIG, {"calendars": []})
+    c = next((c for c in cfg["calendars"] if c["name"] == name), None)
+    if not c:
+        raise ValueError(f"{name} isn't one of your calendars")
+    return c
+
+
+def _editable(name, cfg=None):
+    c = calendar_named(name, cfg)
+    if c.get("read_only") or c.get("cannot_write"):
+        raise ValueError(f"{c.get('label') or name} is read only in CalSync, so edit this event where it lives")
+    ad = make_adapter(c)
+    if not hasattr(ad, "create_event"):
+        raise ValueError(f"{c.get('label') or name} can't be edited from CalSync")
+    return ad
+
+
+def clean_event(raw, partial=False):
+    """Fields from the editor or an agent, checked: title, start, end, all_day, location, description, busy,
+    private, colour, guests, conference, repeat, remind_minutes. partial keeps only the keys given."""
+    out = {}
+    text = lambda v, n: re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", str(v or ""))[:n]
+    if "title" in raw or not partial:
+        out["title"] = text(raw.get("title"), 300).strip() or "(no title)"
+    if "start" in raw or not partial:
+        all_day = bool(raw.get("all_day"))
+        start, end = _aware(raw["start"]), _aware(raw.get("end") or raw["start"])
+        if all_day:
+            start, end = start.date(), max(end.date(), start.date())
+            end = end + dt.timedelta(days=1) if end == start or raw.get("end_inclusive") else end
+        elif end <= start:
+            end = start + dt.timedelta(hours=1)
+        if (end - start) > dt.timedelta(days=60):
+            raise ValueError("an event can be at most 60 days long")
+        out.update(start=start, end=end, all_day=all_day)
+    for k, n in (("location", 500), ("description", MAX_TEXT)):
+        if k in raw:
+            out[k] = text(raw[k], n).strip()
+    for k in ("busy", "private"):
+        if k in raw:
+            out[k] = bool(raw[k])
+    if "colour" in raw:
+        out["colour"] = raw["colour"] if raw["colour"] in PALETTE else ""
+    if "guests" in raw:
+        guests = raw["guests"] if isinstance(raw["guests"], list) else _EMAIL.findall(str(raw["guests"] or ""))
+        guests = sorted({g.strip().lower() for g in guests if _EMAIL.fullmatch(g.strip())})
+        if len(guests) > MAX_GUESTS:
+            raise ValueError(f"at most {MAX_GUESTS} guests")
+        out["guests"] = guests
+    if raw.get("conference") in ("meet", "teams") or str(raw.get("conference") or "").startswith("https://"):
+        out["conference"] = str(raw["conference"])[:500]
+    if "repeat" in raw:
+        rule = str(raw["repeat"] or "")
+        if rule and not re.fullmatch(r"FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(;(INTERVAL=\d{1,3}|BYDAY=[A-Z,]{2,20}|UNTIL=\d{8}T\d{6}Z|COUNT=\d{1,3}))*", rule):
+            raise ValueError("that repeat rule isn't one CalSync can write")
+        out["repeat"] = rule
+    if raw.get("remind_minutes") not in (None, ""):
+        out["remind_minutes"] = max(0, min(int(raw["remind_minutes"]), 40320))
+    return out
+
+
+def event_create(cal_name, raw, notify=True):
+    ad = _editable(cal_name)
+    ev = clean_event(raw)
+    if ev.get("guests") and not isinstance(ad, (GoogleCalendar, OutlookCalendar)):
+        raise ValueError("invites go out from a Google or Microsoft calendar")
+    if ev.get("conference") == "meet" and not isinstance(ad, GoogleCalendar):
+        raise ValueError("a Meet link comes from a Google calendar")
+    if ev.get("conference") == "teams" and not isinstance(ad, OutlookCalendar):
+        raise ValueError("a Teams link comes from a Microsoft calendar")
+    return ad.create_event(ev, notify=notify)
+
+
+def event_update(cal_name, uid, raw, scope="this", notify=True, href=None):
+    ad = _editable(cal_name)
+    ch = clean_event(raw, partial=True)
+    scope = scope if scope in SCOPES else "this"
+    if isinstance(ad, CalDavCalendar):
+        return ad.update_event(uid, ch, scope, notify, href=href)
+    return ad.update_event(uid, ch, scope, notify)
+
+
+def event_delete(cal_name, uid, scope="this", notify=True, href=None):
+    ad = _editable(cal_name)
+    scope = scope if scope in SCOPES else "this"
+    if isinstance(ad, CalDavCalendar):
+        return ad.delete_event(uid, scope, notify, href=href)
+    return ad.delete_event(uid, scope, notify)
+
+
+def event_respond(cal_name, uid, answer):
+    if answer not in ("yes", "maybe", "no"):
+        raise ValueError("answer yes, maybe or no")
+    ad = make_adapter(calendar_named(cal_name))
+    if not hasattr(ad, "respond"):
+        raise ValueError("answer this invite where it was sent: this calendar can't answer from CalSync")
+    ad.respond(uid, answer)
+
+
+def original_of(copy_of, cfg=None):
+    """A copy's original: (calendar config, event uid), or None if its calendar is gone. Editing a copy edits this."""
+    src, _, uid = (copy_of or "").partition("|")
+    cfg = cfg or load_json(CONFIG, {"calendars": []})
+    c = next((c for c in cfg["calendars"] if c["name"] == src), None)
+    return (c, uid) if c and uid else None
+
+
+def parse_search(text):
+    """'dentist cal:work from:sam@x.com before:2026-12-01 after:2026-11-01' -> {"words", "cal", "from", "before", "after"}."""
+    out = {"words": [], "cal": "", "from": "", "before": None, "after": None}
+    for tok in (text or "").split():
+        k, _, v = tok.partition(":")
+        k = k.lower()
+        if k in ("cal", "from") and v:
+            out[k] = v.lower()
+        elif k in ("before", "after") and v:
+            try:
+                out[k] = dt.date.fromisoformat(v)
+            except ValueError:
+                out["words"].append(tok.lower())
+        else:
+            out["words"].append(tok.lower())
+    return out
+
+
+def search_events(text, cfg=None, now=None, limit=200):
+    """Real events on every calendar matching text (title, place, notes, guests), soonest first. -> (rows, problems)."""
+    cfg = cfg or load_json(CONFIG, {"calendars": []})
+    q = parse_search(text)
+    today = (now or now_utc()).astimezone(local_tz()).date()
+    lo = q["after"] or today - dt.timedelta(days=90)
+    hi = q["before"] or today + dt.timedelta(days=365)
+    z = lambda d: dt.datetime.combine(d, dt.time(), local_tz()).astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows, problems, seen = [], [], set()
+    for c in cfg["calendars"]:
+        label = c.get("label") or c["name"]
+        if q["cal"] and q["cal"] not in (c["name"].lower(), label.lower()):
+            continue
+        try:
+            evs = list_for_people(make_adapter(c), z(lo), z(hi))
+        except Exception as e:
+            problems.append(f"{label}: {str(e)[:120]}")
+            continue
+        for ev in evs:
+            if ev.get("copy_of") or ev.get("declined") or _canceled(ev):
+                continue
+            hay = " ".join([ev.get("title") or "", ev.get("location") or "", ev.get("description") or "", " ".join(ev.get("attendees") or [])]).lower()
+            if any(w not in hay for w in q["words"]):
+                continue
+            if q["from"] and q["from"] not in (ev.get("organizer") or "").lower():
+                continue
+            key = (ev.get("ical") or ev["uid"], ev["start"])
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(dict(ev, calendar=c["name"]))
+    rows.sort(key=lambda e: e["start"])
+    return rows[:limit], problems
+
+
+def changed_since(cfg, since):
+    """The calendars that changed after since (UTC 'Z'), from one small request each. Only Google and Microsoft can say
+    cheaply; CalDAV and .ics links wait for the normal interval."""
+    out = []
+    for c in cfg["calendars"]:
+        try:
+            ad = make_adapter(c)
+            if isinstance(ad, (GoogleCalendar, OutlookCalendar)) and ad.changed_since(since):
+                out.append(c["name"])
+        except Exception:
+            continue
+    return out
+
+
 def main(argv):
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__.strip())
@@ -1802,9 +2966,6 @@ def main(argv):
     elif cmd == "mcp":
         import calsync_mcp
         return calsync_mcp.main(rest)
-    elif cmd == "reset-password":
-        import calsync_web
-        return calsync_web.reset_password_here(rest)
     elif cmd == "auth" and len(rest) >= 2 and rest[0] == "google":
         cmd_auth_google(rest[1])
     elif cmd == "auth" and len(rest) >= 2 and rest[0] == "outlook":

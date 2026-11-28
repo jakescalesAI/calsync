@@ -5,6 +5,51 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Sync rules for each direction between two calendars (What goes where, on the Sync tab). Each can be on or off, copy
+  the title or a text of your choice, and copy the description, place, video call link, guest list (as text), reminders
+  and privacy. Copies can carry a tag in front of the title, with a live preview, and a colour of their own or the
+  original's.
+- Filters per direction: free events, Maybe and unanswered invites, all-day events, birthdays, out of office, title
+  words, colours or categories, days of the week and a time of day. Each can leave out or keep only.
+- A sync window: how many days back and ahead, in Settings (default 0 and 120, as before).
+- The Preview says why each event is or isn't copied, and which rule decided.
+- Turning a direction off, or stopping a calendar, asks whether to remove or keep the copies it made.
+- An Activity page with every run, a status for each direction (Synced, Syncing, Error, Off) and Resync.
+- Faster sync: a one-minute check asks Google and Microsoft calendars whether anything changed. With a public https
+  address (`CALSYNC_PUBLIC_URL`), Google push channels and Microsoft Graph subscriptions trigger a sync within seconds.
+- The Calendar tab is a full calendar: day, week and month, a time grid, keyboard keys, new events (repeat, guests,
+  Meet or Teams, place, busy or free, private, colour), changing, dragging and resizing with repeat scope (this one,
+  this and following, every one), Undo for 10 seconds, a choice to email guests, RSVP and Join, copies that open their
+  original, per-calendar colours, Hide copies, Hide weekends, week numbers, a second time zone, search with `cal:`,
+  `from:`, `before:` and `after:`, and print.
+- Agent tools: `calsync_sync_rules`, `calsync_why`, `calsync_activity`, and `calsync_resync` with `--allow-write`.
+- `calsync.set_home(path)` and `calsync_web.serve(host, port, home, block)` for running the engine and page from code.
+
+- One-click sign-in: Sign in with Google and Sign in with Microsoft use CalSync's own apps with PKCE and a loopback
+  redirect, in the web page, the desktop app (which opens the system browser) and `calsync auth`. A work or school
+  account that needs an administrator's approval gets a plain message and the .ics route. Your own apps still work,
+  under Advanced. Until Google verifies CalSync's app, Google shows an "unverified app" screen first (CalSync says
+  how to go on) and at most 100 people can sign in with it.
+
+### Changed
+- No page password. CalSync opens straight to the app: no first-run password, sign-in page, recovery code or
+  `calsync reset-password`. It stays yours by being local: it listens on 127.0.0.1, answers only to localhost or
+  127.0.0.1 with its own port (against DNS rebinding), takes a change only with this page's Origin or Referer and a form
+  token tied to the browser, and sends no CORS headers. Listening on any other address needs `CALSYNC_ALLOW_REMOTE=1`
+  and prints a warning; `compose.yaml` sets it and still publishes the port on 127.0.0.1 only. An older install's
+  `secrets/web.json` is left alone and no longer read. One-click Google and Microsoft sign-in, for connecting
+  calendars, is unchanged.
+- The CalDAV app-password field has a show/hide button.
+- Pages load one same-origin script (`/app.js`) for keys, dragging and the Undo countdown. The content policy
+  still allows no inline script or style, and every page works without it.
+- Google birthdays are read (and left out of syncs by default) so they show on the Calendar tab.
+- Configs from before rules keep their behaviour: Busy only and Don't copy X here map onto the new rules, and copies
+  made before are not rewritten.
+- A desktop app for Windows (`desktop/`, Tauri 2). It runs the engine and the setup page on 127.0.0.1 in an app window,
+  with a tray icon: Open CalSync, Sync now, Pause, the last sync and its problems, Keep syncing in the background,
+  Start on login, and Quit. `desktop\build.ps1` makes the installer; it isn't signed or released yet.
+
 ## [0.1.0] - 2026-11-27 (beta)
 
 The first beta. Highlights:

@@ -17,14 +17,30 @@ reply: a failure is reported as one of a few fixed reasons. --busy-only can't be
 """
 import contextlib, datetime as dt, hmac, http.client, http.server, json, os, re, secrets, signal, socket, ssl, sys, unicodedata, urllib.error, urllib.parse
 from xml.etree import ElementTree
+import ipaddress
 import calsync as engine
-from calsync_web import host_allowed
 
 VERSION = "0.1.0"
 SUPPORTED = ("2025-06-18", "2025-03-26", "2024-11-05")
 BIND = os.environ.get("CALSYNC_MCP_BIND") or "127.0.0.1"
 PORT = os.environ.get("CALSYNC_MCP_PORT") or "8485"
 TOKEN_FILE = os.path.join(engine.SECRETS, "mcp-token")
+EXTRA_HOSTS = {h.strip().lower() for h in (os.environ.get("CALSYNC_HOSTS") or "").split(",") if h.strip()}
+
+
+def host_allowed(host):
+    """A page on someone else's domain can point its name at this machine; only real names and bare addresses pass.
+    Every request also needs the bearer token."""
+    name = re.sub(r":\d+$", "", (host or "").strip().lower()).strip("[]")
+    if not name:
+        return False
+    if name == "localhost" or name.endswith(".localhost") or name in EXTRA_HOSTS:
+        return True
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        return False
 MAX_BODY = 64 * 1024
 MAX_DAYS = 60
 MAX_WORDS = 300
@@ -338,6 +354,67 @@ def sync_now(args, opts):
     return out
 
 
+def sync_rules(args, opts):
+    """What goes from each calendar to each other one, in plain words, with how it went last time."""
+    shown = public_names()
+    cfg = engine.load_json(engine.CONFIG, {"calendars": []})
+    status = engine.pair_status(cfg)
+    out = []
+    for key, (state, words) in status.items():
+        src, dst = key.split(">", 1)
+        r = engine.rule_for(src, dst, cfg)
+        f = r["filters"]
+        out.append({"from": shown.get(src, src), "to": shown.get(dst, dst), "status": state, "copies": r["enabled"],
+                    "keeps_old_copies": r["keep_copies"], "shows_title": r["copy"]["title"],
+                    "copies_info": [k for k in ("description", "location", "conference", "attendees", "reminders") if r["copy"][k]],
+                    "marks_private": r["copy"]["private"], "has_tag": bool(r["tag"]),
+                    "leaves_out": [k for k in ("free", "tentative", "unanswered", "all_day", "birthdays", "ooo") if f[k]]
+                                  + (["some title words" if f["keyword_mode"] == "exclude" else "titles without chosen words"] if f["keywords"] else [])
+                                  + (["some colours"] if f["colours"] else []) + (["some days"] if f["days"] else [])
+                                  + (["some hours"] if f["from"] or f["until"] else [])})
+    window = cfg.get("window") or {}
+    return {"directions": out, "days_back": window.get("past_days", engine.PAST_DAYS), "days_ahead": window.get("future_days", engine.FUTURE_DAYS),
+            "note": "The person changes these on the calsync page, under What goes where."}
+
+
+def why(args, opts):
+    """Why each matching event is or isn't copied, from a dry run that changes nothing."""
+    words = str(args.get("title") or "").strip().lower()
+    if not words or len(words) > 100:
+        raise Refused("Pass title: a few words from the event's title, up to 100 characters.")
+    if opts["busy_only"]:
+        raise Refused("This calsync shows times only, so it can't look events up by title.")
+    decisions = []
+    summary = engine.run_once(dry_run=True, log=quiet, decisions=decisions)
+    if summary is None:
+        raise Refused("A sync is running right now. Try again in a minute.")
+    shown = public_names()
+    rows = [{"title": d["title"], "start": d["start"], "from": shown.get(d["src"], d["src"]), "to": shown.get(d["dst"], d["dst"]) if d["dst"] else "every calendar",
+             "copied": d["copied"], "because": d["reason"]} for d in decisions if words in (d["title"] or "").lower() and not d.get("private")]
+    return {"matches": rows[:50], "more": max(0, len(rows) - 50), "note": UNTRUSTED}
+
+
+def recent_activity(args, opts):
+    shown = public_names()
+    name = lambda k: " to ".join(shown.get(x, x) for x in k.split(">", 1))
+    runs = engine.activity(limit=min(max(int(args.get("runs") or 10), 1), 50))
+    return {"runs": [{"at": r.get("at"), "why": r.get("trigger"), **counts(r), **({"resync": name(r["pair"])} if r.get("pair") else {}),
+                      "by_direction": {name(k): v for k, v in (r.get("pairs") or {}).items()}} for r in runs]}
+
+
+def resync(args, opts):
+    if not syncing():
+        raise Refused(f"{NOT_SYNCING} This tool won't start it.")
+    back = {v: k for k, v in public_names().items()}
+    src, dst = back.get(str(args.get("from"))), back.get(str(args.get("to")))
+    if not src or not dst or src == dst:
+        raise Refused("Pass from and to: two different calendar names, as calsync_status shows them.")
+    summary = engine.run_once(log=quiet, pair=f"{src}>{dst}", refresh=True, trigger="resync")
+    if summary is None:
+        raise Refused("A sync is running right now. Try again in a minute.")
+    return counts(summary)
+
+
 def tool(name, description, run, properties=None, required=None, write=False):
     return {"name": name, "description": description, "run": run, "write": write,
             "inputSchema": {"type": "object", "properties": properties or {}, **({"required": required} if required else {})},
@@ -363,6 +440,15 @@ TOOLS = [
          "same time is already there, it adds nothing and says so.", add_event,
          dict(TEXT, **CALENDAR, book_anyway={"type": "boolean", "description": "The person said to add it even though it overlaps."},
               send_invites={"type": "boolean", "description": "The person saw the guest list and said to send the invites."}), ["text"], write=True),
+    tool("calsync_sync_rules", "What calsync copies from each calendar to each other one: on or off, the title or just Busy, "
+         "which details, what is left out, and whether that direction synced cleanly last time.", sync_rules),
+    tool("calsync_why", "Why an event is or isn't copied to each calendar, from a dry run that changes nothing. Pass a few words of its title.",
+         why, {"title": {"type": "string", "description": "Words from the event's title."}}, ["title"]),
+    tool("calsync_activity", "The latest syncs: when, why they ran, and what each direction added, updated or removed.", recent_activity,
+         {"runs": {"type": "integer", "minimum": 1, "maximum": 50, "description": "How many runs. Default 10."}}),
+    tool("calsync_resync", "Rewrite every copy going one way, from one calendar to another, now. Refused if syncing is paused.", resync,
+         {"from": {"type": "string", "description": "Calendar name, as calsync_status shows it."},
+          "to": {"type": "string", "description": "Calendar name, as calsync_status shows it."}}, ["from", "to"], write=True),
     tool("calsync_sync_now", "Run a sync now rather than waiting for the next one, which may remove a few copies whose original is gone. "
          "Refused if syncing is paused or was never started: only the person can start it. If it wants to delete many copies it holds "
          "back, and only the owner can allow that.", sync_now, write=True),

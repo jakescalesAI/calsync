@@ -34,6 +34,8 @@
 <a href="/booking-apps/">Booking apps</a>
 <a href="/agents/">AI agents</a>
 <a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/sync-rules/">Sync rules</a>
+<a href="/calendar/">The Calendar tab</a>
 <a href="/settings/">Settings and environment</a>
 <a href="/faq/">FAQ</a>
 <a href="/troubleshooting/">Troubleshooting</a>
@@ -52,6 +54,8 @@
 <li><a href="/booking-apps/">Booking apps</a></li>
 <li><a href="/agents/">AI agents</a></li>
 <li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/sync-rules/">Sync rules</a></li>
+<li><a href="/calendar/">The Calendar tab</a></li>
 <li><a href="/settings/">Settings and environment</a></li>
 <li><a href="/faq/">FAQ</a></li>
 <li><a href="/troubleshooting/">Troubleshooting</a></li>
@@ -65,14 +69,8 @@
 <pre><code>git clone https://github.com/jakescalesAI/calsync
 cd calsync
 docker compose up -d</code></pre>
-<p>Open <code>http://localhost:8484</code> in a browser on the same machine. Compose publishes the port on that machine only.</p>
-<h2>First visit</h2>
-<ol>
-<li>The page asks for a setup code. Get it from the logs:
-<pre><code>docker compose logs calsync</code></pre></li>
-<li>Choose a password for the page. It guards your sign-ins, so make it a good one.</li>
-<li>Save the recovery code the page shows next, in a password manager or on paper. It is shown only once. See <a href="/settings/#forgot">Forgot your password</a>.</li>
-</ol>
+<p>Open <code>http://localhost:8484</code> in a browser on the same machine. It opens straight in: there's no account and no password. Compose publishes the port on that machine only, and that's what keeps the page yours.</p>
+<p>The logs say CalSync is listening with <code>CALSYNC_ALLOW_REMOTE=1</code>. That's expected in a container, which has its own network; <code>compose.yaml</code> sets it and publishes the port on 127.0.0.1 only. Don't change that to <code>0.0.0.0</code> or a bare port.</p>
 <h2>Add your calendars</h2>
 <ol>
 <li>Make a sign-in app for your provider: <a href="/google/">Google</a> or <a href="/microsoft/">Microsoft</a>. Paste its details into the page.</li>

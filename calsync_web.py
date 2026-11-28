@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 """The web setup page and background sync: `calsync web`, or the Docker image.
 
-No JavaScript and no outside files, so a strict content policy holds. Everything a page shows goes
-through esc(). Tokens, client secrets, CalDAV passwords and .ics links are stored by the engine and never sent to a page.
+No outside files and no inline scripts or styles, so a strict content policy holds. Every page works with plain links
+and forms; one same-origin script (/app.js) adds keyboard keys, dragging events and live previews. Everything a page
+shows goes through esc(). Tokens, client secrets, CalDAV passwords and .ics links are stored by the engine and never
+sent to a page.
 
-  CALSYNC_BIND        address to listen on (default 127.0.0.1; the Docker image uses 0.0.0.0)
+Start it from code with serve(host, port, home), for the desktop app.
+
+There is no page password: CalSync is local. It listens on 127.0.0.1, answers only to localhost or 127.0.0.1 with its
+own port (so another site can't reach it by pointing a name at 127.0.0.1), takes a POST only when its Origin or Referer
+is this page, and checks a form token on every change. It sends no CORS headers.
+
+  CALSYNC_BIND        address to listen on (default 127.0.0.1). There's no sign-in, so anything but this computer
+                      also needs CALSYNC_ALLOW_REMOTE=1 (the Docker image, whose port compose publishes on 127.0.0.1 only)
+  CALSYNC_ALLOW_REMOTE  1 to let it listen beyond this computer anyway; then you decide who can reach it
   CALSYNC_PORT        port (default 8484)
   CALSYNC_PUBLIC_URL  https address, if you put it behind your own proxy; used as Google's redirect
   CALSYNC_HOSTS       extra host names allowed to reach it, comma separated
@@ -16,21 +26,18 @@ PORT = int(os.environ.get("CALSYNC_PORT") or 8484)
 BIND = os.environ.get("CALSYNC_BIND") or "127.0.0.1"
 PUBLIC_URL = (os.environ.get("CALSYNC_PUBLIC_URL") or "").rstrip("/")
 EXTRA_HOSTS = {h.strip().lower() for h in (os.environ.get("CALSYNC_HOSTS") or "").split(",") if h.strip()}
-SESSION_DAYS = 30
+ALLOW_REMOTE = os.environ.get("CALSYNC_ALLOW_REMOTE") == "1"
+BROWSER_DAYS = 400      # how long a browser keeps the random ID its form tokens are signed with
 MAX_BODY = 64 * 1024
 INTERVALS = (2, 5, 10, 15, 30, 60)
-ATTEMPTS_PER_MINUTE = 5            # wrong passwords or setup codes from one address
-EVERYONE_PER_MINUTE = {"login": 30, "setup": 10, "recover": 10}   # and from all addresses together, so many addresses don't help
-RECOVERY_LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"   # no 0/O, 1/I/L: a code someone copies by hand
-PROXY_HEADERS = ("Forwarded", "X-Forwarded-For", "X-Real-IP")
 
 state_lock = threading.Lock()
 pending_google = {}     # state -> label, redirect, origin, expires
 pending_ms = {}         # flow id -> label, tenant, device_code, user_code, link, expires, status
-failed_logins = {}      # (kind, ip or "*") -> [times of tries]
-first_run_lock = threading.Lock()
-setup_code = secrets.token_hex(4)
-last_preview = {}       # session key -> the preview shown next
+pending_oauth = {}      # one-click sign-in: state -> provider, verifier, redirect, expires, status, label, problem
+here = threading.local()     # the request being answered: its Host header, so a page can build a loopback address
+MAX_OAUTH_FLOWS = 40
+last_preview = {}       # browser ID -> the preview shown next
 run_state = {"running": False}
 
 
@@ -42,117 +49,34 @@ def copies(n):
     return f"{esc(n)} {'copy' if n == 1 else 'copies'}"
 
 
-def web_file():
-    return os.path.join(engine.SECRETS, "web.json")
-
-
-def web_config():
-    return engine.load_json(web_file(), None)
-
-
-def hash_password(password, salt):
-    return hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt), n=2**15, r=8, p=1, maxmem=64 * 1024 * 1024).hex()
-
-
-def set_password(password):
-    """A new key signs everyone out. A recovery code already made stays valid."""
-    salt = secrets.token_hex(16)
-    engine.ensure_home()
-    old = web_config() or {}
-    data = {"salt": salt, "hash": hash_password(password, salt), "key": secrets.token_hex(32)}
-    if old.get("recovery"):
-        data["recovery"] = old["recovery"]
-    engine.save_json(web_file(), data)
-
-
-def new_recovery_code():
-    """Make a recovery code, keep only its hash, and return it so it can be shown once. It replaces any older code.
-    16 letters from 31 is about 79 bits, and it only works from this machine, a few tries a minute."""
-    code = "-".join("".join(secrets.choice(RECOVERY_LETTERS) for _ in range(4)) for _ in range(4))
-    salt = secrets.token_hex(16)
-    cfg = web_config() or {}
-    cfg["recovery"] = {"salt": salt, "hash": hash_password(clean_code(code), salt), "made": engine.now_utc().strftime("%Y-%m-%d")}
-    engine.save_json(web_file(), cfg)
-    return code
-
-
-def clean_code(code):
-    return re.sub(r"[^A-Z0-9]", "", (code or "").upper())
-
-
-def recovery_ok(cfg, code):
-    r = (cfg or {}).get("recovery")
-    return bool(r) and hmac.compare_digest(hash_password(clean_code(code), r["salt"]), r["hash"])
-
-
-def reset_password_here(argv=()):
-    """`calsync reset-password`: on the machine calsync runs on, set a new page password without the old one.
-    Whoever can run this can already read calsync's folder, so it gives nothing away. It signs everyone out
-    and makes a new recovery code."""
-    import getpass
-    new = getpass.getpass("New password for the CalSync page (at least 10 characters, hidden): ")
-    if len(new) < 10:
-        raise SystemExit("Use at least 10 characters. Nothing changed.")
-    if getpass.getpass("Type it again: ") != new:
-        raise SystemExit("Those didn't match. Nothing changed.")
-    set_password(new)
-    code = new_recovery_code()
-    print("Password changed. Every browser that was signed in is signed out.")
-    print(f"New recovery code: {code}")
-    print("Keep it somewhere safe. It resets the password from this computer if you forget it again.")
-    return 0
+def page_key():
+    """The key that signs each page's form token, made once and kept in secrets/. An old web.json (the page password
+    CalSync used to have) is left where it is and no longer read."""
+    path = os.path.join(engine.SECRETS, "page-key.json")
+    with state_lock:
+        got = engine.load_json(path, None)
+        if not got or not re.fullmatch(r"[0-9a-f]{64}", str(got.get("key", ""))):
+            engine.ensure_home()
+            got = {"key": secrets.token_hex(32)}
+            engine.save_json(path, got)
+    return got["key"]
 
 
 def sign(key, text):
     return hmac.new(bytes.fromhex(key), text.encode(), hashlib.sha256).hexdigest()
 
 
-def make_session(cfg):
-    expires = str(int(time.time()) + SESSION_DAYS * 86400)
-    return f"{expires}.{sign(cfg['key'], 'session.' + expires)}"
-
-
-def session_ok(cfg, cookie):
-    expires, _, mac = (cookie or "").partition(".")
-    if not cfg or not re.fullmatch(r"[0-9]{1,12}", expires):     # anyone can send any cookie, so nothing here may raise
-        return False
-    return int(expires) > time.time() and hmac.compare_digest(mac.encode(), sign(cfg["key"], "session." + expires).encode())
-
-
-def host_allowed(host):
-    """A page on someone else's domain can point its name at this machine; only real names and bare addresses pass."""
-    name = re.sub(r":\d+$", "", (host or "").strip().lower()).strip("[]")
-    if not name:
-        return False
-    if name == "localhost" or name.endswith(".localhost") or name in EXTRA_HOSTS or name == urllib.parse.urlparse(PUBLIC_URL).hostname:
-        return True
-    try:
-        ipaddress.ip_address(name)
-        return True
-    except ValueError:
-        return False
-
-
-def take_try(kind, ip):
-    """Reserve one password or setup-code try before checking it, so parallel requests can't slip past the cap.
-    Returns the try's stamp, or None when this address or everyone together used up the last minute."""
-    now = time.time()
-    with state_lock:
-        mine = [t for t in failed_logins.get((kind, ip), []) if now - t < 60]
-        everyone = [t for t in failed_logins.get((kind, "*"), []) if now - t < 60]
-        if len(mine) >= ATTEMPTS_PER_MINUTE or len(everyone) >= EVERYONE_PER_MINUTE[kind]:
-            failed_logins[(kind, ip)], failed_logins[(kind, "*")] = mine, everyone
-            return None
-        failed_logins[(kind, ip)], failed_logins[(kind, "*")] = mine + [now], everyone + [now]
-        return now
-
-
-def give_back(kind, ip, stamp):
-    """A right answer doesn't count against anyone."""
-    with state_lock:
-        for key in ((kind, ip), (kind, "*")):
-            if stamp in failed_logins.get(key, []):
-                failed_logins[key].remove(stamp)
+def host_allowed(host, port):
+    """Only this computer's own names with this page's port. A site can point a name of its own at 127.0.0.1 (DNS
+    rebinding); its requests then carry that name and are turned away. CALSYNC_ALLOW_REMOTE adds CALSYNC_HOSTS and
+    CALSYNC_PUBLIC_URL's host, and any port, since a container's port can be published as another."""
+    host = (host or "").strip().lower()
+    name, sep, got = host.rpartition(":")
+    if not sep or not got.isdigit():
+        name, got = host, "80"
+    if name in ("localhost", "127.0.0.1"):
+        return ALLOW_REMOTE or got == str(port)
+    return ALLOW_REMOTE and bool(name) and (name in EXTRA_HOSTS or name == urllib.parse.urlparse(PUBLIC_URL).hostname)
 
 
 def is_loopback(ip):
@@ -195,6 +119,17 @@ input::placeholder{color:var(--faint);opacity:1}input+p.soft{margin:6px 0 0;font
 button,.button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 20px;border:0;border-radius:999px;background:var(--blue);color:#fff;
 font:600 17px/1.2 var(--sans);letter-spacing:-.022em;text-align:center;text-decoration:none;cursor:pointer;transition:opacity .2s var(--ease),background-color .2s var(--ease),color .2s var(--ease)}
 button:hover,.button:hover{text-decoration:none}button:active,.button:active{opacity:.35}
+.pw{position:relative;display:block}.pw input{padding-right:52px}
+.pw button.eye{position:absolute;top:50%;right:4px;width:40px;min-height:0;height:40px;padding:0;margin:0;transform:translateY(-50%);border-radius:8px;background:none;color:var(--dim)}
+.pw button.eye:hover{background:var(--hover);color:var(--text)}.pw button.eye:active{opacity:.6}.pw button.eye svg{width:22px;height:22px;display:block}
+.more{position:sticky;z-index:4;height:0;display:flex;justify-content:center;pointer-events:none}.more.up{top:0}.more.down{bottom:0;margin-top:auto}.more[hidden]{display:none}
+.more button{pointer-events:auto;min-height:0;height:22px;margin:3px 0;padding:0 8px;border-radius:999px;background:var(--text);color:#fff;font-size:11px;font-weight:600;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.more.down button{transform:translateY(calc(-100% - 6px))}
+.tg-day .ev.ghost{z-index:3;border:1.5px dashed var(--blue);background:var(--tint);pointer-events:none}.tg-day.picking{cursor:ns-resize}
+dialog.evdlg{width:min(640px,calc(100vw - 32px));max-height:min(88vh,920px);padding:0;border:0;border-radius:18px;background:var(--bg);color:var(--text);box-shadow:0 24px 64px rgba(0,0,0,.22);overflow:auto}
+dialog.evdlg::backdrop{background:rgba(0,0,0,.28)}.dlgin{position:relative;padding:22px 22px 18px}.evdlg h1{margin:0 40px 14px 0;font-size:22px;text-align:left}.evdlg h1:focus{outline:none}
+.evdlg .dlgx{position:sticky;top:0;float:right;z-index:2;width:34px;min-height:0;height:34px;margin:-8px -8px 0 8px;padding:0;border-radius:50%;background:var(--panel);color:var(--text);font-size:20px;line-height:1}
+.evdlg section{margin-bottom:10px}.evdlg>.dlgin>.dlgbody>p.soft{margin-bottom:0}
 button.plain,.button.plain{background:var(--tint);color:var(--blue)}button.danger{background:var(--bad-bg);color:var(--bad)}form.inline{display:inline-flex}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:20px}.actions.flat{margin:0}
 .flash{display:flex;align-items:center;gap:10px;width:fit-content;max-width:100%;margin:0 auto 20px;padding:10px 18px;border-radius:999px;background:var(--panel);color:var(--text);font-size:15px;font-weight:600;box-shadow:0 0 0 .5px var(--line),0 8px 24px rgba(0,0,0,.08)}
@@ -240,6 +175,7 @@ h2.big{margin:40px 0 12px;padding:0;color:var(--text);font:700 26px/1.15 var(--d
 .ev.copy{border-left-style:dashed;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--k) 12%,#fff) 0 6px,#fff 6px 12px)}
 .plus{display:block;font-size:12px;font-weight:500}.calnote{margin:14px 0 0;color:var(--dim);font-size:13px}
 @media (max-width:760px){.grid.week{grid-template-columns:1fr}.grid.week>div{min-height:0}.grid.month>div:not(.wd){min-height:64px;padding:4px}.grid.month .ev{padding:2px 4px;font-size:10px}.grid.month .ev .t{display:none}.grid>.wd{padding:6px 0;font-size:10px}.dn{min-width:24px;height:24px;font-size:13px}}
+.adv{margin:-4px 0 12px;padding:0 20px;font-size:14px}section.warn{background:var(--bad-bg);color:var(--text)}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .quick{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}.quick input[type=text]{flex:1 1 320px;width:auto}.quick select{flex:0 1 180px;width:auto}
 .qpre{margin:10px 0 4px;box-shadow:0 0 0 1px var(--line)}.qline{font-size:17px}.warn{padding:10px 14px;border-radius:12px;background:var(--bad-bg);color:var(--bad)}
@@ -252,6 +188,204 @@ section{padding:16px}.list,.cal{padding:0}.row,summary{padding:12px 16px}.row+.r
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 """
 
+
+# ---------- the rest of the stylesheet: sync rules, activity, the time grid. Positions are classes, since the content
+# policy allows no inline styles: .s0-.s95 put an event at a quarter hour, .l1-.l96 give its length, .cI-N its column.
+
+SLOT = 12               # px per quarter hour in the day and week views
+CSS += """
+.k8{--k:#e3342f}.k9{--k:#ffcc00}.k10{--k:#248a3d}.k11{--k:#8e8e93}
+.pad{padding:0 20px 12px}.pairs{padding:0}.pair{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:12px 20px}.pair+.pair{border-top:.5px solid var(--line)}
+.pair .who{flex:1 1 200px}.pair form{display:inline-flex}.pair .button,.pair button{min-height:32px;padding:5px 14px;font-size:14px}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--dim)}.st::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.st.synced::before{background:var(--green)}.st.syncing::before{background:var(--blue)}.st.error{color:var(--bad)}.st.error::before{background:var(--bad)}
+.arrow{color:var(--faint);padding:0 4px}.two{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px}@media (max-width:560px){.two{grid-template-columns:1fr}}
+fieldset{margin:16px 0 0;padding:0;border:0}legend{padding:0;margin:0 0 6px;color:var(--text);font-size:15px;font-weight:600}
+.inline-fields{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.inline-fields input[type=text],.inline-fields select,.inline-fields input[type=time],.inline-fields input[type=date],.inline-fields input[type=number]{width:auto;flex:1 1 140px}
+input[type=time],input[type=date],input[type=number],input[type=search],textarea{display:block;width:100%;min-height:44px;padding:10px 14px;border:1px solid rgba(0,0,0,.12);border-radius:10px;background:var(--field);color:var(--text);font:inherit}
+textarea{min-height:96px;resize:vertical}.days{display:flex;flex-wrap:wrap;gap:6px}.days label.check{margin:0;padding:6px 12px;border-radius:999px;background:#fff;font-size:15px}
+.sample{margin:8px 0 0;padding:10px 14px;border-radius:10px;background:#fff;box-shadow:inset 0 0 0 .5px var(--line);font-size:15px}.sample b{font-weight:600}
+.swatches{display:flex;flex-wrap:wrap;gap:6px}.swatches label.check{margin:0;align-items:center;gap:6px;padding:4px 10px 4px 6px;border-radius:999px;background:#fff;font-size:14px}
+.why{padding:0}.why details{border-top:.5px solid var(--line)}.why details:first-child{border-top:0}.why summary{padding:10px 20px;border-radius:0;font-size:15px}.why .soft{font-size:13px}
+.why ul{margin:0;padding:0 20px 12px 20px;list-style:none;font-size:14px}.why li{padding:3px 0}.why li b{font-weight:600}.yes{color:#248a3d}.no{color:var(--dim)}
+.runs{padding:0}.run>summary{padding:12px 20px}.run+.run{border-top:.5px solid var(--line)}.run pre{margin:0 20px 16px}
+.calbar .tools form{display:inline-flex}.tools input[type=search]{width:220px;min-height:36px;padding:6px 14px;border-radius:999px}
+.toggles{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}.toggles button{min-height:30px;padding:4px 12px;font-size:13px;background:var(--panel);color:var(--text);font-weight:500}.toggles button[aria-pressed=true]{background:var(--text);color:#fff}
+.tg{display:grid;border-radius:16px;overflow:hidden;box-shadow:0 0 0 1px var(--line);background:#fff}
+.tg-head,.tg-all,.tg-body{display:grid;grid-template-columns:var(--gut,56px) repeat(var(--n,7),minmax(0,1fr))}
+.tg.d1{--n:1}.tg.d5{--n:5}.tg.d7{--n:7}.tg.tz2{--gut:128px}.tg-hours span{white-space:nowrap}.tg-head .zones{font-size:10px;font-weight:500;color:var(--faint);text-align:right;padding:8px 6px}
+.tg-head>div{padding:8px;background:var(--panel);text-align:center;font-size:13px;color:var(--dim);font-weight:600}.tg-head .today .dn{background:var(--blue);color:#fff}
+.tg-all>div{min-height:28px;padding:3px;border-top:1px solid var(--line);border-left:1px solid var(--line)}.tg-all>div:first-child{border-left:0;font-size:11px;color:var(--faint);text-align:right;padding-right:8px}
+.tg-scroll{max-height:70vh;overflow-y:auto;scrollbar-gutter:stable}.tg-head,.tg-all{overflow-y:hidden;scrollbar-gutter:stable}.tg-body{position:relative}
+.tg-hours{display:grid;grid-auto-rows:48px;font-size:11px;color:var(--faint);text-align:right}.tg-hours span{padding:0 8px;transform:translateY(-7px)}
+.tg-hours.two{grid-template-columns:1fr 1fr}
+.tg-day{position:relative;display:flex;flex-direction:column;height:1152px;border-left:1px solid var(--line);background:repeating-linear-gradient(#fff 0 47px,var(--line) 47px 48px)}
+.tg-day.today{background:repeating-linear-gradient(#f7fbff 0 47px,var(--line) 47px 48px)}.tg-day.wk{background:repeating-linear-gradient(#fbfbfd 0 47px,var(--line) 47px 48px)}
+.tg-day .ev,.tg-day .evl{position:absolute;left:2px;right:2px;margin:0;white-space:normal;overflow:hidden;z-index:1}
+.ev a,.evl{color:inherit;text-decoration:none}.evl{display:block}.evl:hover{text-decoration:none;filter:brightness(.97)}
+.ev.pend{outline:2px dashed var(--blue);outline-offset:-2px}.now{position:absolute;left:0;right:0;height:2px;background:var(--bad);z-index:2}
+.ev .rs{position:absolute;left:0;right:0;bottom:0;height:6px;cursor:ns-resize}.ev[data-move]{cursor:grab}.dragging{opacity:.85;box-shadow:0 8px 24px rgba(0,0,0,.18);z-index:5}
+.wkn{color:var(--faint);font-size:11px;font-weight:600}.grid.month.nowe{grid-template-columns:repeat(5,minmax(0,1fr))}
+.evhead{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}.evhead h1{margin:0}.facts{margin:10px 0 0;padding:0;list-style:none}.facts li{padding:4px 0}
+.rsvp{display:inline-flex;gap:6px}.rsvp button{min-height:34px;padding:5px 14px;font-size:15px}.rsvp button[aria-pressed=true]{background:var(--text);color:#fff}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:20;display:flex;align-items:center;gap:12px;padding:10px 12px 10px 18px;border-radius:999px;background:#1d1d1f;color:#fff;font-size:15px;font-weight:600;box-shadow:0 12px 32px rgba(0,0,0,.25)}
+.toast button{min-height:32px;padding:4px 14px;background:rgba(255,255,255,.16);color:#fff;font-size:15px}.toast .soft{color:rgba(255,255,255,.6);font-weight:500}
+.results{padding:0}.results .row{padding:10px 20px}.results .when{flex:0 0 150px;color:var(--dim);font-size:14px;font-variant-numeric:tabular-nums}
+.keys{font-size:13px;color:var(--dim)}kbd{display:inline-block;min-width:20px;padding:1px 6px;border-radius:6px;background:#fff;box-shadow:inset 0 0 0 .5px var(--line),0 1px 0 var(--line);font:600 12px var(--sans);text-align:center}
+@media (max-width:560px){.tg{--gut:38px}.tg.tz2{--gut:84px}.tg-hours span{padding:0 3px;font-size:9px}.tg-day .ev{overflow-wrap:normal;word-break:keep-all;hyphens:none}.tg-head .zones{font-size:0}.tg.d7 .ev .t,.tg.d5 .ev .t{display:none}.tg-day .ev{padding:2px 3px;font-size:10px;border-left-width:2px}}
+@media (max-width:760px){.tg.d7{--n:7}.tg-head>div{padding:6px 0;font-size:11px}.tg-day .ev{font-size:10px;padding:2px 3px}.tools input[type=search]{width:100%}}
+@media print{header,.tools,.toggles,.quick,.legend,.calnote,.toast,.flash,.noprint{display:none!important}main,main.wide{max-width:none;padding:0}.tg-scroll{max-height:none;overflow:visible}body{font-size:12px}.grid,.tg{box-shadow:none;border:1px solid #ccc}}
+"""
+CSS += "".join(f".s{i}{{top:{i * SLOT}px}}" for i in range(96))
+CSS += "".join(f".l{i}{{height:{i * SLOT - 2}px}}" for i in range(1, 97))
+CSS += "".join(f".tg-day .c{i}-{n}{{left:calc({i}/{n}*100% + 2px);right:auto;width:calc(100%/{n} - 4px)}}" for n in range(2, 5) for i in range(n))
+
+# One same-origin script, only for what plain links and forms can't do: keyboard keys, dragging events, the
+# undo countdown and the live tag preview. Every page works without it.
+JS = r"""
+(function(){
+var $=function(s,r){return (r||document).querySelector(s)},$$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+var EYE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+    SHUT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.6 5.1A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a10 10 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>';
+$$('input[type=password][data-reveal]').forEach(function(f){
+  var what='password',w=document.createElement('span'),b=document.createElement('button');
+  w.className='pw';f.parentNode.insertBefore(w,f);w.appendChild(f);
+  b.type='button';b.className='eye';w.appendChild(b);
+  function show(on){f.type=on?'text':'password';b.innerHTML=on?SHUT:EYE;b.setAttribute('aria-label',(on?'Hide ':'Show ')+what);b.setAttribute('aria-pressed',on?'true':'false')}
+  show(false);
+  b.addEventListener('click',function(){var at=f.selectionStart,to=f.selectionEnd;show(f.type==='password');f.focus();try{f.setSelectionRange(at,to)}catch(e){}});
+  if(f.form)f.form.addEventListener('submit',function(){show(false)});
+});
+var body=document.body,cal=$('[data-cal-page]');
+function go(u){if(u)location.href=u}
+// New and existing events open in a dialog over the calendar. The links stay plain pages without JS.
+var dlg=null,opener=null;
+function same(u){try{u=new URL(u,location.href)}catch(e){return null}return u.origin===location.origin&&/^\/event(\/new)?$/.test(u.pathname)?u.pathname+u.search:null}
+function dialogFor(url){
+  if(!cal||!window.HTMLDialogElement||!same(url)){go(url);return}
+  if(!dlg){
+    dlg=document.createElement('dialog');dlg.className='evdlg';
+    dlg.innerHTML='<div class="dlgin"><button type="button" class="dlgx" aria-label="Close">\u00d7</button><div class="dlgbody"></div></div>';
+    body.appendChild(dlg);
+    dlg.addEventListener('click',function(e){
+      if(e.target===dlg||e.target.closest('.dlgx')){dlg.close();return}      // outside the box, or the close button
+      var a=e.target.closest('a[href]');if(!a)return;
+      if(a.hasAttribute('data-close')){e.preventDefault();dlg.close();return}
+      var u=same(a.href);if(u&&!a.target){e.preventDefault();load(u,false)}
+    });
+    dlg.addEventListener('close',function(){$('.dlgbody',dlg).innerHTML='';if(opener&&opener.focus)opener.focus()});
+  }
+  var u=new URL(same(url),location.href);
+  if(!u.searchParams.get('back')&&location.pathname==='/calendar'){     // so Save comes back to this view, not the default week
+    var here=new URLSearchParams(location.search);['m','undo','at'].forEach(function(k){here.delete(k)});
+    u.searchParams.set('back','/calendar'+(here.toString()?'?'+here.toString():''))}
+  opener=document.activeElement;load(u.pathname+u.search,u.pathname==='/event/new');
+}
+function load(url,fresh){
+  fetch(url,{credentials:'same-origin'}).then(function(r){return r.text()}).then(function(html){
+    var m=new DOMParser().parseFromString(html,'text/html').querySelector('main');if(!m){go(url);return}
+    var b=$('.dlgbody',dlg);b.innerHTML='';
+    Array.prototype.slice.call(m.childNodes).forEach(function(n){b.appendChild(document.importNode(n,true))});
+    var h=$('h1',b);if(h){h.id='dlgtitle';h.tabIndex=-1;dlg.setAttribute('aria-labelledby','dlgtitle')}
+    if(!dlg.open)dlg.showModal();
+    dlg.scrollTop=0;
+    var f=fresh?$('input[name=title]',b):h;if(f)f.focus();
+  },function(){go(url)});
+}
+document.addEventListener('click',function(e){
+  if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||(dlg&&dlg.contains(e.target)))return;
+  var a=e.target.closest('a[data-new], .ev a.evl');if(!a||!cal)return;
+  e.preventDefault();dialogFor(a.getAttribute('href'));
+});
+document.addEventListener('keydown',function(e){
+  if(dlg&&dlg.open)return;           // the dialog has the keys: Esc closes it, typing stays typing
+  var t=e.target,typing=/INPUT|TEXTAREA|SELECT/.test(t.tagName)||t.isContentEditable;
+  if(e.key==='Escape'){var x=$('[data-close]');if(x&&!typing)go(x.getAttribute('href'));if(typing)t.blur();return}
+  if(typing||e.metaKey||e.ctrlKey||e.altKey||!cal)return;
+  var k=e.key.toLowerCase(),m={d:'data-day',w:'data-week',m:'data-month',t:'data-today',n:'data-new',j:'data-next',k:'data-prev',arrowright:'data-next',arrowleft:'data-prev'};
+  if(k==='/'){var s=$('#search');if(s){e.preventDefault();s.focus()}return}
+  if(k==='?'){var h=$('#keys');if(h)h.hidden=!h.hidden;return}
+  if(k==='p'){window.print();return}
+  if(m[k]){var a=$('['+m[k]+']');if(a){e.preventDefault();(k==='n'?dialogFor:go)(a.getAttribute('href'))}}
+});
+$$('[data-print]').forEach(function(b){b.hidden=false;b.addEventListener('click',function(e){e.preventDefault();window.print()})});
+$$('[data-until]').forEach(function(el){
+  var until=+el.getAttribute('data-until'),n=$('.left',el);
+  (function tick(){var s=Math.max(0,Math.ceil((until-Date.now())/1000));if(n)n.textContent=s+' s';if(s<=0){el.remove();return}setTimeout(tick,250)})();
+});
+var tag=$('#tag'),tt=$('#title_text'),showTitle=$('#copy_title');
+function sample(){var p=$('#tagprev');if(!p)return;var t=(showTitle&&!showTitle.checked)?((tt&&tt.value)||'Busy'):p.getAttribute('data-title');p.textContent=((tag&&tag.value)?tag.value+' ':'')+t}
+[tag,tt,showTitle].forEach(function(i){if(i){i.addEventListener('input',sample);i.addEventListener('change',sample)}});
+$$('[data-oauth-wait]').forEach(function(a){a.addEventListener('click',function(){var w=a.getAttribute('data-oauth-wait');setTimeout(function(){go(w)},400)})});
+var off=$('#enabled');function keep(){var k=$('#keepbox');if(k&&off)k.hidden=off.checked}if(off){off.addEventListener('change',keep);keep()}
+// drag to move or resize, in the day and week views: quarter-hour steps, across days
+var grid=$('.tg-body');if(!grid)return;
+var csrf=grid.getAttribute('data-csrf'),slot=12,sc=$('.tg-scroll');
+function cols(){return $$('.tg-day',grid)}
+function evs(d){return $$('.ev',d).filter(function(x){return !x.classList.contains('ghost')})}
+// open where something is: just before now when today is shown (or its next event, if that would be out of sight),
+// else the earliest event shown, else 8 am
+if(sc&&!location.hash){
+  var y=8*48,now=$('.tg-day.today .now',grid),first=null,at=/[?&]at=([0-9]{2}):([0-9]{2})/.exec(location.search);
+  cols().forEach(function(d){evs(d).forEach(function(x){if(first===null||x.offsetTop<first)first=x.offsetTop})});
+  if(at)y=(+at[1]*60+ +at[2])/15*slot-48;      // just added, changed or moved: show it
+  else if(now){y=now.offsetTop-48;
+    var next=evs(now.parentNode).filter(function(x){return x.offsetTop+x.offsetHeight>now.offsetTop}).sort(function(a,b){return a.offsetTop-b.offsetTop})[0];
+    if(next&&next.offsetTop>y+sc.clientHeight-48)y=next.offsetTop-48}
+  else if(first!==null)y=first-24;
+  sc.scrollTop=Math.max(0,y);
+}
+// per day: how many events are above or below what's in view, as a marker that scrolls to them
+function marker(d,cls){var m=$('.more.'+cls,d);if(!m){m=document.createElement('div');m.className='more '+cls;m.hidden=true;m.innerHTML='<button type="button"></button>';
+  if(cls==='up')d.insertBefore(m,d.firstChild);else d.appendChild(m);
+  m.firstChild.addEventListener('click',function(){var to=+m.getAttribute('data-to');sc.scrollTo({top:Math.max(0,to-(cls==='up'?24:48)),behavior:'smooth'})})}return m}
+function markers(){if(!sc)return;var top=sc.scrollTop,bot=top+sc.clientHeight;
+  cols().forEach(function(d){var up=0,down=0,upTo=null,downTo=null;
+    evs(d).forEach(function(x){var a=x.offsetTop,b=a+x.offsetHeight;
+      if(b<=top+4){up++;if(upTo===null||a>upTo)upTo=a}else if(a>=bot-4){down++;if(downTo===null||a<downTo)downTo=a}});
+    [['up',up,upTo,'\u2191 '+up+' earlier'],['down',down,downTo,'\u2193 '+down+' later']].forEach(function(s){var m=marker(d,s[0]);m.hidden=!s[1];
+      if(s[1]){m.setAttribute('data-to',s[2]);m.firstChild.textContent=s[3];m.firstChild.setAttribute('aria-label',s[1]+(s[1]===1?' event ':' events ')+(s[0]==='up'?'earlier':'later')+' on '+d.getAttribute('data-date'))}})})}
+var queued=false;function soon(){if(!queued){queued=true;requestAnimationFrame(function(){queued=false;markers()})}}
+if(sc){sc.addEventListener('scroll',soon,{passive:true});window.addEventListener('resize',soon);markers()}
+function post(url,data){var f=new URLSearchParams(data);f.append('csrf',csrf);return fetch(url,{method:'POST',body:f,credentials:'same-origin',headers:{'Content-Type':'application/x-www-form-urlencoded'}})}
+function hm(q){q=Math.max(0,Math.min(95,q));var hh=Math.floor(q/4),mm=(q%4)*15;return (hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm}
+grid.addEventListener('pointerdown',function(e){
+  var d=e.target.closest('.tg-day');if(!d||e.button!==0||e.target.closest('.ev, .more'))return;
+  var at=function(m){return Math.max(0,Math.min(95,Math.floor((m.clientY-d.getBoundingClientRect().top)/slot)))},q0=at(e),q1=q0,moved=false,ghost=null,touch=e.pointerType==='touch';
+  if(!touch)e.preventDefault();
+  function show(){if(!ghost){ghost=document.createElement('div');d.appendChild(ghost);d.classList.add('picking')}
+    var a=Math.min(q0,q1),n=Math.abs(q1-q0)+1;ghost.className='ev ghost s'+a+' l'+n}
+  function mv(m){if(touch)return;var q=at(m);if(q!==q0||moved){moved=true;q1=q;show()}}
+  function done(){document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',cancel);d.classList.remove('picking')}
+  function cancel(){done();if(ghost)ghost.remove()}
+  function up(){done();
+    var a=Math.min(q0,q1),b=moved?Math.max(q0,q1)+1:a+4;
+    dialogFor(d.getAttribute('data-new')+'&t='+hm(a)+(b<=95?'&e='+hm(b):''));
+    if(ghost)setTimeout(function(){ghost.remove()},300)}
+  document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up);document.addEventListener('pointercancel',cancel);
+});
+grid.addEventListener('pointerdown',function(e){
+  var ev=e.target.closest('.ev[data-move]');if(!ev||e.button!==0)return;
+  var resize=e.target.classList.contains('rs'),startY=e.clientY,startX=e.clientX,top=ev.offsetTop,h=ev.offsetHeight,col=ev.parentNode,moved=false,target=col;
+  var list=cols(),ci=list.indexOf(col);
+  function mv(m){var dy=Math.round((m.clientY-startY)/slot)*slot;if(Math.abs(m.clientY-startY)>4||Math.abs(m.clientX-startX)>8)moved=true;if(!moved)return;
+    ev.classList.add('dragging');
+    if(resize){ev.style.height=Math.max(slot-2,h+dy)+'px'}else{ev.style.top=Math.max(0,Math.min(1152-h,top+dy))+'px';
+      var w=col.getBoundingClientRect().width,di=Math.round((m.clientX-startX)/w),ni=Math.max(0,Math.min(list.length-1,ci+di));
+      if(list[ni]!==target){target=list[ni];target.appendChild(ev)}}}
+  function up(){document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);
+    if(!moved)return;
+    var q0=Math.round(ev.offsetTop/slot),len=Math.max(1,Math.round((ev.offsetHeight+2)/slot)),day=target.getAttribute('data-date');
+    var t=function(q){var hh=Math.floor(q/4),mm=(q%4)*15;return (hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm};
+    var data={cal:ev.getAttribute('data-cal'),uid:ev.getAttribute('data-uid'),href:ev.getAttribute('data-href')||'',date:day,start:t(q0),end:t(Math.min(96,q0+len)),back:location.pathname+location.search};
+    if(ev.getAttribute('data-move')==='ask'){dialogFor('/event?'+new URLSearchParams(data).toString()+'&edit=1');return}
+    post('/event/move',data).then(function(r){return r.json()}).then(function(j){if(j.go)location.href=j.go;else location.reload()},function(){location.reload()})}
+  document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up);e.preventDefault()});
+grid.addEventListener('click',function(e){var ev=e.target.closest('.ev.dragging');if(ev){e.preventDefault();e.stopPropagation()}},true);
+})();
+"""
+
+
 NAV = (("/", "Sync"), ("/calendar", "Calendar"), ("/settings", "Settings"))
 
 
@@ -262,10 +396,12 @@ def page(title, body, signed_in=False, flash=None, refresh=None, at="", wide=Fal
     meta = f'<meta http-equiv="refresh" content="{int(refresh)}">' if refresh else ""
     note = f'<p class="flash" role="status">{esc(flash)}</p>' if flash else ""
     size = 32 if signed_in else 64
+    script = '<script src="/app.js" defer></script>'     # every page: keys and drag when signed in, the password eye everywhere
+    brand = f'<img src="{MARK}" alt="" width="{size}" height="{size}">CalSync' if signed_in else f'<img src="{MARK}" alt="CalSync" width="{size}" height="{size}">'
     return (f'<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="theme-color" content="#ffffff">{meta}'
             f'<title>{esc(title)} · CalSync</title><link rel="stylesheet" href="/app.css"><link rel="icon" href="{MARK}">'
-            f'<body class="{"in" if signed_in else "out"}"><header><div class="bar"><a class="brand" href="/"><img src="{MARK}" alt="" width="{size}" height="{size}">CalSync</a>{nav}</div></header>'
-            f'<main{" class=wide" if wide else ""}>{note}{body}</main></html>')
+            f'<body class="{"in" if signed_in else "out"}"><header><div class="bar"><a class="brand" href="/">{brand}</a>{nav}</div></header>'
+            f'<main{" class=wide" if wide else ""}>{note}{body}</main>{script}</html>')
 
 
 def tile(name):
@@ -318,6 +454,8 @@ def dashboard(csrf, flash=None, preview=None):
 <span class="chips">{chips}</span><span class="more">Options</span></summary><div class="opts"><form method="post" action="/calendar/save"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(c["name"])}">
 <label class="check"><input type="checkbox" name="busy_only"{" checked" if c.get("busy_only") else ""}> Copies here only say Busy</label>
 <label class="check"><input type="checkbox" name="read_only"{" checked" if c.get("read_only") else ""}> Never write to this calendar</label>
+<label for="col-{esc(c["name"])}">Colour on the Calendar tab</label><select id="col-{esc(c["name"])}" name="colour"><option value="">Automatic</option>{"".join(f'<option value="{k}"{" selected" if c.get("colour") == k else ""}>{k.title()}</option>' for k in engine.PALETTE)}</select>
+<p class="soft">What is copied where, and filters, are set per direction under What goes where.</p>
 {skip}<div class="actions"><button>Save</button></div></form>
 <div class="actions"><form class="inline" method="post" action="/calendar/remove"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(c["name"])}"><button class="plain">Stop syncing this calendar</button></form>
 <form class="inline" method="post" action="/purge"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="name" value="{esc(c["name"])}"><button class="danger">Delete the copies CalSync made here</button></form></div></div></details></section>''')
@@ -325,7 +463,8 @@ def dashboard(csrf, flash=None, preview=None):
         out.append('<section class="note">Add at least two calendars and CalSync can start.</section>')
     out.append(f'<div class="actions"><a class="button plain" href="#add">Add a calendar</a><a class="button plain" href="/calendar">See them on a calendar</a></div>'
                f'<h2 id="add" class="big">Add a calendar</h2>{connect_body(csrf)}</div><div><h2>Sync</h2>')
-    state = "Running in the background every " + str(cfg.get("interval_minutes", 5)) + " minutes." if cfg.get("enabled") else "Not running yet. Preview first, then start it."
+    fast = " Google and Microsoft calendars are checked every minute." if cfg.get("enabled") and cfg.get("fast_check", True) else ""
+    state = ("Running in the background every " + str(cfg.get("interval_minutes", 5)) + " minutes." + fast) if cfg.get("enabled") else "Not running yet. Preview first, then start it."
     out.append(f'<section><p class="state{" on" if cfg.get("enabled") else ""}">{esc(state)}</p><p class="soft">Last run: {esc(describe_run(last))}</p>')
     if last and last.get("problems"):
         out.append('<p class="bad">Last run had problems:</p><pre tabindex="0">' + esc("\n".join(last["problems"])) + "</pre>")
@@ -348,6 +487,8 @@ def dashboard(csrf, flash=None, preview=None):
         if preview.get("skipped_deletes"):
             out.append(f'<form class="inline" method="post" action="/run">{hidden}<input type="hidden" name="force" value="1"><button class="danger">Allow these deletes</button></form>')
         out.append("</div></section>")
+        out.append(why_section(preview.get("decisions"), cfg))
+    out.append(pairs_section(csrf, cfg))
     return page("Sync", "".join(out) + "</div></div>", True, flash, at="/", wide=True)
 
 
@@ -361,12 +502,72 @@ def connect_body(csrf):
     existing = ('<h2>Signed in accounts</h2><section class="list">' + "".join(rows) + "</section>") if rows else ""
     caldav = "".join(f'''<div class="row"><div><b>{"Another CalDAV server" if k == "other" else v[0]}</b></div><a class="button" href="/connect/caldav?p={k}">Connect</a></div>'''
                      for k, v in engine.CALDAV_SERVERS.items())
+    one = {**oneclick("google"), **oneclick("microsoft")}
+    sign = lambda k, name: (f'<a class="button" href="{esc(one[k])}" target="_blank" rel="noopener" data-oauth-wait="/connect/wait?flow={esc(one[k + "_state"])}">Sign in with {name}</a>'
+                            if one.get(k) else f'<a class="button" href="/connect/{k}">Connect</a>')
+    unverified = (' <span class="soft">Google may first say it hasn\'t verified CalSync while its review is pending. Click Advanced, then Go to CalSync.</span>'
+                  if engine.GOOGLE_UNVERIFIED else "")
+    advanced = ('<p class="soft adv"><a href="/connect/advanced">Advanced: use your own OAuth app</a></p>' if one.get("google") or one.get("microsoft")
+                else '<p class="soft adv">One-click sign-in works when you open CalSync on the computer it runs on. From here, use your own sign-in app. <a href="/connect/advanced">More</a></p>' if one.get("remote") else "")
     return f'''{existing}<h2>Connect an account</h2>
-<section class="list"><div class="row"><div><b>Google Calendar</b></div><a class="button" href="/connect/google">Connect</a></div>
-<div class="row"><div><b>Outlook or Microsoft 365</b></div><a class="button" href="/connect/microsoft">Connect</a></div>
-{caldav}</section>
+<section class="list"><div class="row"><div><b>Google Calendar</b>{unverified if one.get("google") else ""}</div>{sign("google", "Google")}</div>
+<div class="row"><div><b>Outlook or Microsoft 365</b> <span class="soft">Work and school accounts too, unless your organisation blocks outside apps.</span></div>{sign("microsoft", "Microsoft")}</div>
+{caldav}</section>{advanced}
 <section class="list"><div class="row long"><div><b>Published .ics link</b> <span class="soft">Read-only: its events are copied out, nothing is written back. For Proton Calendar, an Exchange server, or an organization that blocks outside apps.</span></div><a class="button" href="/connect/ics">Add link</a></div>
 <div class="row long"><div><b>Calendly, Cal.com or another booking app</b> <span class="soft">Nothing to add here. Connect the booking app to any calendar above. CalSync keeps that calendar showing your busy times from all the others.</span></div><a class="button plain" href="https://docs.getcalsync.app/booking-apps/">How it works</a></div></section>'''
+
+
+def oneclick(provider):
+    """A ready sign-in link for CalSync's own app, made for this page view: {provider: url, provider_state: state}.
+    Only when the page was opened on this computer, since the sign-in comes back to 127.0.0.1 or localhost."""
+    if not engine.builtin_app(provider):
+        return {}
+    name = re.sub(r":\d+$", "", (getattr(here, "host", "") or "").strip().lower()).strip("[]")
+    if PUBLIC_URL or not (name in ("localhost", "127.0.0.1", "::1") or name.endswith(".localhost")):
+        return {"remote": True}
+    port = re.search(r":(\d+)$", getattr(here, "host", "") or "")
+    redirect = engine.loopback_redirect(provider, port.group(1) if port else 80)
+    flow = engine.oauth_start(provider, redirect)
+    with state_lock:
+        if len(pending_oauth) >= MAX_OAUTH_FLOWS:       # each page view makes one; the oldest unused go first
+            for key in sorted(pending_oauth, key=lambda k: pending_oauth[k]["expires"])[:len(pending_oauth) - MAX_OAUTH_FLOWS + 1]:
+                del pending_oauth[key]
+        pending_oauth[flow["state"]] = {"provider": provider, "verifier": flow["verifier"], "redirect": redirect,
+                                        "expires": time.time() + 900, "status": "waiting"}
+    return {provider: flow["url"], provider + "_state": flow["state"]}
+
+
+def advanced_page(csrf, flash=None):
+    return page("Your own sign-in app", '''<h1>Advanced: use your own OAuth app</h1><section><p>CalSync's own Google and Microsoft apps are the quick way. If you run CalSync on a server,
+or would rather your sign-ins go through an app you own, make your own. It takes about 10 minutes each.</p></section>
+<section class="list"><div class="row"><div><b>Your own Google app</b> <span class="soft">A Desktop app client from Google Cloud, with its ID and secret.</span></div><a class="button" href="/connect/google">Set up</a></div>
+<div class="row"><div><b>Your own Microsoft app</b> <span class="soft">An Entra app registration, signed in with a code.</span></div><a class="button" href="/connect/microsoft">Set up</a></div></section>
+<div class="actions"><a class="button plain" href="/#add">Back</a></div>''', True, flash, at="/")
+
+
+def blocked_section():
+    return ('<section class="warn"><p><b>Your organisation needs an administrator to approve CalSync.</b> Many schools and workplaces do this for '
+            'outside apps. You can ask your IT team, or sync this calendar one way: in Outlook on the web, publish the calendar and '
+            'add its .ics link here.</p><div class="actions"><a class="button" href="/connect/ics">Add an .ics link</a>'
+            '<a class="button plain" href="https://docs.getcalsync.app/ics/">How to publish it</a></div></section>')
+
+
+def wait_page(flow_id):
+    with state_lock:
+        flow = pending_oauth.get(flow_id)
+    if not flow:
+        return None, page("Sign in", '<h1>This sign-in has expired</h1><section class="note">Start again from Add a calendar.</section><a class="button plain" href="/#add">Add a calendar</a>', True, at="/")
+    name = "Google" if flow["provider"] == "google" else "Microsoft"
+    google_hint = ('<p>If Google says <b>Google hasn\'t verified this app</b>, that\'s expected for now: Google is still reviewing CalSync. '
+                   'Click <b>Advanced</b>, then <b>Go to CalSync</b>, then <b>Continue</b>.</p>')
+    if flow["status"] == "done":
+        return "/account?label=" + urllib.parse.quote(flow["label"]), None
+    if flow["status"] == "blocked":
+        return None, page("Sign in", f'<h1>{name} didn\'t let CalSync in</h1>{blocked_section()}', True, at="/")
+    if flow["status"] == "failed":
+        return None, page("Sign in", f'<h1>That didn\'t work</h1><section class="bad">{esc(flow.get("problem", ""))}</section><a class="button plain" href="/#add">Try again</a>', True, at="/")
+    return None, page("Sign in", f'''<h1>Sign in to {name}</h1><section><p>Your browser opened {name}. Choose your account and allow CalSync.
+This page moves on by itself when you're done.</p>{google_hint if flow["provider"] == "google" and engine.GOOGLE_UNVERIFIED else ""}<p class="soft">If no browser window opened, <a href="/#add">go back</a> and press Sign in with {name} again.</p></section>''', True, refresh=2, at="/")
 
 
 def connect_page(csrf, flash=None):
@@ -381,7 +582,7 @@ def google_page(csrf, flash=None):
 <label for="label">A short name for this account</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="work">
 <div class="actions"><button>Continue</button></div></form></section>
 <section><p>Your Google sign-in app is saved. Replace it only if you made a new one.</p>{client_form(csrf, True)}</section>''', True, flash, at="/")
-    return page("Connect Google", f'<h1>Connect Google</h1><section><p>Google needs a sign-in app of your own. It\'s free and takes about 10 minutes. You only do it once, for all your Google accounts.</p>{GOOGLE_STEPS}{client_form(csrf)}</section>', True, flash, at="/")
+    return page("Connect Google", f'<h1>Your own Google app</h1><section><p>Make a sign-in app of your own in Google Cloud. It\'s free and takes about 10 minutes. You only do it once, for all your Google accounts.</p>{GOOGLE_STEPS}{client_form(csrf)}</section>', True, flash, at="/")
 
 
 def client_form(csrf, replacing=False):
@@ -395,7 +596,7 @@ def microsoft_page(csrf, flash=None):
     client = engine.load_json(os.path.join(engine.SECRETS, "microsoft-client.json"), None)
     steps = "" if client else f"<p>Microsoft needs a sign-in app of your own. It's free and you only make it once.</p>{MICROSOFT_STEPS}"
     cid = esc(client["client_id"]) if client else ""
-    return page("Connect Microsoft", f'''<h1>Connect Outlook or Microsoft 365</h1><section>{steps}<form method="post" action="/connect/microsoft/start" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
+    return page("Connect Microsoft", f'''<h1>Your own Microsoft app</h1><section>{steps}<form method="post" action="/connect/microsoft/start" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
 <label for="cid">Application (client) ID</label><input type="text" id="cid" name="client_id" required value="{cid}">
 <label for="label">A short name for this account</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="school">
 <div class="actions"><button>Continue</button></div></form></section>''', True, flash, at="/")
@@ -416,7 +617,7 @@ def caldav_page(kind, csrf, flash=None):
 <form method="post" action="/connect/caldav/save" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="kind" value="{kind}">
 <label for="label">A short name</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="personal">
 {address}<label for="username">Username</label><input type="text" id="username" name="username" required>
-<label for="password">Password</label><input type="password" id="password" name="password" required autocomplete="new-password">
+<label for="password">Password</label><input type="password" id="password" name="password" required autocomplete="new-password" data-reveal>
 <div class="actions"><button>Check and save</button></div></form></section>''', True, flash, at="/")
 
 
@@ -447,7 +648,6 @@ def settings_page(csrf, flash=None):
     cfg = engine.load_json(engine.CONFIG, {"calendars": []})
     current = cfg.get("interval_minutes", 5)
     opts = "".join(f'<option value="{m}"{" selected" if m == current else ""}>Every {m} minutes</option>' for m in INTERVALS)
-    made = ((web_config() or {}).get("recovery") or {}).get("made")
     writable = engine.writable_calendars(cfg)
     try:
         main = engine.main_calendar(cfg)["name"] if writable else ""
@@ -456,19 +656,17 @@ def settings_page(csrf, flash=None):
     add_to = ("<label for=\"addto\">Quick add puts events on</label><select id=\"addto\" name=\"add_to\">" + "".join(
         f'<option value="{esc(c["name"])}"{" selected" if c["name"] == main else ""}>{esc(c.get("label") or c["name"])}</option>' for c in writable)
         + "</select><p class=\"soft\">Pick the calendar your booking page reads, so a new event blocks the time there at once.</p>") if writable else ""
-    recovery_state = f"You have a recovery code, made {esc(made)}." if made else "<b>You don't have a recovery code yet.</b> Make one now, so a forgotten password isn't a problem."
+    window = cfg.get("window") or {}
     return page("Settings", f'''<h1>Settings</h1><section><form method="post" action="/settings/save"><input type="hidden" name="csrf" value="{csrf}">
 <label for="iv">How often to sync</label><select id="iv" name="interval">{opts}</select>
 {add_to}<label for="tz">Your time zone</label><input type="text" id="tz" name="timezone" value="{esc(cfg.get("timezone") or engine.tz_name())}" required>
-<div class="actions"><button>Save</button></div></form></section>
-<h2>Change password</h2><section><form method="post" action="/settings/password" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
-<label for="old">Current password</label><input type="password" id="old" name="old" required><label for="new">New password</label><input type="password" id="new" name="new" required minlength="10">
-<div class="actions"><button>Change password</button></div></form></section>
-<h2>Recovery code</h2><section><p>{recovery_state}</p><p class="soft">If you forget your password, the recovery code lets you choose a new one, but only on this computer. A new code replaces the old one.</p>
-<form method="post" action="/settings/recovery" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}"><label for="rcp">Current password</label><input type="password" id="rcp" name="old" required>
-<div class="actions"><button class="plain">Make a new recovery code</button></div></form></section>
-<div class="actions"><form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="{csrf}"><button class="plain">Sign out</button></form>
-<form class="inline" method="post" action="/logout/everywhere"><input type="hidden" name="csrf" value="{csrf}"><button class="plain">Sign out on every device</button></form></div>''', True, flash, at="/settings")
+<label for="tz2">A second time zone beside it on the Calendar tab</label><input type="text" id="tz2" name="tz2" value="{esc(calendar_prefs(cfg)["tz2"])}" placeholder="Europe/London">
+<fieldset><legend>How far to sync</legend><div class="inline-fields"><input type="number" name="past_days" min="0" max="365" value="{esc(window.get("past_days", engine.PAST_DAYS))}" aria-label="Days back"><span>days back and</span>
+<input type="number" name="future_days" min="1" max="730" value="{esc(window.get("future_days", engine.FUTURE_DAYS))}" aria-label="Days ahead"><span>days ahead</span></div>
+<p class="soft">Events outside this window aren't copied, and their copies are left as they are.</p></fieldset>
+<label class="check"><input type="checkbox" name="fast_check" value="1"{" checked" if cfg.get("fast_check", True) else ""}> Check Google and Microsoft calendars for changes every minute, and sync as soon as one changes</label>
+<p class="soft">{esc(push_words())}</p>
+<div class="actions"><button>Save</button></div></form></section>''', True, flash, at="/settings")
 
 
 # ---------- the Calendar tab: what calsync sees, as a week or a month ----------
@@ -508,149 +706,6 @@ def _local(ev, tz):
     return s.date(), max(s.date(), last), label
 
 
-def calendar_page(csrf, q, flash=None, quick=None):
-    D = engine.dt
-    cfg = engine.load_json(engine.CONFIG, {"calendars": []})
-    cals = cfg["calendars"]
-    if not cals:
-        return page("Calendar", '<h1>Calendar</h1><section class="empty"><p>Add a calendar first, and its events show up here.</p><a class="button" href="/#add">Add a calendar</a></section>', True, flash, at="/calendar")
-    tz = engine.local_tz()
-    today = D.datetime.now(tz).date()
-    view = "month" if q.get("view", [""])[0] == "month" else "week"
-    try:
-        anchor = D.date.fromisoformat(q.get("d", [""])[0])
-    except ValueError:
-        anchor = today
-    names = [c["name"] for c in cals]
-    show = q.get("show", [""])[0]
-    show = show if show in names else ""
-    colour = {n: f"k{i % COLOURS}" for i, n in enumerate(names)}
-    label = {c["name"]: c.get("label") or c["name"] for c in cals}
-
-    if view == "week":
-        first = anchor - D.timedelta(days=(anchor.weekday() + 1) % 7)      # weeks start on Sunday
-        days = [first + D.timedelta(days=i) for i in range(7)]
-        back, fwd = first - D.timedelta(days=7), first + D.timedelta(days=7)
-        title = f"{first.strftime('%b')} {first.day} to {days[-1].strftime('%b')} {days[-1].day}, {days[-1].year}"
-    else:
-        start = anchor.replace(day=1)
-        first = start - D.timedelta(days=(start.weekday() + 1) % 7)
-        nxt = (start + D.timedelta(days=32)).replace(day=1)
-        last = nxt - D.timedelta(days=1)
-        count = ((last - first).days // 7 + 1) * 7
-        days = [first + D.timedelta(days=i) for i in range(count)]
-        back, fwd = (start - D.timedelta(days=1)).replace(day=1), nxt
-        title = start.strftime("%B %Y")
-    lo = D.datetime.combine(days[0], D.time(), tz).astimezone(D.timezone.utc)
-    hi = D.datetime.combine(days[-1] + D.timedelta(days=1), D.time(), tz).astimezone(D.timezone.utc)
-    tmin, tmax = lo.strftime("%Y-%m-%dT%H:%M:%SZ"), hi.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    wanted = [c for c in cals if not show or c["name"] == show]
-    fresh = q.get("fresh", [""])[0] == "1"
-    results = {}
-    threads = [threading.Thread(target=lambda c=c: results.__setitem__(c["name"], calendar_events(c, tmin, tmax, fresh))) for c in wanted]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(60)
-
-    per_day = {d: [] for d in days}
-    seen, problems = set(), []
-    skips = engine.skipped(cfg)
-    for c in wanted:
-        kind, evs = results.get(c["name"], ("err", "took too long to answer"))
-        if kind == "err":
-            problems.append(f"{label[c['name']]}: {evs}")
-            continue
-        for ev in evs:
-            src = (ev.get("copy_of") or "").split("|")[0]
-            if not show and src:            # Everything: only real events; their copies are the same events again
-                continue
-            ident = ev.get("ical") or ev["uid"]
-            if not show and (ident, ev["start"]) in seen:     # one meeting you were invited to on two calendars
-                continue
-            seen.add((ident, ev["start"]))
-            first_day, last_day, when = _local(ev, tz)
-            owner = src if src in colour else c["name"]
-            what = "Busy" if ev.get("private") and src else (ev.get("title") or "(no title)")
-            key = ev["copy_of"] if src else f"{c['name']}|{ev['uid']}"      # the occurrence a skip is about: always the source's
-            item = (0 if ev["all_day"] else 1, ev["start"], when, what, colour[owner], bool(src), label.get(owner, owner), key, key in skips)
-            d = max(first_day, days[0])
-            while d <= min(last_day, days[-1]) and d - first_day < D.timedelta(days=62):
-                per_day[d].append(item)
-                d += D.timedelta(days=1)
-
-    def link(**kw):
-        p = {"view": view, "d": anchor.isoformat(), "show": show}
-        p.update(kw)
-        return "/calendar?" + urllib.parse.urlencode({k: v for k, v in p.items() if v})
-
-    seg = "".join(f'<a href="{esc(link(view=v))}"{" aria-current=page" if v == view else ""}>{v.title()}</a>' for v in ("week", "month"))
-    step = (f'<a href="{esc(link(d=back.isoformat()))}" aria-label="Earlier">&lsaquo;</a><a href="{esc(link(d=today.isoformat()))}">Today</a>'
-            f'<a href="{esc(link(d=fwd.isoformat()))}" aria-label="Later">&rsaquo;</a>')
-    legend = [f'<a href="{esc(link(show=""))}"{" aria-current=page" if not show else ""}>Everything</a>']
-    legend += [f'<a class="{colour[n]}" href="{esc(link(show=n))}"{" aria-current=page" if show == n else ""}><span class="dot"></span>{esc(label[n])}</a>' for n in names]
-    if show:
-        explain = (f"What is on {esc(label[show])} right now. Its own events are solid; striped ones are copies CalSync made, "
-                   f"in the colour of the calendar they came from.")
-    else:
-        explain = "Your own events from every calendar, one colour each. Once synced, every calendar CalSync writes to holds all of these."
-
-    cells = []
-    if view == "month":
-        cells += [f'<div class="wd">{w}</div>' for w in ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")]
-    for d in days:
-        items = sorted(per_day[d])
-        cls = " ".join(x for x in ("today" if d == today else "", "other" if view == "month" and d.month != anchor.month else "") if x)
-        head = (f'<p class="dh"><span class="dn">{d.day}</span>' + (f'<span class="wn">{d.strftime("%a")}</span>' if view == "week" else "") + "</p>")
-        limit = 3 if view == "month" else 50
-        evs = "".join(chip(view, csrf, item, link()) for item in items[:limit])
-        if len(items) > limit:
-            evs += f'<a class="plus" href="{esc(link(view="week", d=d.isoformat()))}">{len(items) - limit} more</a>'
-        cells.append(f'<div{" class=" + chr(34) + cls + chr(34) if cls else ""}>{head}{evs}</div>')
-    bad = "".join(f"<li>{esc(p)}</li>" for p in problems)
-    bad = f'<section class="bad"><p>Some calendars couldn\'t be read just now:</p><ul>{bad}</ul></section>' if bad else ""
-    writable = engine.writable_calendars(cfg)
-    try:
-        main = engine.main_calendar(cfg)["name"] if writable else None
-    except SystemExit:
-        main = None
-    pick = q.get("cal", [main or ""])[0]
-    opts = "".join(f'<option value="{esc(c["name"])}"{" selected" if c["name"] == pick else ""}>{esc(c.get("label") or c["name"])}</option>' for c in writable)
-    adder = (f'''<form class="quick" method="post" action="/quick" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="back" value="{esc(link())}">
-<label for="qa" class="vh">Add an event</label><input type="text" id="qa" name="text" required maxlength="300" value="{esc(q.get("text", [""])[0])}" placeholder="Breakfast with friends tomorrow 9am for 2 hours">
-<select name="calendar" aria-label="Add it to">{opts}</select><button>Preview</button></form>''' if writable else "")
-    gone = [x for x in cfg.get("skips", []) if x["key"] in skips]
-    skipped_list = ('<h2>Skipped</h2><section class="list">' + "".join(
-        f'''<div class="row"><div><b>{esc(x["title"])}</b><span class="soft">{esc(x["start"][:10])} · not copied, so it doesn't block your other calendars</span></div>
-<form class="inline" method="post" action="/unskip"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="key" value="{esc(x["key"])}"><input type="hidden" name="back" value="{esc(link())}"><button class="plain">Undo</button></form></div>'''
-        for x in gone) + "</section>") if gone else ""
-    body = f'''<div class="calbar"><h1>Calendar</h1><div class="tools"><nav class="seg" aria-label="View">{seg}</nav><span class="step">{step}</span></div></div>
-{adder}{quick or ""}<p class="range">{esc(title)}</p><div class="legend" role="group" aria-label="Calendars">{"".join(legend)}</div>{bad}
-<div class="grid {view}">{"".join(cells)}</div>
-<p class="calnote">{explain} {"Open an event in the week view to skip it, for a class that's cancelled. " if view == "month" else "Open an event to skip it, for a class that's cancelled. "}Times are in {esc(engine.tz_name())}. Read a moment ago; <a href="{esc(link(fresh="1"))}">refresh</a>.</p>{skipped_list}'''
-    return page("Calendar", body, True, flash, at="/calendar", wide=True)
-
-
-def chip(view, csrf, item, back):
-    """One event. In the week view it opens to show where it's from, with Skip this one."""
-    _, start, when, t, k, cp, who, key, gone = item
-    cls = f'ev {k}{" copy" if cp else ""}{" gone" if gone else ""}'
-    label = f'<span class="t">{esc(when)}</span>{esc(t)}'
-    if view != "week":
-        return f'<p class="{cls}" title="{esc(who)}{" (copy)" if cp else ""}{" (skipped)" if gone else ""}">{label}</p>'
-    hidden = (f'<input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="key" value="{esc(key)}">'
-              f'<input type="hidden" name="back" value="{esc(back)}">')
-    if gone:
-        action = f'<form method="post" action="/unskip">{hidden}<button class="plain">Undo skip</button></form>'
-        note = "Skipped: not copied to your other calendars."
-    else:
-        action = (f'<form method="post" action="/skip">{hidden}<input type="hidden" name="title" value="{esc(t)}">'
-                  f'<input type="hidden" name="start" value="{esc(start)}"><button class="plain">Skip this one</button></form>')
-        note = ("A copy CalSync made. " if cp else "") + "Skipping it removes its copies, so the time opens on your other calendars. The original stays."
-    return f'<details class="evd"><summary class="{cls}">{label}</summary><div class="evm"><p><b>From {esc(who)}</b></p><p class="soft">{note}</p>{action}</div></details>'
-
-
 def quick_preview(csrf, plan, text, cal, back):
     """The one-line preview, with whatever needs a yes: an overlap, guests who would get an invite."""
     ev = plan["event"]
@@ -678,9 +733,764 @@ def short_error(e):
     return str(e)[:300]
 
 
+
+# ---------- sync rules: one direction at a time ----------
+
+STATUS_WORDS = {"synced": "Synced", "syncing": "Syncing", "error": "Error", "off": "Off", "waiting": "Not started"}
+
+
+def colour_classes(cfg):
+    """Calendar name -> its colour class: the colour chosen for it, else one by the order it was added in."""
+    names = list(engine.PALETTE)
+    return {c["name"]: f"k{names.index(c['colour']) if c.get('colour') in names else i % len(names)}" for i, c in enumerate(cfg["calendars"])}
+
+
+def hidden_csrf(csrf):
+    return f'<input type="hidden" name="csrf" value="{csrf}">'
+
+
+def rule_summary(rule):
+    if not rule["enabled"]:
+        return "Off" + (", copies kept" if rule["keep_copies"] else "")
+    cp = rule["copy"]
+    bits = ["Title" if cp["title"] else f'Says "{cp["title_text"]}"']
+    bits += [w for k, w in (("description", "notes"), ("location", "place"), ("conference", "join link"), ("attendees", "guests")) if cp[k]]
+    f = rule["filters"]
+    left = [w for k, w in (("free", "free"), ("tentative", "maybe"), ("unanswered", "unanswered"), ("all_day", "all-day"), ("ooo", "out of office")) if f[k]]
+    if f["keywords"] or f["colours"] or f["days"] or f["from"] or f["until"]:
+        left.append("more")
+    return ", ".join(bits) + (" · leaves out " + ", ".join(left) if left else "")
+
+
+def pairs_section(csrf, cfg):
+    """Every direction calsync copies in, with its rule in a few words, its status and Resync."""
+    cals = cfg["calendars"]
+    label = {c["name"]: c.get("label") or c["name"] for c in cals}
+    with state_lock:
+        running = run_state["running"]
+    status = engine.pair_status(cfg, running=running)
+    rows = []
+    for d in cals:
+        if d.get("read_only"):
+            continue
+        for s in cals:
+            if s["name"] == d["name"]:
+                continue
+            key = f"{s['name']}>{d['name']}"
+            st, words = status.get(key, ("waiting", ""))
+            rule = engine.rule_for(s["name"], d["name"], cfg)
+            q = urllib.parse.urlencode({"src": s["name"], "dst": d["name"]})
+            resync = (f'<form method="post" action="/resync">{hidden_csrf(csrf)}<input type="hidden" name="pair" value="{esc(key)}"><button class="plain">Resync</button></form>'
+                      if rule["enabled"] and cfg.get("enabled") else "")
+            rows.append(f'<div class="pair"><span class="who"><strong>{esc(label[s["name"]])}<span class="arrow">→</span>{esc(label[d["name"]])}</strong>'
+                        f'<span class="soft">{esc(rule_summary(rule))}</span></span><span class="st {st}" title="{esc(words)}">{STATUS_WORDS[st]}</span>'
+                        f'<a class="button plain" href="/pair?{esc(q)}">Edit</a>{resync}</div>')
+    if not rows:
+        return ""
+    return f'<h2>What goes where</h2><section class="pairs">{"".join(rows)}</section><p class="soft center"><a href="/activity">Activity</a></p>'
+
+
+def pair_page(csrf, src, dst, flash=None):
+    cfg = engine.load_json(engine.CONFIG, {"calendars": []})
+    label = {c["name"]: c.get("label") or c["name"] for c in cfg["calendars"]}
+    rule = engine.rule_for(src, dst, cfg)
+    cp, f = rule["copy"], rule["filters"]
+    on = lambda v: " checked" if v else ""
+    box = lambda name, text, v, extra="": f'<label class="check"><input type="checkbox" name="{name}" value="1"{on(v)}{extra}> {text}</label>'
+    sample_title = "Team meeting"
+    shown = f"{rule['tag'] + ' ' if rule['tag'] else ''}{sample_title if cp['title'] else cp['title_text']}"
+    colours = "".join(f'<option value="{k}"{" selected" if rule["colour"] == k else ""}>{k.title()}</option>' for k in engine.PALETTE)
+    swatch = "".join(f'<label class="check k{i}"><input type="checkbox" name="f_colours" value="{k}"{on(k in f["colours"])}><span class="dot"></span>{k.title()}</label>'
+                     for i, k in enumerate(engine.PALETTE))
+    days = "".join(f'<label class="check"><input type="checkbox" name="f_days" value="{i}"{on(i in f["days"])}>{d}</label>' for i, d in enumerate(engine.DAYS))
+    mode = lambda name, v: (f'<select name="{name}" aria-label="How to use this list"><option value="exclude"{" selected" if v == "exclude" else ""}>Leave these out</option>'
+                            f'<option value="only"{" selected" if v == "only" else ""}>Copy only these</option></select>')
+    runs = engine.activity(10, f"{src}>{dst}")
+    recent = "".join(f'<li>{esc(local_stamp(r["at"]))}: {esc(", ".join(r.get("lines", [])[:3]) or "no changes")}</li>' for r in runs if r.get("lines")) or "<li>Nothing copied this way yet.</li>"
+    other = urllib.parse.urlencode({"src": dst, "dst": src})
+    body = f'''<h1>{esc(label[src])} <span class="arrow">→</span> {esc(label[dst])}</h1>
+<p class="soft">What CalSync copies from {esc(label[src])} onto {esc(label[dst])}. The other way has its own rule: <a href="/pair?{esc(other)}">{esc(label[dst])} → {esc(label[src])}</a>.</p>
+<form method="post" action="/pair/save">{hidden_csrf(csrf)}<input type="hidden" name="src" value="{esc(src)}"><input type="hidden" name="dst" value="{esc(dst)}">
+<section>{box("enabled", f"Copy events from {esc(label[src])} to {esc(label[dst])}", rule["enabled"], ' id="enabled"')}
+<div id="keepbox"{"" if not rule["enabled"] else " hidden"}><fieldset><legend>The copies already made</legend>
+<label class="check"><input type="radio" name="keep_copies" value=""{on(not rule["keep_copies"])}> Remove them at the next sync</label>
+<label class="check"><input type="radio" name="keep_copies" value="1"{on(rule["keep_copies"])}> Keep them where they are. CalSync stops updating them.</label></fieldset></div></section>
+<h2>Info to copy</h2><section><div class="two">
+{box("copy_title", "Title", cp["title"], ' id="copy_title"')}{box("copy_location", "Location", cp["location"])}
+{box("copy_description", "Description", cp["description"])}{box("copy_conference", "Video call link", cp["conference"])}
+{box("copy_attendees", "Guest list, as text. Nobody is invited.", cp["attendees"])}{box("copy_reminders", "Reminders", cp["reminders"])}
+{box("copy_private", "Mark copies private", cp["private"])}</div>
+<label for="title_text">Without the title, copies say</label><input type="text" id="title_text" name="title_text" maxlength="60" value="{esc(cp["title_text"])}">
+<p class="soft">A private event always shows only this, whatever is ticked.</p>
+<label for="tag">Tag in front of the title</label><input type="text" id="tag" name="tag" maxlength="40" value="{esc(rule["tag"])}" placeholder="[{esc(label[src])}]">
+<p class="sample">Copies look like: <b id="tagprev" data-title="{sample_title}">{esc(shown)}</b></p>
+<label for="colour">Colour of the copies</label><select id="colour" name="colour"><option value="">The calendar's own colour</option><option value="match"{" selected" if rule["colour"] == "match" else ""}>Same as the original</option>{colours}</select></section>
+<h2>Leave out</h2><section><div class="two">
+{box("f_free", "Events marked free", f["free"])}{box("f_tentative", "Invites you answered Maybe", f["tentative"])}
+{box("f_unanswered", "Invites you haven't answered", f["unanswered"])}{box("f_all_day", "All-day events", f["all_day"])}
+{box("f_birthdays", "Birthdays", f["birthdays"])}{box("f_ooo", "Out of office", f["ooo"])}</div>
+<fieldset><legend>Words in the title</legend><div class="inline-fields">{mode("f_keyword_mode", f["keyword_mode"])}<input type="text" name="f_keywords" value="{esc(", ".join(f["keywords"]))}" placeholder="lunch, gym" aria-label="Words, separated by commas"></div></fieldset>
+<fieldset><legend>Colours</legend><div class="inline-fields">{mode("f_colour_mode", f["colour_mode"])}</div><div class="swatches">{swatch}</div><p class="soft">Google event colours and Outlook categories with these names.</p></fieldset>
+<fieldset><legend>Only these days</legend><div class="days">{days}</div><p class="soft">None ticked means every day.</p></fieldset>
+<fieldset><legend>Only events starting between</legend><div class="inline-fields"><input type="time" name="f_from" value="{esc(f["from"])}" aria-label="From"><span>and</span><input type="time" name="f_until" value="{esc(f["until"])}" aria-label="Until"></div><p class="soft">In {esc(engine.tz_name())}. All-day events skip this check.</p></fieldset></section>
+<div class="actions"><button>Save</button><a class="button plain" href="/">Cancel</a></div></form>
+<h2>Recent changes this way</h2><section><ul class="facts">{recent}</ul></section>'''
+    return page("Sync rule", body, True, flash, at="/")
+
+
+def rule_from_form(form):
+    get = lambda k: form.get(k, [""])[0]
+    return engine.clean_rule({
+        "enabled": bool(get("enabled")), "keep_copies": bool(get("keep_copies")), "tag": get("tag").strip(), "colour": get("colour"),
+        "copy": {k: bool(get("copy_" + k)) for k in engine.DEFAULT_COPY if k != "title_text"} | {"title_text": get("title_text")},
+        "filters": {**{k: bool(get("f_" + k)) for k in ("free", "tentative", "unanswered", "all_day", "birthdays", "ooo")},
+                    "colours": form.get("f_colours", []), "colour_mode": get("f_colour_mode"), "keywords": get("f_keywords"),
+                    "keyword_mode": get("f_keyword_mode"), "days": form.get("f_days", []), "from": get("f_from"), "until": get("f_until")}})
+
+
+def local_stamp(at):
+    try:
+        t = engine.dt.datetime.strptime(at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=engine.dt.timezone.utc).astimezone(engine.local_tz())
+    except (TypeError, ValueError):
+        return at or ""
+    return t.strftime("%a %b %d, %I:%M %p").replace(" 0", " ")
+
+
+def activity_page(csrf, flash=None):
+    runs = engine.activity(100)
+    trig = {"timer": "On schedule", "manual": "Sync now", "push": "A calendar changed", "check": "A calendar changed", "resync": "Resync", "quick": "Quick add", "start": "Started"}
+    rows = []
+    for r in runs:
+        n = f'{r.get("created", 0)} added, {r.get("updated", 0)} updated, {r.get("deleted", 0)} removed'
+        bad = r.get("errors") or r.get("failed")
+        what = trig.get(r.get("trigger"), "Sync") + (f' ({r["pair"].replace(">", " → ")})' if r.get("pair") else "")
+        lines = "\n".join(r.get("lines", []) + r.get("problems", []))
+        rows.append(f'<details class="run"><summary><span class="who"><strong>{esc(local_stamp(r.get("at")))}</strong><span class="soft">{esc(what)} · {esc(n)}</span></span>'
+                    f'<span class="st {"error" if bad else "synced"}">{"Problem" if bad else "OK"}</span></summary>'
+                    + (f'<pre tabindex="0">{esc(lines)}</pre>' if lines else '<p class="soft pad">Nothing changed.</p>') + "</details>")
+    body = "".join(rows) or '<p class="soft pad">No runs yet.</p>'
+    return page("Activity", f'<h1>Activity</h1><p class="soft">Every sync, newest first. The last {engine.ACTIVITY_KEEP} are kept on this computer.</p><section class="runs">{body}</section>'
+                f'<div class="actions"><a class="button plain" href="/">Back to sync</a></div>', True, flash, at="/")
+
+
+def why_section(decisions, cfg, limit=300):
+    """The Preview's answer to "why is or isn't this copied": every source event, where it goes, and the rule that decided."""
+    if not decisions:
+        return ""
+    label = {c["name"]: c.get("label") or c["name"] for c in cfg["calendars"]}
+    tz = engine.local_tz()
+    by_event = {}
+    for d in decisions:
+        if d.get("action") == "remove":
+            key = ("remove", d["dst"], d["title"], d["start"])
+        else:
+            key = (d["src"], d["title"], d["start"])
+        by_event.setdefault(key, []).append(d)
+    items = []
+    for key, ds in sorted(by_event.items(), key=lambda kv: kv[0][-1])[:limit]:
+        first = ds[0]
+        try:
+            day, _, when = _local(first, tz)
+            when = f"{day.strftime('%a %b')} {day.day}, {when}"
+        except (KeyError, ValueError):
+            when = first["start"]
+        title = "Busy" if first.get("private") else first["title"]
+        if first.get("action") == "remove":
+            head = f'<b>{esc(first["title"])}</b> <span class="soft">· copy on {esc(label.get(first["dst"], first["dst"]))} · {esc(when)}</span>'
+            lis = f'<li class="no">To be removed: {esc(first["reason"])}.</li>'
+        else:
+            copied = sum(1 for d in ds if d["copied"])
+            head = f'<b>{esc(title)}</b> <span class="soft">· {esc(label.get(first["src"], first["src"]))} · {esc(when)} · {"copied to " + str(copied) if copied else "not copied"}</span>'
+            lis = "".join(f'<li class="{"yes" if d["copied"] else "no"}">' + (f'<b>{esc(label.get(d["dst"], d["dst"]))}</b>: ' if d["dst"] else "Everywhere: ")
+                          + f'{"" if d["copied"] else "not copied, because "}{esc(d["reason"])}.</li>' for d in ds)
+        items.append(f"<details><summary>{head}</summary><ul>{lis}</ul></details>")
+    return f'<h2>Why each event is or isn\'t copied</h2><section class="why">{"".join(items)}</section>'
+
+
+def remove_calendar_page(csrf, name):
+    cfg = engine.load_json(engine.CONFIG, {"calendars": []})
+    c = engine.calendar_named(name, cfg)
+    lab = esc(c.get("label") or name)
+    return page("Stop syncing", f'''<h1>Stop syncing {lab}?</h1><form method="post" action="/calendar/remove">{hidden_csrf(csrf)}<input type="hidden" name="name" value="{esc(name)}"><input type="hidden" name="confirm" value="1">
+<section><fieldset><legend>The copies of {lab}'s events on your other calendars</legend>
+<label class="check"><input type="radio" name="copies" value="remove" checked> Remove them</label>
+<label class="check"><input type="radio" name="copies" value="keep"> Keep them. CalSync stops updating them, and they stay until you delete them.</label></fieldset>
+<p class="soft">Copies CalSync made on {lab} itself stay either way. Delete them with "Delete the copies CalSync made here".</p></section>
+<div class="actions"><button class="danger">Stop syncing {lab}</button><a class="button plain" href="/">Keep syncing</a></div></form>''', True, at="/")
+
+
+# ---------- the Calendar tab: day, week and month, your own events, editing ----------
+
+pending_ops = {}        # undo token -> a change waiting UNDO_SECONDS before it's written, or one just made that Undo reverses
+UNDO_SECONDS = 10
+_op_thread = {"on": False}
+
+
+def calendar_prefs(cfg):
+    v = cfg.get("view") or {}
+    return {"hide_copies": bool(v.get("hide_copies")), "hide_weekends": bool(v.get("hide_weekends")),
+            "week_numbers": bool(v.get("week_numbers")), "tz2": v.get("tz2") or ""}
+
+
+def _zone(name):
+    from zoneinfo import ZoneInfo
+    try:
+        return ZoneInfo(name) if name else None
+    except Exception:
+        return None
+
+
+def _range_for(view, anchor, prefs):
+    D = engine.dt
+    if view == "day":
+        days = [anchor]
+        return days, anchor - D.timedelta(days=1), anchor + D.timedelta(days=1), f"{anchor.strftime('%A, %B')} {anchor.day}, {anchor.year}"
+    if view == "week":
+        first = anchor - D.timedelta(days=(anchor.weekday() + 1) % 7)      # weeks start on Sunday
+        days = [first + D.timedelta(days=i) for i in range(7)]
+        if prefs["hide_weekends"]:
+            days = [d for d in days if d.weekday() < 5]
+        title = f"{days[0].strftime('%b')} {days[0].day} to {days[-1].strftime('%b')} {days[-1].day}, {days[-1].year}"
+        if prefs["week_numbers"]:
+            title += f" · Week {days[-1].isocalendar()[1]}"
+        return days, first - D.timedelta(days=7), first + D.timedelta(days=7), title
+    start = anchor.replace(day=1)
+    first = start - D.timedelta(days=(start.weekday() + 1) % 7)
+    nxt = (start + D.timedelta(days=32)).replace(day=1)
+    count = (((nxt - D.timedelta(days=1)) - first).days // 7 + 1) * 7
+    days = [first + D.timedelta(days=i) for i in range(count)]
+    return days, (start - D.timedelta(days=1)).replace(day=1), nxt, start.strftime("%B %Y")
+
+
+def _pending_for(cal, uid):
+    now = time.time()
+    with state_lock:
+        return next((op for op in pending_ops.values() if op["kind"] in ("update", "delete") and op["cal"] == cal and op["uid"] == uid and op["due"] > now), None)
+
+
+def gather(cfg, days, show="", fresh=False, hide_copies=False):
+    """Every event to draw, as dicts with what the page needs. -> (by day, problems)."""
+    D = engine.dt
+    tz = engine.local_tz()
+    cals = cfg["calendars"]
+    label = {c["name"]: c.get("label") or c["name"] for c in cals}
+    colour = colour_classes(cfg)
+    lo = D.datetime.combine(days[0], D.time(), tz).astimezone(D.timezone.utc)
+    hi = D.datetime.combine(days[-1] + D.timedelta(days=1), D.time(), tz).astimezone(D.timezone.utc)
+    tmin, tmax = lo.strftime("%Y-%m-%dT%H:%M:%SZ"), hi.strftime("%Y-%m-%dT%H:%M:%SZ")
+    wanted = [c for c in cals if not show or c["name"] == show]
+    results = {}
+    threads = [threading.Thread(target=lambda c=c: results.__setitem__(c["name"], calendar_events(c, tmin, tmax, fresh))) for c in wanted]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(60)
+    writable = {c["name"] for c in engine.writable_calendars(cfg)}
+    skips = engine.skipped(cfg)
+    per_day = {d: [] for d in days}
+    seen, problems = set(), []
+    for c in wanted:
+        kind, evs = results.get(c["name"], ("err", "took too long to answer"))
+        if kind == "err":
+            problems.append(f"{label[c['name']]}: {evs}")
+            continue
+        for ev in evs:
+            src = (ev.get("copy_of") or "").split("|")[0]
+            if src and (not show or hide_copies):        # Everything: only real events; their copies are the same events again
+                continue
+            ident = ev.get("ical") or ev["uid"]
+            if not show and (ident, ev["start"]) in seen:      # one meeting you were invited to on two calendars
+                continue
+            seen.add((ident, ev["start"]))
+            op = _pending_for(c["name"], ev["uid"])
+            if op and op["kind"] == "delete":
+                continue
+            ev = dict(ev)
+            if op:
+                ev.update({k: op["shown"][k] for k in ("title", "start", "end", "all_day") if k in op["shown"]})
+            owner = src if src in colour else c["name"]
+            orig = engine.original_of(ev["copy_of"], cfg) if src else None
+            first_day, last_day, when = _local(ev, tz)
+            item = dict(ev, cal=c["name"], owner=owner, k=colour[owner], copy=bool(src), who=label.get(owner, owner), when=when,
+                        what="Busy" if ev.get("private") and src else (ev.get("title") or "(no title)"),
+                        key=ev["copy_of"] if src else f"{c['name']}|{ev['uid']}", pend=bool(op),
+                        link_cal=orig[0]["name"] if orig else c["name"], link_uid=orig[1] if orig else ev["uid"],
+                        movable="" if src or c["name"] not in writable else ("ask" if ev.get("series") or ev.get("attendees") else "1"))
+            item["gone"] = item["key"] in skips
+            d = max(first_day, days[0])
+            while d <= min(last_day, days[-1]) and d - first_day < D.timedelta(days=62):
+                if d in per_day:
+                    per_day[d].append(item)
+                d += D.timedelta(days=1)
+    return per_day, problems
+
+
+def event_link(item, day):
+    q = {"cal": item["link_cal"], "uid": item["link_uid"], "d": day.isoformat()}
+    if item.get("href") and not item["copy"]:
+        q["href"] = item["href"]
+    return "/event?" + urllib.parse.urlencode(q)
+
+
+def _minutes(ev, day, tz):
+    D = engine.dt
+    s = D.datetime.strptime(ev["start"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=D.timezone.utc).astimezone(tz)
+    e = D.datetime.strptime(ev["end"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=D.timezone.utc).astimezone(tz)
+    day0 = D.datetime.combine(day, D.time(), tz)
+    a = max(0, int((s - day0).total_seconds() // 60))
+    b = min(1440, int((e - day0).total_seconds() // 60))
+    return a, max(b, a + 15)
+
+
+def _columns(spans):
+    """Side-by-side columns for overlapping events: -> [(column, columns in its group)], at most 4 across."""
+    out, group, ends, group_end = [None] * len(spans), [], [], 0
+
+    def close():
+        n = min(4, len(ends))
+        for j in group:
+            out[j] = (min(out[j][0], n - 1), n)
+    for i in sorted(range(len(spans)), key=lambda i: spans[i]):
+        a, b = spans[i]
+        if group and a >= group_end:
+            close()
+            group, ends, group_end = [], [], 0
+        col = next((k for k, e in enumerate(ends) if e <= a), None)
+        if col is None:
+            col = len(ends)
+            ends.append(b)
+        else:
+            ends[col] = b
+        out[i] = (col, 0)
+        group.append(i)
+        group_end = max(group_end, b)
+    if group:
+        close()
+    return out
+
+
+def chip_link(item, day, timed_class=""):
+    cls = f'ev {item["k"]}{" copy" if item["copy"] else ""}{" gone" if item["gone"] else ""}{" pend" if item["pend"] else ""} {timed_class}'.strip()
+    data = ""
+    if item["movable"] and timed_class:
+        data = (f' data-move="{item["movable"]}" data-cal="{esc(item["cal"])}" data-uid="{esc(item["uid"])}"'
+                + (f' data-href="{esc(item["href"])}"' if item.get("href") else ""))
+    tip = f'{item["who"]}{" (copy)" if item["copy"] else ""}{" (skipped)" if item["gone"] else ""}'
+    grip = '<span class="rs" aria-hidden="true"></span>' if data else ""
+    return (f'<div class="{cls}"{data} title="{esc(tip)}"><a class="evl" href="{esc(event_link(item, day))}"><span class="t">{esc(item["when"])}</span>{esc(item["what"])}</a>{grip}</div>')
+
+
+def calendar_page(csrf, q, flash=None, quick=None):
+    D = engine.dt
+    cfg = engine.load_json(engine.CONFIG, {"calendars": []})
+    cals = cfg["calendars"]
+    if not cals:
+        return page("Calendar", '<h1>Calendar</h1><section class="empty"><p>Add a calendar first, and its events show up here.</p><a class="button" href="/#add">Add a calendar</a></section>', True, flash, at="/calendar")
+    tz = engine.local_tz()
+    today = D.datetime.now(tz).date()
+    prefs = calendar_prefs(cfg)
+    view = q.get("view", [""])[0]
+    view = view if view in ("day", "week", "month") else "week"
+    try:
+        anchor = D.date.fromisoformat(q.get("d", [""])[0])
+    except ValueError:
+        anchor = today
+    names = [c["name"] for c in cals]
+    show = q.get("show", [""])[0]
+    show = show if show in names else ""
+    label = {c["name"]: c.get("label") or c["name"] for c in cals}
+    colour = colour_classes(cfg)
+    days, back, fwd, title = _range_for(view, anchor, prefs)
+    per_day, problems = gather(cfg, days, show, q.get("fresh", [""])[0] == "1", prefs["hide_copies"])
+    if view == "month" and prefs["hide_weekends"]:
+        days = [d for d in days if d.weekday() < 5]
+
+    def link(**kw):
+        p = {"view": view, "d": anchor.isoformat(), "show": show}
+        p.update(kw)
+        return "/calendar?" + urllib.parse.urlencode({k: v for k, v in p.items() if v})
+
+    seg = "".join(f'<a href="{esc(link(view=v))}"{" aria-current=page" if v == view else ""} data-{v}>{v.title()}</a>' for v in ("day", "week", "month"))
+    step = (f'<a href="{esc(link(d=back.isoformat()))}" aria-label="Earlier" data-prev>&lsaquo;</a><a href="{esc(link(d=today.isoformat()))}" data-today>Today</a>'
+            f'<a href="{esc(link(d=fwd.isoformat()))}" aria-label="Later" data-next>&rsaquo;</a>')
+    new_at = "/event/new?" + urllib.parse.urlencode({"d": anchor.isoformat(), "cal": show})
+    search = f'<form method="get" action="/search" role="search"><label for="search" class="vh">Search</label><input type="search" id="search" name="q" placeholder="Search" maxlength="200"></form>'
+    legend = [f'<a href="{esc(link(show=""))}"{" aria-current=page" if not show else ""}>Everything</a>']
+    legend += [f'<a class="{colour[n]}" href="{esc(link(show=n))}"{" aria-current=page" if show == n else ""}><span class="dot"></span>{esc(label[n])}</a>' for n in names]
+    toggle = lambda key, text: (f'<form method="post" action="/calendar/prefs">{hidden_csrf(csrf)}<input type="hidden" name="pref" value="{key}"><input type="hidden" name="back" value="{esc(link())}">'
+                                f'<button aria-pressed="{"true" if prefs[key] else "false"}">{text}</button></form>')
+    toggles = (f'<div class="toggles">{toggle("hide_copies", "Hide copies")}{toggle("hide_weekends", "Hide weekends")}{toggle("week_numbers", "Week numbers")}'
+               f'<a class="button plain" href="{esc(new_at)}" data-new>New event</a><button class="plain" data-print hidden>Print</button></div>')
+    if view == "month":
+        grid = month_grid(days, per_day, anchor, today, prefs, link)
+    else:
+        grid = time_grid(days, per_day, today, prefs, csrf, show)
+    if show:
+        explain = (f"What is on {esc(label[show])} right now. Its own events are solid; striped ones are copies CalSync made, in the colour of the calendar they came from. "
+                   + ("Copies are hidden. " if prefs["hide_copies"] else ""))
+    else:
+        explain = "Your own events from every calendar, one colour each. Once synced, every calendar CalSync writes to holds all of these. "
+    bad = "".join(f"<li>{esc(p)}</li>" for p in problems)
+    bad = f'<section class="bad"><p>Some calendars couldn\'t be read just now:</p><ul>{bad}</ul></section>' if bad else ""
+    writable = engine.writable_calendars(cfg)
+    try:
+        main = engine.main_calendar(cfg)["name"] if writable else None
+    except SystemExit:
+        main = None
+    pick = q.get("cal", [main or ""])[0]
+    opts = "".join(f'<option value="{esc(c["name"])}"{" selected" if c["name"] == pick else ""}>{esc(c.get("label") or c["name"])}</option>' for c in writable)
+    adder = (f'''<form class="quick" method="post" action="/quick" autocomplete="off">{hidden_csrf(csrf)}<input type="hidden" name="back" value="{esc(link())}">
+<label for="qa" class="vh">Add an event</label><input type="text" id="qa" name="text" required maxlength="300" value="{esc(q.get("text", [""])[0])}" placeholder="Breakfast with friends tomorrow 9am for 2 hours">
+<select name="calendar" aria-label="Add it to">{opts}</select><button>Preview</button></form>''' if writable else "")
+    skips = engine.skipped(cfg)
+    gone = [x for x in cfg.get("skips", []) if x["key"] in skips]
+    skipped_list = ('<h2>Skipped</h2><section class="list">' + "".join(
+        f'''<div class="row"><div><b>{esc(x["title"])}</b><span class="soft">{esc(x["start"][:10])} · not copied, so it doesn't block your other calendars</span></div>
+<form class="inline" method="post" action="/unskip">{hidden_csrf(csrf)}<input type="hidden" name="key" value="{esc(x["key"])}"><input type="hidden" name="back" value="{esc(link())}"><button class="plain">Undo</button></form></div>'''
+        for x in gone) + "</section>") if gone else ""
+    tz2 = f" and {esc(prefs['tz2'])}" if prefs["tz2"] and view != "month" else ""
+    keys = ('<p class="keys noprint" id="keys" hidden><kbd>D</kbd> day · <kbd>W</kbd> week · <kbd>M</kbd> month · <kbd>T</kbd> today · <kbd>J</kbd>/<kbd>K</kbd> next and back · '
+            '<kbd>N</kbd> new event · <kbd>/</kbd> search · <kbd>P</kbd> print · <kbd>Esc</kbd> close</p>')
+    body = f'''<div class="calbar" data-cal-page><h1>Calendar</h1><div class="tools">{search}<nav class="seg" aria-label="View">{seg}</nav><span class="step">{step}</span></div></div>
+{adder}{quick or ""}{undo_toast(csrf, q)}<p class="range">{esc(title)}</p><div class="legend" role="group" aria-label="Calendars">{"".join(legend)}</div>{toggles}{bad}
+{grid}
+<p class="calnote">{explain}Open an event to see it, change it, answer it, or skip copying it. Drag one to move it; drag its bottom edge to make it longer. Double-click an empty time to add one there. Times are in {esc(engine.tz_name())}{tz2}. Press <kbd>?</kbd> for keys. Read a moment ago; <a href="{esc(link(fresh="1"))}">refresh</a>.</p>{keys}{skipped_list}'''
+    return page("Calendar", body, True, flash, at="/calendar", wide=True)
+
+
+def month_grid(days, per_day, anchor, today, prefs, link):
+    cols = 5 if prefs["hide_weekends"] else 7
+    names = ("Mon", "Tue", "Wed", "Thu", "Fri") if prefs["hide_weekends"] else ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+    cells = [f'<div class="wd">{w}</div>' for w in names]
+    for i, d in enumerate(days):
+        items = sorted(per_day.get(d, []), key=lambda it: (not it["all_day"], it["start"], it["what"]))
+        cls = " ".join(x for x in ("today" if d == today else "", "other" if d.month != anchor.month else "") if x)
+        wk = f'<span class="wkn">W{d.isocalendar()[1]}</span>' if prefs["week_numbers"] and i % cols == 0 else ""
+        head = f'<p class="dh"><a class="dn" href="{esc(link(view="day", d=d.isoformat()))}">{d.day}</a>{wk}</p>'
+        evs = "".join(chip_link(it, d) for it in items[:3])
+        if len(items) > 3:
+            evs += f'<a class="plus" href="{esc(link(view="day", d=d.isoformat()))}">{len(items) - 3} more</a>'
+        cells.append(f'<div{" class=" + chr(34) + cls + chr(34) if cls else ""}>{head}{evs}</div>')
+    return f'<div class="grid month{" nowe" if prefs["hide_weekends"] else ""}">{"".join(cells)}</div>'
+
+
+def time_grid(days, per_day, today, prefs, csrf, show):
+    D = engine.dt
+    tz = engine.local_tz()
+    tz2 = _zone(prefs["tz2"])
+    n = len(days)
+    zones = (f'<div class="zones">{esc(prefs["tz2"].split("/")[-1].replace("_", " "))} · {esc(engine.tz_name().split("/")[-1].replace("_", " "))}</div>' if tz2 else '<div></div>')
+    head = [zones] + [f'<div class="{"today" if d == today else ""}"><span class="wn">{d.strftime("%a")}</span> <span class="dn">{d.day}</span>'
+                               + (f' <span class="wkn">W{d.isocalendar()[1]}</span>' if prefs["week_numbers"] and (i == 0) else "") + "</div>" for i, d in enumerate(days)]
+    alls = ['<div>all day</div>']
+    cols = []
+    for d in days:
+        items = per_day.get(d, [])
+        alls.append("<div>" + "".join(chip_link(it, d) for it in sorted((i for i in items if i["all_day"]), key=lambda it: it["what"])) + "</div>")
+        timed = [i for i in items if not i["all_day"]]
+        spans = [_minutes(i, d, tz) for i in timed]
+        places = _columns(spans)
+        evs = []
+        for it, (a, b), (col, of) in zip(timed, spans, places):
+            cls = f"s{min(a // 15, 95)} l{max(1, min(96, -(-(b - a) // 15)))}" + (f" c{col}-{of}" if of > 1 else "")
+            evs.append(chip_link(it, d, cls))
+        now = ""
+        if d == today:
+            t = D.datetime.now(tz)
+            now = f'<div class="now s{(t.hour * 60 + t.minute) // 15}" aria-hidden="true"></div>'
+        new = "/event/new?" + urllib.parse.urlencode({"d": d.isoformat(), "cal": show})
+        cols.append(f'<div class="tg-day{" today" if d == today else ""}{" wk" if d.weekday() >= 5 else ""}" data-date="{d.isoformat()}" data-new="{esc(new)}">{now}{"".join(evs)}</div>')
+    hours = []
+    for h in range(24):
+        here = D.datetime.combine(days[0], D.time(h), tz)
+        lab = here.strftime("%I %p").lstrip("0") if h else ""
+        if tz2:
+            other = here.astimezone(tz2).strftime("%I %p").lstrip("0")
+            hours.append(f"<span>{other if h else ''}</span><span>{lab}</span>")
+        else:
+            hours.append(f"<span>{lab}</span>")
+    gut = f'<div class="tg-hours{" two" if tz2 else ""}">{"".join(hours)}</div>'
+    cls = f'tg d{n if n in (1, 5, 7) else 7}{" tz2" if tz2 else ""}'
+    return (f'<div class="{cls}"><div class="tg-head">{"".join(head)}</div><div class="tg-all">{"".join(alls)}</div>'
+            f'<div class="tg-scroll"><div class="tg-body" data-csrf="{csrf}">{gut}{"".join(cols)}</div></div></div>')
+
+
+def undo_toast(csrf, q):
+    token = q.get("undo", [""])[0]
+    with state_lock:
+        op = pending_ops.get(token)
+    if not op or op["undo_until"] < time.time():
+        return ""
+    return (f'<div class="toast" role="status" data-until="{int(op["undo_until"] * 1000)}">{esc(op["said"])} <span class="soft left"></span>'
+            f'<form method="post" action="/undo">{hidden_csrf(csrf)}<input type="hidden" name="token" value="{esc(token)}"><input type="hidden" name="back" value="{esc(back_to(op["back"]))}"><button>Undo</button></form></div>')
+
+
+def find_event(c, uid, day):
+    """One event on one calendar, from the listing of the days around it (the same cached read the Calendar tab uses)."""
+    D = engine.dt
+    tz = engine.local_tz()
+    lo = D.datetime.combine(day - D.timedelta(days=1), D.time(), tz).astimezone(D.timezone.utc)
+    hi = D.datetime.combine(day + D.timedelta(days=2), D.time(), tz).astimezone(D.timezone.utc)
+    kind, evs = calendar_events(c, lo.strftime("%Y-%m-%dT%H:%M:%SZ"), hi.strftime("%Y-%m-%dT%H:%M:%SZ"))
+    if kind == "err":
+        raise RuntimeError(evs)
+    return next((e for e in evs if e["uid"] == uid), None)
+
+
+def _local_parts(ev, tz):
+    D = engine.dt
+    if ev["all_day"]:
+        s = D.date.fromisoformat(ev["start"][:10])
+        e = D.date.fromisoformat(ev["end"][:10]) - D.timedelta(days=1)
+        return s.isoformat(), "09:00", max(e, s).isoformat(), "10:00"
+    s = D.datetime.strptime(ev["start"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=D.timezone.utc).astimezone(tz)
+    e = D.datetime.strptime(ev["end"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=D.timezone.utc).astimezone(tz)
+    return s.date().isoformat(), s.strftime("%H:%M"), e.date().isoformat(), e.strftime("%H:%M")
+
+
+def event_form_fields(ev, cfg, creating, cal_pick=""):
+    """The editor's fields. ev is None for a new event."""
+    tz = engine.local_tz()
+    on = lambda v: " checked" if v else ""
+    ev = ev or {}
+    date, start, end_date, end = ev.get("parts") or ("", "09:00", "", "10:00")
+    colours = "".join(f'<option value="{k}"{" selected" if (ev.get("colours") or [""])[0] == k else ""}>{k.title()}</option>' for k in engine.PALETTE)
+    out = [f'<label for="title">Title</label><input type="text" id="title" name="title" maxlength="300" value="{esc(ev.get("title", ""))}" required autofocus>']
+    if creating:
+        writable = engine.writable_calendars(cfg)
+        opts = "".join(f'<option value="{esc(c["name"])}"{" selected" if c["name"] == cal_pick else ""}>{esc(c.get("label") or c["name"])}</option>' for c in writable)
+        out.append(f'<label for="cal">Calendar</label><select id="cal" name="cal">{opts}</select>')
+    out.append(f'''<fieldset><legend>When</legend><div class="inline-fields"><input type="date" name="date" value="{esc(date)}" required aria-label="Start date">
+<input type="time" name="start" value="{esc(start)}" aria-label="Start time"><span>to</span><input type="date" name="end_date" value="{esc(end_date)}" aria-label="End date"><input type="time" name="end" value="{esc(end)}" aria-label="End time"></div>
+<label class="check"><input type="checkbox" name="all_day" value="1"{on(ev.get("all_day"))}> All day</label><p class="soft">In {esc(engine.tz_name())}.</p></fieldset>''')
+    if creating or not ev.get("series"):
+        reps = "".join(f'<option value="{k}">{v}</option>' for k, v in engine.REPEATS.items())
+        out.append(f'<label for="repeat">Repeat</label><div class="inline-fields"><select id="repeat" name="repeat">{reps}</select><input type="date" name="until" aria-label="Repeat until (optional)"></div><p class="soft">Leave the date empty to repeat with no end.</p>')
+    out.append(f'<label for="location">Location</label><input type="text" id="location" name="location" maxlength="500" value="{esc(ev.get("location", ""))}">')
+    if creating:
+        out.append('<label for="conference">Video call</label><select id="conference" name="conference"><option value="">None</option><option value="meet">Google Meet (Google calendars)</option>'
+                   '<option value="teams">Microsoft Teams (work or school Microsoft calendars)</option></select><p class="soft">For Zoom or anything else, paste the link into Location.</p>')
+    out.append(f'''<div class="two"><label class="check"><input type="checkbox" name="busy" value="1"{on(ev.get("busy", True))}> Shows as busy</label>
+<label class="check"><input type="checkbox" name="private" value="1"{on(ev.get("private"))}> Private</label></div>
+<label for="colour">Colour</label><select id="colour" name="colour"><option value="">The calendar's colour</option>{colours}</select>
+<label for="guests">Guests</label><textarea id="guests" name="guests" rows="2" placeholder="sam@example.com, alex@example.com">{esc(", ".join(ev.get("attendees") or []))}</textarea>
+<label for="description">Description</label><textarea id="description" name="description" maxlength="{engine.MAX_TEXT}">{esc(ev.get("description", ""))}</textarea>''')
+    return "".join(out)
+
+
+def scope_fields(ev, verb="Change"):
+    if not ev.get("series"):
+        return ""
+    return (f'<fieldset><legend>This repeats. {verb}:</legend><label class="check"><input type="radio" name="scope" value="this" checked> Only this one</label>'
+            '<label class="check"><input type="radio" name="scope" value="following"> This one and the ones after it</label>'
+            '<label class="check"><input type="radio" name="scope" value="all"> Every one</label></fieldset>')
+
+
+def notify_field(ev):
+    if not ev.get("attendees"):
+        return ""
+    return '<label class="check"><input type="checkbox" name="notify" value="1" checked> Email the guests about this</label>'
+
+
+def event_page(csrf, q, flash=None):
+    D = engine.dt
+    cfg = engine.load_json(engine.CONFIG, {"calendars": []})
+    tz = engine.local_tz()
+    name, uid = q.get("cal", [""])[0], q.get("uid", [""])[0]
+    back = back_to(q.get("back", [""])[0] or "/calendar?" + urllib.parse.urlencode({"view": "week", "d": q.get("d", [""])[0]}))
+    try:
+        day = D.date.fromisoformat(q.get("d", [""])[0])
+    except ValueError:
+        day = D.datetime.now(tz).date()
+    try:
+        c = engine.calendar_named(name, cfg)
+        ev = find_event(c, uid, day)
+    except Exception as e:
+        return page("Event", f'<h1>Couldn\'t open that event</h1><section class="bad">{esc(short_error(e))}</section><a class="button plain" href="{esc(back)}" data-close>Back</a>', True, at="/calendar")
+    note = ""
+    if ev and ev.get("copy_of"):            # a copy: open its original instead, which is what an edit should change
+        orig = engine.original_of(ev["copy_of"], cfg)
+        if orig:
+            try:
+                o = find_event(orig[0], orig[1], day)
+            except Exception:
+                o = None
+            if o:
+                note = f'<section class="note">You opened the copy on {esc(c.get("label") or name)}. This is the original on {esc(orig[0].get("label") or orig[0]["name"])}; changes here reach every copy at the next sync.</section>'
+                c, ev, uid = orig[0], o, orig[1]
+    if not ev:
+        return page("Event", f'<h1>That event isn\'t there any more</h1><section class="note">It may have moved or been deleted. Refresh the calendar.</section><a class="button plain" href="{esc(back)}" data-close>Back</a>', True, at="/calendar")
+    lab = c.get("label") or c["name"]
+    first, _, when = _local(ev, tz)
+    parts = _local_parts(ev, tz)
+    if q.get("start") and q.get("date"):       # a drag that needs a yes (repeating, or has guests): its new time comes prefilled
+        parts = (q["date"][0], q["start"][0], q["date"][0], q.get("end", [q["start"][0]])[0])
+    shown = dict(ev, parts=parts)
+    writable = c["name"] in {x["name"] for x in engine.writable_calendars(cfg)}
+    editable = writable and ev.get("me_organizer", True) and not ev.get("copy_of")
+    facts = [f'<li>{esc(first.strftime("%A, %B"))} {first.day}, {esc(when)}{" · repeats" if ev.get("series") else ""}</li>', f'<li>On <b>{esc(lab)}</b></li>']
+    if ev.get("location"):
+        facts.append(f'<li>{esc(ev["location"])}</li>')
+    if ev.get("organizer") and not ev.get("me_organizer", True):
+        facts.append(f'<li>From {esc(ev["organizer"])}</li>')
+    if ev.get("attendees"):
+        facts.append(f'<li>Guests: {esc(", ".join(ev["attendees"][:30]))}</li>')
+    if not ev.get("busy", True):
+        facts.append("<li>Shows as free</li>")
+    if ev.get("description"):
+        facts.append(f'<li><pre tabindex="0">{esc(ev["description"][:4000])}</pre></li>')
+    ident = (hidden_csrf(csrf) + f'<input type="hidden" name="cal" value="{esc(c["name"])}"><input type="hidden" name="uid" value="{esc(uid)}">'
+             f'<input type="hidden" name="href" value="{esc(ev.get("href") or "")}"><input type="hidden" name="back" value="{esc(back)}"><input type="hidden" name="d" value="{esc(first.isoformat())}">')
+    buttons = []
+    if ev.get("conference"):
+        buttons.append(f'<a class="button" href="{esc(ev["conference"])}" target="_blank" rel="noreferrer noopener">Join</a>')
+    if ev.get("rsvp"):
+        cur = ev["rsvp"]
+        buttons.append(f'<form class="rsvp" method="post" action="/event/rsvp">{ident}' + "".join(
+            f'<button class="plain" name="answer" value="{a}" aria-pressed="{"true" if cur == a else "false"}">{t}</button>' for a, t in (("yes", "Going"), ("maybe", "Maybe"), ("no", "No")))
+            + "</form>")
+    key = f'{c["name"]}|{uid}'
+    skipping = key in engine.skipped(cfg)
+    skip = (f'<form class="inline" method="post" action="{"/unskip" if skipping else "/skip"}">{hidden_csrf(csrf)}<input type="hidden" name="key" value="{esc(key)}"><input type="hidden" name="back" value="{esc(back)}">'
+            f'<input type="hidden" name="title" value="{esc(ev.get("title") or "")}"><input type="hidden" name="start" value="{esc(ev["start"])}">'
+            f'<button class="plain">{"Copy it again" if skipping else "Skip copying this one"}</button></form>')
+    head = f'<div class="evhead"><h1>{esc(ev.get("title") or "(no title)")}</h1></div>{note}<section><ul class="facts">{"".join(facts)}</ul><div class="actions">{"".join(buttons)}{skip}</div></section>'
+    if not editable:
+        why = ("This is an invite from someone else, so change it where it was sent from. You can still answer it here." if writable and not ev.get("me_organizer", True)
+               else f"{esc(lab)} is read only in CalSync, so change this event where it lives.")
+        return page("Event", f'{head}<section class="note">{why}</section><div class="actions"><a class="button plain" href="{esc(back)}" data-close>Back</a></div>', True, flash, at="/calendar")
+    form = (f'<h2>Change it</h2><form method="post" action="/event/save"><section>{ident}{event_form_fields(shown, cfg, False)}{scope_fields(ev)}{notify_field(ev)}'
+            f'<div class="actions"><button>Save</button><a class="button plain" href="{esc(back)}" data-close>Cancel</a></div></section></form>'
+            f'<h2>Delete it</h2><form method="post" action="/event/delete"><section>{ident}{scope_fields(ev, "Delete")}{notify_field(ev)}'
+            f'<div class="actions"><button class="danger">Delete</button></div></section></form>')
+    return page("Event", head + form, True, flash, at="/calendar")
+
+
+def new_event_page(csrf, q, flash=None):
+    cfg = engine.load_json(engine.CONFIG, {"calendars": []})
+    writable = engine.writable_calendars(cfg)
+    if not writable:
+        return page("New event", '<h1>New event</h1><section class="note">None of your calendars can be written to from CalSync yet.</section>', True, flash, at="/calendar")
+    D = engine.dt
+    date = q.get("d", [""])[0] or D.datetime.now(engine.local_tz()).date().isoformat()
+    t = q.get("t", ["09:00"])[0]
+    try:
+        h, m = (int(x) for x in t.split(":"))
+        end = f"{min(23, h + 1):02d}:{m:02d}"
+    except ValueError:
+        t, end = "09:00", "10:00"
+    asked = q.get("e", [""])[0]       # a drag across empty time gives its end too
+    if re.fullmatch(r"([01][0-9]|2[0-3]):[0-5][0-9]", asked) and asked > t:
+        end = asked
+    pick = q.get("cal", [""])[0]
+    if pick not in {c["name"] for c in writable}:
+        try:
+            pick = engine.main_calendar(cfg)["name"]
+        except SystemExit:
+            pick = writable[0]["name"]
+    back = back_to(q.get("back", [""])[0] or "/calendar?" + urllib.parse.urlencode({"view": "week", "d": date}))
+    fields = event_form_fields({"parts": (date, t, date, end), "busy": True}, cfg, True, pick)
+    return page("New event", f'''<h1>New event</h1><form method="post" action="/event/create"><section>{hidden_csrf(csrf)}<input type="hidden" name="back" value="{esc(back)}">{fields}
+<label class="check"><input type="checkbox" name="notify" value="1" checked> Email the invites to the guests</label>
+<div class="actions"><button>Add it</button><a class="button plain" href="{esc(back)}" data-close>Cancel</a></div></section></form>
+<p class="soft">It goes on the calendar you pick, then CalSync copies it to your other calendars by your sync rules.</p>''', True, flash, at="/calendar")
+
+
+def event_from_form(get, form):
+    """The editor's form as the engine's raw event."""
+    D = engine.dt
+    tz = engine.local_tz()
+    date, end_date = get("date"), get("end_date") or get("date")
+    all_day = bool(get("all_day"))
+    raw = {"title": get("title"), "all_day": all_day, "location": get("location"), "description": get("description"),
+           "busy": bool(get("busy")), "private": bool(get("private")), "colour": get("colour"), "guests": get("guests")}
+    if all_day:
+        raw.update(start=date, end=end_date, end_inclusive=True)
+    else:
+        s = D.datetime.fromisoformat(f"{date}T{get('start') or '09:00'}").replace(tzinfo=tz)
+        e = D.datetime.fromisoformat(f"{end_date}T{get('end') or get('start') or '10:00'}").replace(tzinfo=tz)
+        if e <= s and not get("end_date"):
+            e += D.timedelta(days=1)
+        raw.update(start=s, end=e)
+    if get("repeat") in engine.REPEATS and get("repeat"):
+        raw["repeat"] = engine.repeat_rule(get("repeat"), raw["start"], get("until") or None)
+    if get("conference"):
+        raw["conference"] = get("conference")
+    return raw
+
+
+def queue_op(kind, cal, uid, changes, scope, notify, href, said, back, shown=None):
+    """Hold a change for UNDO_SECONDS so Undo can simply drop it; then write it."""
+    token = secrets.token_urlsafe(12)
+    now = time.time()
+    with state_lock:
+        pending_ops[token] = {"kind": kind, "cal": cal, "uid": uid, "changes": changes, "scope": scope, "notify": notify, "href": href,
+                              "said": said, "back": back, "shown": shown or {}, "due": now + UNDO_SECONDS, "undo_until": now + UNDO_SECONDS}
+        start = not _op_thread["on"]
+        _op_thread["on"] = True
+    if start:
+        threading.Thread(target=op_runner, daemon=True).start()
+    return token
+
+
+def op_runner():
+    while True:
+        time.sleep(.5)
+        now = time.time()
+        with state_lock:
+            due = [(t, op) for t, op in pending_ops.items() if op["kind"] in ("update", "delete") and op["due"] <= now and not op.get("done")]
+            for t, op in due:
+                op["done"] = True
+            for t in [t for t, op in pending_ops.items() if op["undo_until"] < now - 60]:
+                del pending_ops[t]
+        for t, op in due:
+            run_op(op)
+
+
+def run_op(op):
+    try:
+        if op["kind"] == "update":
+            engine.event_update(op["cal"], op["uid"], op["changes"], op["scope"], op["notify"], op["href"] or None)
+        else:
+            engine.event_delete(op["cal"], op["uid"], op["scope"], op["notify"], op["href"] or None)
+    except Exception as e:
+        with state_lock:
+            op_errors.append(f"{op['said'].rstrip('.')} didn't work: {short_error(e)}")
+            del op_errors[:-5]
+    with state_lock:
+        CAL_CACHE.clear()
+    if engine.load_json(engine.CONFIG, {}).get("enabled"):
+        run_in_background(trigger="manual")
+
+
+op_errors = []
+
+
+def search_page(csrf, q):
+    text = q.get("q", [""])[0][:200]
+    cfg = engine.load_json(engine.CONFIG, {"calendars": []})
+    rows, problems = engine.search_events(text, cfg) if text.strip() else ([], [])
+    tz = engine.local_tz()
+    colour = colour_classes(cfg)
+    label = {c["name"]: c.get("label") or c["name"] for c in cfg["calendars"]}
+    out = []
+    for ev in rows:
+        day, _, when = _local(ev, tz)
+        link = "/event?" + urllib.parse.urlencode({"cal": ev["calendar"], "uid": ev["uid"], "d": day.isoformat(), **({"href": ev["href"]} if ev.get("href") else {})})
+        out.append(f'<div class="row"><span class="when">{esc(day.strftime("%a %b"))} {day.day}, {day.year}<br>{esc(when)}</span><div><a href="{esc(link)}"><b>{esc(ev.get("title") or "(no title)")}</b></a>'
+                   f'<span class="soft"><span class="dot {colour.get(ev["calendar"], "k0")}"></span> {esc(label.get(ev["calendar"], ev["calendar"]))}{" · " + esc(ev["location"]) if ev.get("location") else ""}</span></div></div>')
+    bad = f'<section class="bad"><p>Some calendars couldn\'t be searched just now:</p><ul>{"".join(f"<li>{esc(p)}</li>" for p in problems)}</ul></section>' if problems else ""
+    found = (f'<section class="list results">{"".join(out)}</section>' if out else
+             ('<section class="note">Nothing matches.</section>' if text.strip() else ""))
+    return page("Search", f'''<h1>Search</h1><form method="get" action="/search" role="search"><div class="quick"><label for="search" class="vh">Search</label>
+<input type="search" id="search" name="q" value="{esc(text)}" maxlength="200" placeholder="dentist cal:personal before:2027-01-01" autofocus><button>Search</button></div></form>
+<p class="soft">Searches titles, places, notes and guests on every calendar, 90 days back and a year ahead. Narrow it with <code>cal:name</code>, <code>from:someone@example.com</code>, <code>before:2026-12-31</code> and <code>after:2026-12-01</code>.</p>
+{bad}{found}<div class="actions"><a class="button plain" href="/calendar" data-close>Back to the calendar</a></div>''', True, at="/calendar")
+
+
 # ---------- background sync ----------
 
-def run_in_background(force=False):
+def run_in_background(force=False, pair=None, refresh=False, trigger="timer"):
     with state_lock:
         if run_state["running"]:
             return False
@@ -688,7 +1498,7 @@ def run_in_background(force=False):
 
     def job():
         try:
-            engine.run_once(force=force, log=lambda line: None)     # titles stay out of the container's logs
+            engine.run_once(force=force, log=lambda line: None, pair=pair, refresh=refresh, trigger=trigger)     # titles stay out of the container's logs
         except Exception as e:
             engine.save_json(engine.LASTRUN, {"at": engine.now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"), "errors": 1, "failed": [], "problems": [f"! {short_error(e)}"]})
         finally:
@@ -698,23 +1508,89 @@ def run_in_background(force=False):
     return True
 
 
+pushed = threading.Event()      # set when Google or Microsoft says a calendar changed
+QUICK_CHECK_SECONDS = 60
+
+
+def push_file():
+    return os.path.join(engine.SECRETS, "push.json")
+
+
+def push_words():
+    if PUBLIC_URL.startswith("https://"):
+        return f"CalSync has a public address ({PUBLIC_URL}), so Google and Microsoft tell it the moment a calendar changes. iCloud, other CalDAV and .ics links sync on the interval."
+    return ("Instant updates from Google and Microsoft need a public https address (CALSYNC_PUBLIC_URL), since they call CalSync when something changes. "
+            "Without one, the one-minute check above is nearly as quick. iCloud, other CalDAV and .ics links sync on the interval.")
+
+
+def keep_push(cfg):
+    """With a public https address: make sure every Google and Microsoft calendar has a live subscription, renewing
+    each a day before it runs out. Problems are kept quiet; the one-minute check still runs."""
+    if not PUBLIC_URL.startswith("https://") or not cfg.get("enabled"):
+        return
+    state = engine.load_json(push_file(), {}) or {}
+    state.setdefault("secret", secrets.token_urlsafe(24))
+    subs = state.setdefault("subs", {})
+    now = time.time()
+    for c in cfg["calendars"]:
+        try:
+            ad = engine.make_adapter(c)
+        except Exception:
+            continue
+        if not hasattr(ad, "watch"):
+            continue
+        key = f'{c["name"]}|{c.get("calendar_id")}'
+        have = subs.get(key)
+        if have and have.get("expires", 0) - now > 86400:
+            continue
+        kind = "google" if isinstance(ad, engine.GoogleCalendar) else "microsoft"
+        try:
+            subs[key] = dict(ad.watch(f"{PUBLIC_URL}/hook/{kind}", state["secret"], secrets.token_hex(16)), kind=kind)
+            if have:
+                try:
+                    ad.unwatch(have)
+                except Exception:
+                    pass
+        except Exception:
+            continue
+    for key in [k for k in subs if k.split("|")[0] not in {c["name"] for c in cfg["calendars"]}]:
+        subs.pop(key)
+    engine.save_json(push_file(), state)
+
+
 def scheduler(stop):
-    last = 0.0
-    while not stop.wait(15):
+    last = last_check = last_push = 0.0
+    checked_at = engine.now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")
+    while not stop.wait(5):
         cfg = engine.load_json(engine.CONFIG, {"calendars": []})
+        if not cfg.get("enabled"):
+            continue
         every = cfg.get("interval_minutes", 5) * 60
-        if cfg.get("enabled") and time.time() - last >= every and run_in_background():
-            last = time.time()
+        now = time.time()
+        if pushed.is_set() and now - last > 10 and run_in_background(trigger="push"):      # many pushes close together make one run
+            pushed.clear()
+            last = now
+            continue
+        if now - last >= every and run_in_background():
+            last = now
+            checked_at = engine.now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")
+            continue
+        if cfg.get("fast_check", True) and now - last_check >= QUICK_CHECK_SECONDS and now - last > 30:
+            last_check = now
+            since, checked_at = checked_at, engine.now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")
+            if engine.changed_since(cfg, since) and run_in_background(trigger="check"):
+                last = time.time()
+        if now - last_push > 3600:
+            last_push = now
+            threading.Thread(target=keep_push, args=(cfg,), daemon=True).start()
 
 
 def tidy_flows():
     now = time.time()
     with state_lock:
-        for flows in (pending_google, pending_ms):
+        for flows in (pending_google, pending_ms, pending_oauth):
             for key in [k for k, f in flows.items() if f["expires"] < now]:
                 del flows[key]
-        for key in [k for k, times in failed_logins.items() if not any(now - t < 60 for t in times)]:
-            del failed_logins[key]
 
 
 def poll_microsoft(flow_id):
@@ -745,10 +1621,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def send(self, code, body, kind="text/html; charset=utf-8", headers=()):
         data = body.encode()
+        headers = [*getattr(self, "extra", ()), *headers]
         self.send_response(code)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'self'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         # same-origin, not no-referrer: under no-referrer a browser sends "Origin: null" with this page's own
@@ -769,11 +1646,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             jar.load(self.headers.get("Cookie") or "")
         except http.cookies.CookieError:
             return None
-        return jar["calsync_session"].value if "calsync_session" in jar else None
+        got = jar["calsync_browser"].value if "calsync_browser" in jar else None
+        return got if got and re.fullmatch(r"[0-9a-f]{32}", got) else None
 
-    def session_header(self, value, max_age):
-        secure = "; Secure" if PUBLIC_URL.startswith("https://") else ""
-        return ("Set-Cookie", f"calsync_session={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}{secure}")
+    def browser(self):
+        """This browser's random ID, from its cookie; a first visit is given one. Form tokens are signed with it."""
+        if not getattr(self, "_browser", None):
+            self._browser = self.cookie()
+            if not self._browser:
+                self._browser = secrets.token_hex(16)
+                secure = "; Secure" if PUBLIC_URL.startswith("https://") else ""
+                self.extra = [*getattr(self, "extra", ()), ("Set-Cookie", f"calsync_browser={self._browser}; Path=/; HttpOnly; SameSite=Lax; Max-Age={BROWSER_DAYS * 86400}{secure}")]
+        return self._browser
 
     def read_form(self):
         try:
@@ -785,43 +1669,59 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return urllib.parse.parse_qs(self.rfile.read(size).decode("utf-8", "replace"), keep_blank_values=True)
 
     def csrf(self):
-        return sign(web_config()["key"], "csrf." + (self.cookie() or ""))
+        return sign(page_key(), "csrf." + self.browser())
 
     def same_origin(self):
+        """A POST has to say it came from this page: its Origin, or without one its Referer, names this host."""
+        host = (self.headers.get("Host") or "").strip().lower()
         origin = self.headers.get("Origin")
-        return not origin or urllib.parse.urlparse(origin).netloc.lower() == (self.headers.get("Host") or "").lower()
+        if origin is not None:
+            return origin != "null" and urllib.parse.urlparse(origin).netloc.lower() == host
+        referer = self.headers.get("Referer")
+        return bool(referer) and urllib.parse.urlparse(referer).netloc.lower() == host
+
+    def host_ok(self):
+        return host_allowed(self.headers.get("Host"), self.server.server_address[1])
 
     def do_GET(self):
         tidy_flows()
+        here.host = self.headers.get("Host")
         url = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(url.query)
         if url.path == "/healthz":     # before the host check, so a container's health probe always works
             return self.send(200, "ok", "text/plain")
-        if not host_allowed(self.headers.get("Host")):
-            return self.send(400, "This host name isn't allowed. Add it to CALSYNC_HOSTS.", "text/plain")
+        self.extra = []
+        if not self.host_ok():
+            return self.send(400, "CalSync only answers at http://localhost or http://127.0.0.1 with its own port.", "text/plain")
         if url.path == "/app.css":
             return self.send(200, CSS, "text/css")
+        if url.path == "/app.js":
+            return self.send(200, JS, "text/javascript")
         if url.path == "/" and ("state" in q or "code" in q or "error" in q):
+            with state_lock:
+                mine = pending_oauth.get(q.get("state", [""])[0])
+            if mine:        # one-click Microsoft comes back to "/" (its registered address has no path)
+                return self.oauth_callback(mine["provider"], q)
             return self.google_callback(q)
-        cfg = web_config()
-        if not cfg:
-            return self.send(200, self.first_run_page())
-        if url.path == "/forgot":
-            return self.send(200, self.forgot_page())
-        if not session_ok(cfg, self.cookie()):
-            return self.send(200, login_page())
+        if url.path in ("/oauth/google", "/oauth/microsoft"):
+            return self.oauth_callback(url.path.rsplit("/", 1)[1], q)
         csrf = self.csrf()
         flash = q.get("m", [None])[0]
         flash = FLASHES.get(flash)
         if url.path == "/":
             preview = None
             with state_lock:
-                preview = last_preview.pop(self.cookie(), None)
+                preview = last_preview.pop(self.browser(), None)
             return self.send(200, dashboard(csrf, flash, preview))
         if url.path == "/connect":      # old links: adding a calendar is on the sync page now
             return self.redirect("/" + ("?m=" + q["m"][0] if q.get("m", [""])[0] in FLASHES else "") + "#add")
         if url.path == "/connect/google":
             return self.send(200, google_page(csrf, flash))
+        if url.path == "/connect/advanced":
+            return self.send(200, advanced_page(csrf, flash))
+        if url.path == "/connect/wait":
+            to, body = wait_page(q.get("flow", [""])[0])
+            return self.redirect(to) if to else self.send(200, body)
         if url.path == "/connect/microsoft":
             return self.send(200, microsoft_page(csrf, flash))
         if url.path == "/connect/microsoft/wait":
@@ -835,43 +1735,50 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if url.path == "/settings":
             return self.send(200, settings_page(csrf, flash))
         if url.path == "/calendar":
-            return self.send(200, calendar_page(csrf, q, flash))
+            with state_lock:
+                problem = op_errors.pop() if op_errors else None
+            if q.get("undo") and not problem:      # the undo bar says it already
+                flash = None
+            return self.send(200, calendar_page(csrf, q, problem or flash))
+        if url.path == "/event":
+            return self.send(200, event_page(csrf, q, flash))
+        if url.path == "/event/new":
+            return self.send(200, new_event_page(csrf, q, flash))
+        if url.path == "/search":
+            return self.send(200, search_page(csrf, q))
+        if url.path == "/activity":
+            return self.send(200, activity_page(csrf, flash))
+        if url.path == "/pair":
+            src, dst = q.get("src", [""])[0], q.get("dst", [""])[0]
+            names = {c["name"] for c in engine.load_json(engine.CONFIG, {"calendars": []})["calendars"]}
+            if src in names and dst in names and src != dst:
+                return self.send(200, pair_page(csrf, src, dst, flash))
         self.send(404, page("Not found", "<h1>Page not found</h1>", True))
 
     def do_POST(self):
         tidy_flows()
+        here.host = self.headers.get("Host")
         url = urllib.parse.urlparse(self.path).path
-        if not host_allowed(self.headers.get("Host")) or not self.same_origin():
+        self.extra = []
+        if not self.host_ok():
+            return self.send(400, "CalSync only answers at http://localhost or http://127.0.0.1 with its own port.", "text/plain")
+        if url.startswith("/hook/"):        # Google's and Microsoft's change notices: no Origin, a secret token instead
+            return self.hook(url)
+        if not self.same_origin():
             return self.send(400, "Blocked: this request came from another site.", "text/plain")
         form = self.read_form()
         if form is None:
             return self.send(413, "Too large.", "text/plain")
         get = lambda k, d="": form.get(k, [d])[0]
-        cfg = web_config()
-        if url == "/first-run":
-            return self.first_run(get)
-        if not cfg:
-            return self.redirect("/")
-        if url == "/login":
-            return self.login(cfg, get)
-        if url == "/forgot":
-            return self.forgot(cfg, get)
-        if not session_ok(cfg, self.cookie()):
-            return self.redirect("/")
-        if not hmac.compare_digest(get("csrf").encode(), self.csrf().encode()):
+        if not self.cookie() or not hmac.compare_digest(get("csrf").encode(), self.csrf().encode()):
             return self.send(400, "This page expired. Go back and reload it.", "text/plain")
         try:
-            return self.action(url, get, form, cfg)
+            return self.action(url, get, form)
         except Exception as e:
             return self.send(200, page("Problem", f'<h1>That didn\'t work</h1><section class="bad">{esc(short_error(e))}</section><a class="button plain" href="/">Back</a>', True))
 
-    def action(self, url, get, form, cfg):
+    def action(self, url, get, form):
         csrf = self.csrf()
-        if url == "/logout":
-            return self.redirect("/", [self.session_header("", 0)])
-        if url == "/logout/everywhere":     # a new signing key ends every session, this one included
-            engine.save_json(web_file(), dict(cfg, key=secrets.token_hex(32)))
-            return self.redirect("/", [self.session_header("", 0)])
         if url == "/connect/google/client":
             cid, sec = get("client_id").strip(), get("client_secret").strip()
             if not cid or not sec:
@@ -929,8 +1836,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 read_only = not next((c["writable"] for c in engine.account_calendars(account) if c["id"] == cal_id), False)
             if name in [c["name"] for c in engine.load_json(engine.CONFIG, {"calendars": []})["calendars"]]:
                 return self.send(200, account_page(account, csrf, f"{name} is already in use. Pick another name."))
-            engine.update_config(lambda c: c["calendars"].append({"name": name, "label": name, "account": account, "calendar_id": cal_id,
-                                                                  "busy_only": bool(get("busy_only")), "read_only": read_only, "cannot_write": read_only, "skip_sources": []}))
+            engine.update_config(lambda c: (c["calendars"].append({"name": name, "label": name, "account": account, "calendar_id": cal_id,
+                                                                   "busy_only": bool(get("busy_only")), "read_only": read_only, "cannot_write": read_only, "skip_sources": []}),
+                                            c.update(kept_sources=[k for k in c.get("kept_sources", []) if k != name])))
             return self.redirect("/?m=added")
         if url == "/calendar/save":
             name = get("name")
@@ -941,12 +1849,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if x["name"] == name:
                         x.update(busy_only=bool(get("busy_only")), read_only=bool(get("read_only")) or x.get("cannot_write", False),
                                  skip_sources=[n for n in form.get("skip", []) if n in others and n != name])
+                        if "colour" in form:
+                            x["colour"] = get("colour") if get("colour") in engine.PALETTE else ""
             engine.update_config(save)
             return self.redirect("/?m=saved")
         if url == "/calendar/remove":
             name = get("name")
-            engine.update_config(lambda c: c.update(calendars=[x for x in c["calendars"] if x["name"] != name]))
-            return self.redirect("/?m=removed")
+            if not get("confirm"):
+                return self.send(200, remove_calendar_page(csrf, name))
+            keep = get("copies") == "keep"
+
+            def drop(c):
+                c["calendars"] = [x for x in c["calendars"] if x["name"] != name]
+                kept = [k for k in c.get("kept_sources", []) if k != name]
+                c["kept_sources"] = kept + ([name] if keep else [])
+                c["rules"] = {k: v for k, v in c.get("rules", {}).items() if name not in k.split(">")}
+            engine.update_config(drop)
+            return self.redirect("/?m=" + ("removedkept" if keep else "removed"))
         if url == "/purge":
             cals = [c for c in engine.load_json(engine.CONFIG, {"calendars": []})["calendars"] if c["name"] == get("name")]
             if not get("confirm"):
@@ -956,22 +1875,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
             s = engine.purge(cals, {c["name"]: engine.make_adapter(c) for c in cals}, log=lambda *_: None)
             return self.send(200, page("Copies deleted", f'<h1>Deleted {copies(s["deleted"])}</h1><section>{esc(s["errors"])} problems.</section><a class="button plain" href="/">Back</a>', True, at="/"))
         if url == "/preview":
-            lines = []
-            s = engine.run_once(dry_run=True, log=lines.append)
+            lines, decisions = [], []
+            s = engine.run_once(dry_run=True, log=lines.append, decisions=decisions)
             if s is None:
                 return self.redirect("/?m=busy")
             with state_lock:
-                last_preview[self.cookie()] = dict(s, lines=lines)
+                last_preview[self.browser()] = dict(s, lines=lines, decisions=decisions)
             return self.redirect("/")
+        if url == "/resync":
+            pair = get("pair")
+            names = {c["name"] for c in engine.load_json(engine.CONFIG, {"calendars": []})["calendars"]}
+            if ">" not in pair or not set(pair.split(">", 1)) <= names:
+                return self.redirect("/")
+            return self.redirect("/?m=" + ("resyncing" if run_in_background(pair=pair, refresh=True, trigger="resync") else "busy"))
+        if url == "/pair/save":
+            src, dst = get("src"), get("dst")
+            names = {c["name"] for c in engine.load_json(engine.CONFIG, {"calendars": []})["calendars"]}
+            if src not in names or dst not in names or src == dst:
+                return self.redirect("/")
+            rule = rule_from_form(form)
+
+            def keep(c):
+                c.setdefault("rules", {})[f"{src}>{dst}"] = rule
+                for x in c["calendars"]:        # the older setting would say the opposite of this rule, so keep them in step
+                    if x["name"] == dst:
+                        x["skip_sources"] = [n for n in x.get("skip_sources", []) if n != src] + ([] if rule["enabled"] else [src])
+            engine.update_config(keep)
+            return self.redirect("/?m=rulesaved")
         if url == "/start":
             engine.update_config(lambda c: c.update(enabled=True))
-            run_in_background()
+            run_in_background(trigger="start")
             return self.redirect("/?m=started")
         if url == "/pause":
             engine.update_config(lambda c: c.update(enabled=False))
             return self.redirect("/?m=paused")
         if url == "/run":
-            return self.redirect("/?m=" + ("running" if run_in_background(force=bool(get("force"))) else "busy"))
+            return self.redirect("/?m=" + ("running" if run_in_background(force=bool(get("force")), trigger="manual") else "busy"))
         if url == "/quick":
             text, cal, back = get("text").strip(), get("calendar"), back_to(get("back"))
             q = dict(urllib.parse.parse_qs(urllib.parse.urlparse(back).query), text=[text], cal=[cal])
@@ -1019,108 +1958,125 @@ class Handler(http.server.BaseHTTPRequestHandler):
             add_to = get("add_to")
             if add_to and add_to not in {c["name"] for c in engine.writable_calendars()}:
                 return self.send(200, settings_page(csrf, "Pick one of the listed calendars for quick add."))
-            engine.update_config(lambda c: c.update(interval_minutes=int(minutes), timezone=zone, **({"add_to": add_to} if add_to else {})))
+            tz2 = get("tz2").strip()
+            if tz2 and not _zone(tz2):
+                return self.send(200, settings_page(csrf, "That second time zone isn't known. Use a name like Europe/London."))
+            try:
+                window = {"past_days": min(max(int(get("past_days") or engine.PAST_DAYS), 0), 365),
+                          "future_days": min(max(int(get("future_days") or engine.FUTURE_DAYS), 1), 730)}
+            except ValueError:
+                return self.send(200, settings_page(csrf, "Use whole numbers of days."))
+
+            def save_settings(c):
+                c.update(interval_minutes=int(minutes), timezone=zone, window=window, fast_check=bool(get("fast_check")), **({"add_to": add_to} if add_to else {}))
+                c["view"] = dict(c.get("view") or {}, tz2=tz2)
+            engine.update_config(save_settings)
             return self.redirect("/settings?m=saved")
-        if url == "/settings/password":
-            ip = self.client_address[0]
-            stamp = take_try("login", ip)    # a borrowed session shouldn't get to guess the password here
-            if stamp is None:
-                return self.send(429, settings_page(csrf, "Too many tries. Wait a minute and try again."))
-            if not hmac.compare_digest(hash_password(get("old"), cfg["salt"]), cfg["hash"]):
-                return self.send(200, settings_page(csrf, "The current password isn't right."))
-            give_back("login", ip, stamp)
-            if len(get("new")) < 10:
-                return self.send(200, settings_page(csrf, "Use at least 10 characters."))
-            set_password(get("new"))
-            fresh = web_config()
-            return self.redirect("/settings?m=saved", [self.session_header(make_session(fresh), SESSION_DAYS * 86400)])
-        if url == "/settings/recovery":
-            ip = self.client_address[0]
-            stamp = take_try("login", ip)
-            if stamp is None:
-                return self.send(429, settings_page(csrf, "Too many tries. Wait a minute and try again."))
-            if not hmac.compare_digest(hash_password(get("old"), cfg["salt"]), cfg["hash"]):
-                return self.send(200, settings_page(csrf, "The current password isn't right."))
-            give_back("login", ip, stamp)
-            return self.send(200, recovery_page(new_recovery_code(), "Your new recovery code", "The old code no longer works."))
+        if url in ("/event/create", "/event/save", "/event/delete", "/event/move", "/event/rsvp", "/undo", "/calendar/prefs"):
+            return self.calendar_action(url, get, form, csrf)
         self.send(404, page("Not found", "<h1>Page not found</h1>", True))
 
-    # first run and sign-in
+    def calendar_action(self, url, get, form, csrf):
+        """New, changed, moved and deleted events. A change or delete waits UNDO_SECONDS, so Undo just drops it."""
+        back = back_to(get("back"))
+        if url == "/calendar/prefs":
+            key = get("pref")
+            if key in ("hide_copies", "hide_weekends", "week_numbers"):
+                engine.update_config(lambda c: c.update(view=dict(c.get("view") or {}, **{key: not (c.get("view") or {}).get(key)})))
+            return self.redirect(back)
+        if url == "/undo":
+            with state_lock:
+                op = pending_ops.get(get("token"))
+                if op and op["undo_until"] >= time.time() and op["kind"] in ("update", "delete") and not op.get("done"):
+                    pending_ops.pop(get("token"))
+                    return self.redirect(with_flash(back, "undone"))
+            if op and op["kind"] == "created" and op["undo_until"] >= time.time():
+                with state_lock:
+                    pending_ops.pop(get("token"), None)
+                engine.event_delete(op["cal"], op["uid"], "all", False)
+                with state_lock:
+                    CAL_CACHE.clear()
+                return self.redirect(with_flash(back, "undone"))
+            return self.redirect(with_flash(back, "toolate"))
+        if url == "/event/create":
+            raw = event_from_form(get, form)
+            try:
+                made = engine.event_create(get("cal"), raw, notify=bool(get("notify")))
+            except ValueError as e:
+                return self.send(200, new_event_page(csrf, {"d": [get("date")], "cal": [get("cal")]}, f"Not added: {e}."))
+            token = secrets.token_urlsafe(12)
+            with state_lock:
+                CAL_CACHE.clear()
+                pending_ops[token] = {"kind": "created", "cal": get("cal"), "uid": made, "said": "Added.", "back": back,
+                                      "due": 0, "undo_until": time.time() + UNDO_SECONDS, "done": True, "shown": {}}
+            if engine.load_json(engine.CONFIG, {}).get("enabled"):
+                run_in_background(trigger="manual")
+            return self.redirect(with_flash(back, "added_ev") + "&undo=" + token + at_time(get))
+        cal, uid, href, scope = get("cal"), get("uid"), get("href"), get("scope") or "this"
+        notify = bool(get("notify"))
+        if url == "/event/rsvp":
+            engine.event_respond(cal, uid, get("answer"))
+            with state_lock:
+                CAL_CACHE.clear()
+            return self.redirect(with_flash(back, "answered"))
+        if url == "/event/delete":
+            token = queue_op("delete", cal, uid, {}, scope, notify, href, "Deleted.", back)
+            return self.redirect(with_flash(back, "pending") + "&undo=" + token)
+        if url == "/event/save":
+            raw = event_from_form(get, form)
+            if not get("repeat"):
+                raw.pop("repeat", None)
+            try:
+                checked = engine.clean_event(raw, partial=True)
+            except ValueError as e:
+                return self.redirect(with_flash(back, "bad"))
+            shown = {"title": checked.get("title"), "all_day": checked.get("all_day"),
+                     "start": engine._ics_time_text(checked["start"], checked["all_day"]), "end": engine._ics_time_text(checked["end"], checked["all_day"])}
+            token = queue_op("update", cal, uid, raw, scope, notify, href, "Saved.", back, shown)
+            return self.redirect(with_flash(back, "pending") + "&undo=" + token + at_time(get))
+        # /event/move, from dragging in the day and week views: only the time changes
+        D = engine.dt
+        tz = engine.local_tz()
+        try:
+            s = D.datetime.fromisoformat(f"{get('date')}T{get('start')}").replace(tzinfo=tz)
+            e = D.datetime.fromisoformat(f"{get('date')}T{get('end')}").replace(tzinfo=tz) if get("end") != "24:00" else D.datetime.fromisoformat(get("date")).replace(tzinfo=tz) + D.timedelta(days=1)
+        except ValueError:
+            return self.send(400, json.dumps({"error": "bad time"}), "application/json")
+        if e <= s:
+            e = s + D.timedelta(minutes=15)
+        shown = {"start": engine._ics_time_text(s, False), "end": engine._ics_time_text(e, False), "all_day": False}
+        token = queue_op("update", cal, uid, {"start": s, "end": e, "all_day": False}, "this", notify, href, "Moved.", back, shown)
+        return self.send(200, json.dumps({"go": with_flash(back, "pending") + "&undo=" + token + at_time(get)}), "application/json")
 
-    def needs_code(self):
-        """Only someone on this machine itself skips the setup code. A proxy on the same machine makes every visitor
-        look local, so a public address, a forwarded request or a non-local host name all need the code. So does
-        listening beyond loopback (the Docker image): port forwarders can make an outside visitor look local."""
-        name = re.sub(r":\d+$", "", (self.headers.get("Host") or "").strip().lower()).strip("[]")
-        local_name = name in ("localhost", "127.0.0.1", "::1") or name.endswith(".localhost")
-        forwarded = any(self.headers.get(h) for h in PROXY_HEADERS)
-        return not (is_loopback(BIND) and is_loopback(self.client_address[0]) and local_name and not forwarded and not PUBLIC_URL)
+    def hook(self, url):
+        """Google and Microsoft calling to say a calendar changed (only with a public https address). Each proves
+        itself with the secret calsync gave it; the body is never trusted for more than "something changed"."""
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        if url == "/hook/microsoft" and "validationToken" in q:     # Graph checks the address before it subscribes
+            return self.send(200, q["validationToken"][0][:512], "text/plain")
+        secret = (engine.load_json(push_file(), {}) or {}).get("secret")
+        if not secret:
+            return self.send(404, "", "text/plain")
+        if url == "/hook/google":
+            ok = hmac.compare_digest((self.headers.get("X-Goog-Channel-Token") or "").encode(), secret.encode())
+        elif url == "/hook/microsoft":
+            form = self.read_body_json()
+            ok = bool(form) and all(hmac.compare_digest(str(v.get("clientState", "")).encode(), secret.encode()) for v in form.get("value", [{}]))
+        else:
+            ok = False
+        if not ok:
+            return self.send(403, "", "text/plain")
+        pushed.set()
+        return self.send(202 if url == "/hook/microsoft" else 200, "", "text/plain")
 
-    def first_run_page(self, flash=None):
-        code = ('<label for="code">Setup code</label><input type="text" id="code" name="code" required autocomplete="off">'
-                '<p class="soft">It\'s in the logs: <code>docker compose logs calsync</code>. It proves you\'re the one who started this.</p>') if self.needs_code() else ""
-        return page("Welcome", f'''<h1>Welcome to CalSync</h1><section><p>Choose a password for this page. Your sign-ins stay on this machine, so this password is what guards them.</p>
-<form method="post" action="/first-run" autocomplete="off">{code}<label for="pw">Password, at least 10 characters</label><input type="password" id="pw" name="password" required minlength="10"><div class="actions"><button>Continue</button></div></form></section>''', flash=flash)
-
-    def first_run(self, get):
-        if web_config():
-            return self.redirect("/")
-        ip = self.client_address[0]
-        if self.needs_code():
-            stamp = take_try("setup", ip)
-            if stamp is None:
-                return self.send(429, self.first_run_page("Too many tries. Wait a minute and try again."))
-            if not hmac.compare_digest(get("code").strip().encode(), setup_code.encode()):
-                return self.send(200, self.first_run_page("That setup code isn't right."))
-            give_back("setup", ip, stamp)
-        if len(get("password")) < 10:
-            return self.send(200, self.first_run_page("Use at least 10 characters."))
-        with first_run_lock:
-            if web_config():
-                return self.redirect("/")
-            set_password(get("password"))
-            code = new_recovery_code()
-        return self.send(200, recovery_page(code, "Your password is set"), headers=[self.session_header(make_session(web_config()), SESSION_DAYS * 86400)])
-
-    def forgot_page(self, flash=None):
-        """Forgot the password: both ways back only work on the machine calsync runs on, never from somewhere else."""
-        here = not self.needs_code()
-        form = ('''<h2>With your recovery code</h2><section><p>You were given a recovery code when you chose your password. It works only on this computer.</p>
-<form method="post" action="/forgot" autocomplete="off"><label for="rc">Recovery code</label><input type="text" id="rc" name="code" required placeholder="ABCD-EFGH-JKLM-NPQR" autocapitalize="characters" spellcheck="false">
-<label for="np">New password, at least 10 characters</label><input type="password" id="np" name="password" required minlength="10" autocomplete="new-password"><div class="actions"><button>Reset password</button></div></form></section>'''
-                if here else '<h2>With your recovery code</h2><section class="note">For safety, a recovery code only works on the computer CalSync runs on. Open this page there, or use the command below.</section>')
-        return page("Forgot password", f'''<h1>Forgot your password?</h1><section><p>CalSync runs on your own computer, so there is no account and no email reset. You can still get back in from the computer it runs on.</p></section>
-<h2>From the computer it runs on</h2><section><p>Open a terminal there and run:</p><pre>calsync reset-password</pre><p class="soft">With Docker: <code>docker compose exec calsync calsync reset-password</code>. You choose a new password, every browser is signed out, and you get a new recovery code.</p></section>
-{form}<div class="actions"><a class="button plain" href="/">Back to sign in</a></div>''', flash=flash)
-
-    def forgot(self, cfg, get):
-        if self.needs_code():       # never from another machine, a proxy or the Docker port
-            return self.send(403, self.forgot_page("A recovery code only works on the computer CalSync runs on."))
-        ip = self.client_address[0]
-        stamp = take_try("recover", ip)
-        if stamp is None:
-            return self.send(429, self.forgot_page("Too many tries. Wait a minute and try again."))
-        if not recovery_ok(cfg, get("code")):
-            return self.send(200, self.forgot_page("That recovery code isn't right."))
-        give_back("recover", ip, stamp)
-        if len(get("password")) < 10:
-            return self.send(200, self.forgot_page("Use at least 10 characters."))
-        set_password(get("password"))
-        code = new_recovery_code()      # a used code is spent
-        return self.send(200, recovery_page(code, "Your password is reset", "Every other browser is signed out. Your old recovery code no longer works, so keep this new one."),
-                         headers=[self.session_header(make_session(web_config()), SESSION_DAYS * 86400)])
-
-    def login(self, cfg, get):
-        ip = self.client_address[0]
-        stamp = take_try("login", ip)
-        if stamp is None:
-            return self.send(429, login_page("Too many tries. Wait a minute and try again."))
-        if not hmac.compare_digest(hash_password(get("password"), cfg["salt"]), cfg["hash"]):
-            return self.send(200, login_page("That password isn't right."))
-        give_back("login", ip, stamp)
-        return self.redirect("/", [self.session_header(make_session(cfg), SESSION_DAYS * 86400)])
-
-    # Google: the browser comes back from Google to "/" with no session cookie guaranteed, so the one-use state proves it
+    def read_body_json(self):
+        try:
+            size = int(self.headers.get("Content-Length") or 0)
+            if 0 <= size <= MAX_BODY:
+                return json.loads(self.rfile.read(size) or b"{}")
+        except (ValueError, OSError):
+            pass
+        return None
 
     def google_redirect(self):
         if PUBLIC_URL:
@@ -1160,6 +2116,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send(200, page("Connect Google", f'<h1>That didn\'t work</h1><section class="bad">{esc(problem)}</section><a class="button plain" href="{esc(flow["origin"])}/#add">Back</a>'))
         self.redirect(f"{flow['origin']}/account?label={urllib.parse.quote(flow['label'])}")
 
+    def oauth_callback(self, provider, q):
+        """Google or Microsoft sending the browser back after one-click sign-in. The one-use state proves it's ours,
+        and the PKCE verifier that only this server holds is what turns the code into a sign-in."""
+        state = q.get("state", [""])[0]
+        with state_lock:
+            flow = pending_oauth.get(state)
+            if flow and (flow["provider"] != provider or flow["status"] != "waiting"):
+                flow = None
+            if flow:
+                flow["status"] = "working"
+        if not flow:
+            return self.send(400, page("Sign in", '<h1>This sign-in link has expired</h1><section>Start again from Add a calendar in CalSync.</section>'))
+        name = "Google" if provider == "google" else "Microsoft"
+        params = {k: v[0] for k, v in q.items()}
+        try:
+            if "code" not in params:
+                raise RuntimeError(engine.oauth_refused(provider, params))
+            label = engine.oauth_finish(provider, params["code"], flow["verifier"], flow["redirect"])
+            flow.update(status="done", label=label)
+        except engine.SignInBlocked:
+            flow["status"] = "blocked"
+            return self.send(200, page("Sign in", f'<h1>{name} didn\'t let CalSync in</h1>{blocked_section()}'))
+        except Exception as e:
+            flow.update(status="failed", problem=short_error(e))
+            return self.send(200, page("Sign in", f'<h1>That didn\'t work</h1><section class="bad">{esc(short_error(e))}</section>'))
+        if self.cookie():       # this browser has CalSync open; the desktop app's system browser doesn't
+            return self.redirect("/account?label=" + urllib.parse.quote(label))
+        return self.send(200, page("Signed in", f'''<h1>Signed in to {name}</h1><section><p>You can close this tab and go back to CalSync,
+where you choose which calendars to sync.</p></section>'''))
+
     def google_paste(self, address):
         q = urllib.parse.parse_qs(urllib.parse.urlparse(address.strip()).query)
         return self.google_callback(q)
@@ -1185,6 +2171,12 @@ def back_to(path):
     return path if re.fullmatch(r"/calendar(\?[A-Za-z0-9=&%._+-]*)?", path or "") else "/calendar"
 
 
+def at_time(get):
+    """Where the calendar opens after an event is added, changed or moved: at its start, so it's in view."""
+    start = get("start")
+    return "" if get("all_day") or not re.fullmatch(r"([01][0-9]|2[0-3]):[0-5][0-9]", start or "") else "&at=" + start
+
+
 def with_flash(path, key):
     return path + ("&" if "?" in path else "?") + "m=" + key
 
@@ -1196,19 +2188,11 @@ FLASHES = {"saved": "Saved.", "added": "Added. Preview to see what will change."
            "quicklater": "Added. It reaches your other calendars at the next sync.",
            "skipped": "Skipped. Its copies are being removed, so the time opens on your other calendars.",
            "skippedlater": "Skipped. Its copies go at the next sync.",
-           "unskipped": "Copying it again.", "unskippedlater": "It's copied again at the next sync."}
-
-
-def login_page(flash=None):
-    return page("Sign in", '<h1>Sign in</h1><section><form method="post" action="/login"><label for="pw">Password</label><input type="password" id="pw" name="password" required autofocus><div class="actions"><button>Sign in</button></div></form></section>'
-                '<p class="center"><a href="/forgot">Forgot password?</a></p>', flash=flash)
-
-
-def recovery_page(code, title, note="If you ever forget your password, this code lets you choose a new one from this computer."):
-    """Shown once: only the code's hash is kept."""
-    return page("Recovery code", f'''<h1>{esc(title)}</h1><section><p><b>Save this recovery code somewhere safe</b>, like a password manager or on paper. It's shown only now.</p>
-<p class="code">{esc(code)}</p><p class="soft">{esc(note)} You can also reset the password with <code>calsync reset-password</code> on this computer.</p>
-<div class="actions"><a class="button" href="/">I saved it, continue</a></div></section>''', flash=None)
+           "unskipped": "Copying it again.", "unskippedlater": "It's copied again at the next sync.",
+           "rulesaved": "Saved. It applies from the next sync; Preview shows what changes.", "resyncing": "Resyncing that pair now.",
+           "removedkept": "Stopped syncing that calendar. Its copies stay where they are.",
+           "added_ev": "Added.", "pending": "Saving in a few seconds.", "undone": "Undone. Nothing was changed.",
+           "toolate": "Too late to undo that one.", "answered": "Answer sent.", "bad": "That change couldn't be read."}
 
 
 class Server(http.server.ThreadingHTTPServer):
@@ -1232,18 +2216,40 @@ class Server(http.server.ThreadingHTTPServer):
             self.slots.release()
 
 
-def serve():
+def local_only(bind):
+    """CalSync has no sign-in, so it listens on this computer only, unless CALSYNC_ALLOW_REMOTE=1 says otherwise."""
+    if bind == "localhost" or is_loopback(bind):
+        return
+    if not ALLOW_REMOTE:
+        raise SystemExit(f"CalSync has no sign-in, so it only listens on this computer (127.0.0.1), not {bind}. "
+                         "To listen there anyway, also set CALSYNC_ALLOW_REMOTE=1, and make sure only you can reach it.")
+    print(f"WARNING: CalSync is listening on {bind} with CALSYNC_ALLOW_REMOTE=1. It has no sign-in: anyone who can reach "
+          "this address can read and change your calendars. Publish the port on 127.0.0.1 only, or put it behind a "
+          "private network or a proxy that signs you in.", flush=True)
+
+
+def serve(host=None, port=None, home=None, block=True):
+    """Run the page and the background sync. host, port and home override CALSYNC_BIND, CALSYNC_PORT and CALSYNC_HOME,
+    so the desktop app or a hosted copy can start it from code. block=False returns (server, stop) with both running
+    in threads; call server.shutdown() and stop.set() to end them."""
+    global BIND, PORT
+    if home:
+        engine.set_home(home)
+    BIND, PORT = host or BIND, int(port if port is not None else PORT)
+    local_only(BIND)
     engine.ensure_home()
     server = Server((BIND, PORT), Handler)
+    PORT = server.server_address[1]
+    stop = threading.Event()
+    threading.Thread(target=scheduler, args=(stop,), daemon=True).start()
+    if not block:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return server, stop
 
     def stop_now(*_):       # as a container's first process, nothing stops it on SIGTERM unless it asks to
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, stop_now)
-    stop = threading.Event()
-    threading.Thread(target=scheduler, args=(stop,), daemon=True).start()
     print(f"CalSync is on port {PORT} (open http://localhost:{PORT})", flush=True)
-    if not web_config():
-        print(f"First-time setup code: {setup_code}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

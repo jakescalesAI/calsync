@@ -9,16 +9,30 @@ Every run makes each writable calendar hold one tagged copy of every real event 
 
 ## Run it
 
+### Desktop app (Windows)
+
+CalSync as an app: it runs on your computer in its own window, keeps syncing from the tray after you close the window, and can start when you sign in. There's no download yet, so you build the installer once. With Python 3.10+, Node 18+ and [Rust](https://rustup.rs/) installed:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File desktop\build.ps1
+```
+
+If Windows Smart App Control is on, add `-Docker` (it needs WSL with Docker instead of Rust). Then run `desktop\out\CalSync_0.1.0_x64-setup.exe`. It installs for you only, without admin rights. The installer isn't signed yet, so if SmartScreen stops it, press **More info**, then **Run anyway**. Details, the tray menu and where your data lives are in [desktop/README.md](desktop/README.md). A Mac build is next.
+
+### Docker
+
 ```bash
 git clone https://github.com/jakescalesAI/calsync.git
 cd calsync
 docker compose up -d
-docker compose logs calsync
 ```
 
-Open http://localhost:8484 and enter the setup code from the logs. Choose a password, add your calendars, press **Preview changes**, then **Apply and keep syncing**. Save the recovery code it shows you: if you forget the password, it lets you pick a new one on that computer, and so does `calsync reset-password`. There is no account and no email reset.
+Open http://localhost:8484. There's no account and no password: CalSync runs on your computer and only that computer can reach it. Add your calendars, press **Preview changes**, then **Apply and keep syncing**.
 
-Google and Microsoft each need a free sign-in app of your own. The page walks you through it in about 10 minutes. iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server only need an app password.
+Google and Microsoft are one click: **Sign in with Google** or **Sign in with Microsoft**, in the browser on the computer CalSync runs on.
+On a server you reach from elsewhere, use a free sign-in app of your own instead; the page walks you through it in about 10 minutes. iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server only need an app password.
+
+### Python
 
 Without Docker, using Python 3.10 or newer:
 
@@ -53,8 +67,11 @@ CalSync has no AI in it, but any agent that speaks MCP can use it: Claude Code, 
 
 ## What it does
 
-- **Busy only:** copies on a chosen calendar say Busy, with no title or location. Private events always say Busy.
-- **Skip lists:** for example, don't copy work to personal.
+- **Rules for each direction:** Work to Personal can copy titles and details while Personal to Work says only Busy. Pick
+  what to copy, a tag and a colour, and leave out free, Maybe or unanswered events, all-day events, words, colours, days or hours.
+  Private events always say Busy.
+- **Why:** the Preview says why each event is or isn't copied. An Activity page lists every run.
+- **A full calendar:** day, week and month; add, change and drag events, with Undo; RSVP and Join; search.
 - **No double invites:** a meeting already on a calendar through an invite isn't copied again. Declined and cancelled events are skipped.
 - **No triple buzz:** copies have no reminders.
 - **No state to lose:** the tags are the state.
@@ -65,10 +82,10 @@ CalSync has no AI in it, but any agent that speaks MCP can use it: Claude Code, 
 
 CalSync is in beta. What to know before you rely on it:
 
-- **Google and Microsoft need your own sign-in app.** It takes about 10 minutes each, and Google shows an "unverified app" warning because the app is yours, not a published one. That's expected.
+- **Google shows an "unverified app" warning for now.** Google is still reviewing CalSync's app. Click Advanced, then Go to CalSync, to go on. Until the review is done, at most 100 people can sign in with CalSync's app; after that, use your own sign-in app (Advanced on the Connect page).
 - **School and work Microsoft accounts are often blocked** from outside apps. You can still bring them in read only, through the calendar's published `.ics` link.
 - **Repeating events are copied as single occurrences**, not as one repeating series.
-- **It looks 120 days ahead.** Events further out are copied as they come into range.
+- **It looks 120 days ahead by default.** Change the window in Settings. Events further out are copied as they come into range.
 - **Tested on Linux, WSL and Docker.** Windows and macOS without Docker work but are only lightly tested so far.
 
 Found a problem? Open an [issue](https://github.com/jakescalesAI/calsync/issues). For anything about security, see [SECURITY.md](SECURITY.md).
@@ -77,7 +94,6 @@ Found a problem? Open an [issue](https://github.com/jakescalesAI/calsync/issues)
 
 ```text
 calsync web                          web page and background sync
-calsync reset-password               forgot the page password: choose a new one (on that computer only)
 calsync setup google|microsoft       store your sign-in app
 calsync auth google|outlook|ics NAME sign in an account
 calsync auth caldav NAME [SERVER]    iCloud, Fastmail or any CalDAV server (icloud, fastmail, yahoo, aol, zoho, or an address)
