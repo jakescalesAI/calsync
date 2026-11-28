@@ -488,10 +488,12 @@ def connect_body(csrf):
     one = {**oneclick("google"), **oneclick("microsoft")}
     sign = lambda k, name: (f'<a class="button" href="{esc(one[k])}" target="_blank" rel="noopener" data-oauth-wait="/connect/wait?flow={esc(one[k + "_state"])}">Sign in with {name}</a>'
                             if one.get(k) else f'<a class="button" href="/connect/{k}">Connect</a>')
+    unverified = (' <span class="soft">Google may first say it hasn\'t verified CalSync while its review is pending. Click Advanced, then Go to CalSync.</span>'
+                  if engine.GOOGLE_UNVERIFIED else "")
     advanced = ('<p class="soft adv"><a href="/connect/advanced">Advanced: use your own OAuth app</a></p>' if one.get("google") or one.get("microsoft")
                 else '<p class="soft adv">One-click sign-in works when you open CalSync on the computer it runs on. From here, use your own sign-in app. <a href="/connect/advanced">More</a></p>' if one.get("remote") else "")
     return f'''{existing}<h2>Connect an account</h2>
-<section class="list"><div class="row"><div><b>Google Calendar</b></div>{sign("google", "Google")}</div>
+<section class="list"><div class="row"><div><b>Google Calendar</b>{unverified if one.get("google") else ""}</div>{sign("google", "Google")}</div>
 <div class="row"><div><b>Outlook or Microsoft 365</b> <span class="soft">Work and school accounts too, unless your organisation blocks outside apps.</span></div>{sign("microsoft", "Microsoft")}</div>
 {caldav}</section>{advanced}
 <section class="list"><div class="row long"><div><b>Published .ics link</b> <span class="soft">Read-only: its events are copied out, nothing is written back. For Proton Calendar, an Exchange server, or an organization that blocks outside apps.</span></div><a class="button" href="/connect/ics">Add link</a></div>
@@ -539,6 +541,8 @@ def wait_page(flow_id):
     if not flow:
         return None, page("Sign in", '<h1>This sign-in has expired</h1><section class="note">Start again from Add a calendar.</section><a class="button plain" href="/#add">Add a calendar</a>', True, at="/")
     name = "Google" if flow["provider"] == "google" else "Microsoft"
+    google_hint = ('<p>If Google says <b>Google hasn\'t verified this app</b>, that\'s expected for now: Google is still reviewing CalSync. '
+                   'Click <b>Advanced</b>, then <b>Go to CalSync</b>, then <b>Continue</b>.</p>')
     if flow["status"] == "done":
         return "/account?label=" + urllib.parse.quote(flow["label"]), None
     if flow["status"] == "blocked":
@@ -546,7 +550,7 @@ def wait_page(flow_id):
     if flow["status"] == "failed":
         return None, page("Sign in", f'<h1>That didn\'t work</h1><section class="bad">{esc(flow.get("problem", ""))}</section><a class="button plain" href="/#add">Try again</a>', True, at="/")
     return None, page("Sign in", f'''<h1>Sign in to {name}</h1><section><p>Your browser opened {name}. Choose your account and allow CalSync.
-This page moves on by itself when you're done.</p><p class="soft">If no browser window opened, <a href="/#add">go back</a> and press Sign in with {name} again.</p></section>''', True, refresh=2, at="/")
+This page moves on by itself when you're done.</p>{google_hint if flow["provider"] == "google" and engine.GOOGLE_UNVERIFIED else ""}<p class="soft">If no browser window opened, <a href="/#add">go back</a> and press Sign in with {name} again.</p></section>''', True, refresh=2, at="/")
 
 
 def connect_page(csrf, flash=None):

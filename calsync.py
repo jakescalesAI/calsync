@@ -1708,8 +1708,11 @@ def _client(provider):
 # browser back to this computer (127.0.0.1 or localhost), so only a CalSync running here can finish the sign-in.
 # Self-hosters can still use their own apps (Advanced on the Connect page), and these can be overridden for testing.
 
-CALSYNC_GOOGLE_ID = "REPLACE-WITH-CALSYNC-DESKTOP-CLIENT-ID.apps.googleusercontent.com"     # set when Jake creates the app
-CALSYNC_GOOGLE_SECRET = "REPLACE-WITH-CALSYNC-DESKTOP-CLIENT-SECRET"
+# The CalSync Google project (calsync-516104), "CalSync desktop and self-hosted" Desktop client. Not confidential: see above.
+CALSYNC_GOOGLE_ID = "463893300981-jhvspr3td5p3vj04a6djgr43f7rfgs4g.apps.googleusercontent.com"
+CALSYNC_GOOGLE_SECRET = "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"
+# Until Google verifies the app, it shows "Google hasn't verified this app" first, and at most 100 people can sign in.
+GOOGLE_UNVERIFIED = True
 CALSYNC_MICROSOFT_ID = "a2275ea1-af64-4bbb-b10b-a5841ac41268"     # the CalSync Entra app: public client, redirect http://localhost, no secret
 OAUTH = {
     "google": {"authorize": "https://accounts.google.com/o/oauth2/v2/auth", "token": "https://oauth2.googleapis.com/token",
@@ -1720,6 +1723,8 @@ OAUTH = {
     # The CalSync Entra app registers exactly "http://localhost": Microsoft lets the port vary for localhost but not the
     # path, so the redirect is http://localhost:PORT and the browser comes back to "/" (the page sends it on by its state).
 }
+UNVERIFIED_HINT = ("Google may say \"Google hasn't verified this app\". CalSync is waiting for Google's review. "
+                   "To go on, click Advanced, then Go to CalSync, then Continue.")
 ADMIN_ONLY = re.compile(r"AADSTS(65001|90094|90095|50105|530003)|admin(istrator)?\s+(approval|consent)|need[s]?\s+admin", re.I)
 
 
@@ -1961,6 +1966,8 @@ def cmd_setup(provider):
 def cmd_auth_google(label):
     if builtin_app("google") and not load_json(os.path.join(SECRETS, "google-client.json"), None):
         print("Opening your browser to sign in to Google...")
+        if GOOGLE_UNVERIFIED:
+            print(UNVERIFIED_HINT)
         label = loopback_signin("google", label)
         print(f"Signed in {label!r}. Its calendars:")
         return _print_calendars(label)

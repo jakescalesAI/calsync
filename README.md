@@ -69,7 +69,7 @@ CalSync has no AI in it, but any agent that speaks MCP can use it: Claude Code, 
 
 CalSync is in beta. What to know before you rely on it:
 
-- **Google and Microsoft need your own sign-in app.** It takes about 10 minutes each, and Google shows an "unverified app" warning because the app is yours, not a published one. That's expected.
+- **Google shows an "unverified app" warning for now.** Google is still reviewing CalSync's app. Click Advanced, then Go to CalSync, to go on. Until the review is done, at most 100 people can sign in with CalSync's app; after that, use your own sign-in app (Advanced on the Connect page).
 - **School and work Microsoft accounts are often blocked** from outside apps. You can still bring them in read only, through the calendar's published `.ics` link.
 - **Repeating events are copied as single occurrences**, not as one repeating series.
 - **It looks 120 days ahead by default.** Change the window in Settings. Events further out are copied as they come into range.

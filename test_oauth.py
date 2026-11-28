@@ -112,6 +112,12 @@ class EngineTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"CALSYNC_MS_CLIENT_ID": ""}):
             self.assertEqual(calsync.builtin_app("microsoft"), {"client_id": "a2275ea1-af64-4bbb-b10b-a5841ac41268"})
 
+    def test_the_calsync_google_app_is_built_in(self):
+        with mock.patch.dict(os.environ, {"CALSYNC_GOOGLE_CLIENT_ID": "", "CALSYNC_GOOGLE_CLIENT_SECRET": ""}):
+            app = calsync.builtin_app("google")
+        self.assertEqual(app["client_id"], "463893300981-jhvspr3td5p3vj04a6djgr43f7rfgs4g.apps.googleusercontent.com")
+        self.assertTrue(app["client_secret"].startswith("GOCSPX-"))
+
     def test_an_organisation_that_needs_an_admin_is_named_plainly(self):
         with self.assertRaises(calsync.SignInBlocked):
             calsync.oauth_refused("microsoft", {"error": "access_denied", "error_description": "AADSTS90094: Admin consent is required for this app."})
@@ -224,7 +230,10 @@ class WebTests(unittest.TestCase):
         found, _ = self.links()
         url, wait = found["google"]
         state = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["state"][0]
-        self.assertIn("moves on by itself", self.req(wait)[1])
+        waiting = self.req(wait)[1]
+        self.assertIn("moves on by itself", waiting)
+        self.assertIn("verified this app", waiting)   # until Google's review is done
+        self.assertNotIn("verified this app", self.req(found["microsoft"][1])[1])
         tokens = TokenServer()
         with mock.patch.object(calsync, "http", tokens):
             # the system browser has no CalSync session (the desktop app's case): it gets a "go back" page

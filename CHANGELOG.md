@@ -29,7 +29,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - One-click sign-in: Sign in with Google and Sign in with Microsoft use CalSync's own apps with PKCE and a loopback
   redirect, in the web page, the desktop app (which opens the system browser) and `calsync auth`. A work or school
   account that needs an administrator's approval gets a plain message and the .ics route. Your own apps still work,
-  under Advanced. The built-in app IDs are placeholders until the CalSync Google and Microsoft apps exist.
+  under Advanced. Until Google verifies CalSync's app, Google shows an "unverified app" screen first (CalSync says
+  how to go on) and at most 100 people can sign in with it.
 
 ### Changed
 - Signed-in pages load one same-origin script (`/app.js`) for keys, dragging and the Undo countdown. The content policy
