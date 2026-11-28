@@ -306,7 +306,13 @@ class WebTests(unittest.TestCase):
         # not no-referrer: that makes browsers send "Origin: null" on the page's own forms (see below)
         self.assertEqual(r.getheader("Referrer-Policy"), "same-origin")
         self.assertEqual(r.getheader("Cache-Control"), "no-store")
-        self.assertNotIn("<script", text)       # signed out: no script at all; signed in, only /app.js (see below)
+        self.assertEqual(re.findall(r"<script[^>]*>", text), ['<script src="/app.js" defer>'])    # the one same-origin script, for the password eye
+        self.assertIn('alt="CalSync"', text)                     # the icon names it; no wordmark under it when signed out
+        self.assertNotIn('height="64">CalSync', text)
+        self.assertIn('type="password"', text)                 # without JS the field is a plain password field
+        js = self.req("GET", "/app.js")[1]
+        for bit in ("input[type=password]", "'Show '", "'Hide '", "aria-pressed", "b.type='button'"):
+            self.assertIn(bit, js)
         self.assertNotIn("<style", text)
 
     def test_cookie_flags(self):

@@ -202,6 +202,9 @@ input::placeholder{color:var(--faint);opacity:1}input+p.soft{margin:6px 0 0;font
 button,.button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 20px;border:0;border-radius:999px;background:var(--blue);color:#fff;
 font:600 17px/1.2 var(--sans);letter-spacing:-.022em;text-align:center;text-decoration:none;cursor:pointer;transition:opacity .2s var(--ease),background-color .2s var(--ease),color .2s var(--ease)}
 button:hover,.button:hover{text-decoration:none}button:active,.button:active{opacity:.35}
+.pw{position:relative;display:block}.pw input{padding-right:52px}
+.pw button.eye{position:absolute;top:50%;right:4px;width:40px;min-height:0;height:40px;padding:0;margin:0;transform:translateY(-50%);border-radius:8px;background:none;color:var(--dim)}
+.pw button.eye:hover{background:var(--hover);color:var(--text)}.pw button.eye:active{opacity:.6}.pw button.eye svg{width:22px;height:22px;display:block}
 button.plain,.button.plain{background:var(--tint);color:var(--blue)}button.danger{background:var(--bad-bg);color:var(--bad)}form.inline{display:inline-flex}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:20px}.actions.flat{margin:0}
 .flash{display:flex;align-items:center;gap:10px;width:fit-content;max-width:100%;margin:0 auto 20px;padding:10px 18px;border-radius:999px;background:var(--panel);color:var(--text);font-size:15px;font-weight:600;box-shadow:0 0 0 .5px var(--line),0 8px 24px rgba(0,0,0,.08)}
@@ -317,6 +320,17 @@ CSS += "".join(f".tg-day .c{i}-{n}{{left:calc({i}/{n}*100% + 2px);right:auto;wid
 JS = r"""
 (function(){
 var $=function(s,r){return (r||document).querySelector(s)},$$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+var EYE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+    SHUT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.6 5.1A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a10 10 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>';
+$$('input[type=password]').forEach(function(f){
+  var what=f.name==='url'?'link':f.name==='client_secret'?'secret':'password',w=document.createElement('span'),b=document.createElement('button');
+  w.className='pw';f.parentNode.insertBefore(w,f);w.appendChild(f);
+  b.type='button';b.className='eye';w.appendChild(b);
+  function show(on){f.type=on?'text':'password';b.innerHTML=on?SHUT:EYE;b.setAttribute('aria-label',(on?'Hide ':'Show ')+what);b.setAttribute('aria-pressed',on?'true':'false')}
+  show(false);
+  b.addEventListener('click',function(){var at=f.selectionStart,to=f.selectionEnd;show(f.type==='password');f.focus();try{f.setSelectionRange(at,to)}catch(e){}});
+  if(f.form)f.form.addEventListener('submit',function(){show(false)});
+});
 var body=document.body,cal=$('[data-cal-page]');
 function go(u){if(u)location.href=u}
 document.addEventListener('keydown',function(e){
@@ -380,10 +394,11 @@ def page(title, body, signed_in=False, flash=None, refresh=None, at="", wide=Fal
     meta = f'<meta http-equiv="refresh" content="{int(refresh)}">' if refresh else ""
     note = f'<p class="flash" role="status">{esc(flash)}</p>' if flash else ""
     size = 32 if signed_in else 64
-    script = '<script src="/app.js" defer></script>' if signed_in else ""
+    script = '<script src="/app.js" defer></script>'     # every page: keys and drag when signed in, the password eye everywhere
+    brand = f'<img src="{MARK}" alt="" width="{size}" height="{size}">CalSync' if signed_in else f'<img src="{MARK}" alt="CalSync" width="{size}" height="{size}">'
     return (f'<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="theme-color" content="#ffffff">{meta}'
             f'<title>{esc(title)} · CalSync</title><link rel="stylesheet" href="/app.css"><link rel="icon" href="{MARK}">'
-            f'<body class="{"in" if signed_in else "out"}"><header><div class="bar"><a class="brand" href="/"><img src="{MARK}" alt="" width="{size}" height="{size}">CalSync</a>{nav}</div></header>'
+            f'<body class="{"in" if signed_in else "out"}"><header><div class="bar"><a class="brand" href="/">{brand}</a>{nav}</div></header>'
             f'<main{" class=wide" if wide else ""}>{note}{body}</main>{script}</html>')
 
 
