@@ -99,10 +99,11 @@ Settings live in `$CALSYNC_HOME`, by default `~/.calsync`. A sample systemd time
 ## Develop
 
 ```bash
+python3 -m pip install python-dateutil tzdata
 python3 -m unittest
 ```
 
-The engine (`calsync.py`) and web page (`calsync_web.py`) use only the standard library, plus `python-dateutil` for repeating `.ics` events.
+The engine (`calsync.py`) and web page (`calsync_web.py`) use only the standard library, plus `python-dateutil` for repeating `.ics` events and `tzdata` for time zones. Windows Python has no time zone data of its own, so running `calsync_web.py` from a clone without `tzdata` shows times in UTC (the page says so). `pipx install` brings both.
 
 ## License
 

@@ -73,6 +73,7 @@ py -m pipx ensurepath</code></pre>
 calsync web</code></pre>
 <p>Open <code>http://localhost:8484</code>. It opens straight in, with no account and no password, and only this computer can reach it. The page syncs in the background while <code>calsync web</code> runs.</p>
 <p>To update later, run <code>pipx upgrade calsync</code>.</p>
+<p>pipx also installs the two packages CalSync needs: <code>python-dateutil</code> for repeating events and <code>tzdata</code> for time zones. Windows has no time zone data of its own, so if you run <code>calsync_web.py</code> straight from a copy of the code, first run <code>py -m pip install python-dateutil tzdata</code>.</p>
 <p>Syncing runs for as long as <code>calsync web</code> is running, so leave that window open. On Windows, Task Scheduler can start it when you sign in.</p>
 <h2>The command line</h2>
 <dl class="kv">

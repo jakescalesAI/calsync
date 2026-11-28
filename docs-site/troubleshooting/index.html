@@ -114,6 +114,8 @@
 <dd>You reached it by another name, another port, or from another machine. Open <code>http://localhost:8484</code> (or your <code>CALSYNC_PORT</code>) on the computer it runs on.</dd>
 <dt>It won't start: "CalSync has no sign-in, so it only listens on this computer"</dt>
 <dd><code>CALSYNC_BIND</code> is set to an address other than 127.0.0.1. Remove it. If you really mean it, see <a href="/settings/">Reaching it from other machines</a>.</dd>
+<dt>It says "Couldn't detect your time zone" or shows times in UTC</dt>
+<dd>CalSync couldn't tell which zone your computer is in. Open Settings and type yours in Your time zone, like <code>America/New_York</code>; the field suggests names as you type. If it says "this Python has no time zone data" instead, run <code>py -m pip install tzdata</code> (Windows) or <code>python3 -m pip install tzdata</code>, then start CalSync again.</dd>
 <dt>The timer runs but nothing happens</dt>
 <dd>Cron has a smaller environment than your shell. Use the full path to <code>calsync</code>, set <code>CALSYNC_HOME</code> on the cron line if you changed it, and log the output to a file.</dd>
 </dl>
