@@ -34,6 +34,38 @@ for name in ("CALSYNC_PUBLIC_URL", "CALSYNC_HOSTS", "CALSYNC_ALLOW_REMOTE"):    
 import calsync as engine          # noqa: E402  (reads CALSYNC_HOME at import)
 import calsync_web as web         # noqa: E402
 
+def icu_zone(windows_name):
+    """Windows' own ICU (icu.dll, Windows 10 and later) maps any Windows zone name to its IANA name. The engine's
+    table covers the common ones; this covers the rest, like "US Eastern Standard Time" (Indiana), which would
+    otherwise fall back to UTC."""
+    import ctypes
+    try:
+        f = ctypes.WinDLL("icu.dll").ucal_getTimeZoneIDForWindowsID
+    except (OSError, AttributeError):
+        return ""
+    f.restype = ctypes.c_int32
+    f.argtypes = [ctypes.c_wchar_p, ctypes.c_int32, ctypes.c_char_p, ctypes.c_wchar_p, ctypes.c_int32, ctypes.POINTER(ctypes.c_int)]
+    out, status = ctypes.create_unicode_buffer(128), ctypes.c_int(0)
+    n = f(windows_name, -1, None, out, 128, ctypes.byref(status))
+    return out.value[:n] if status.value <= 0 and n > 0 else ""
+
+
+def windows_zone():
+    """engine.windows_zone, then ICU. Only used when neither CALSYNC_TZ nor Settings names a zone (engine.tz_name)."""
+    name = real_windows_zone()
+    if name or sys.platform != "win32":
+        return name
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\TimeZoneInformation") as key:
+            return icu_zone(winreg.QueryValueEx(key, "TimeZoneKeyName")[0])
+    except OSError:
+        return ""
+
+
+real_windows_zone = engine.windows_zone
+engine.windows_zone = windows_zone
+
 PREFIX = "@@calsync "
 paused = threading.Event()
 if os.environ.get("CALSYNC_DESKTOP_PAUSED") == "1":

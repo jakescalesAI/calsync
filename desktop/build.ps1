@@ -86,8 +86,14 @@ try {
         $tests = Join-Path $Out "calsync-desktop-tests.exe"
         if (Test-Path $tests) {
             Step "App: unit tests, on this PC"
-            Run $tests
-            Remove-Item $tests
+            try {
+                Run $tests
+            } catch {
+                # Smart App Control judges each new unsigned file; it sometimes refuses the test program.
+                if ("$_" -notmatch "Application Control") { throw }
+                Write-Warning "Smart App Control blocked the test program, so the Rust tests did NOT run on this PC. The installer is still built."
+            }
+            Remove-Item $tests -ErrorAction SilentlyContinue
         }
     } else {
         Step "App: tauri build"
