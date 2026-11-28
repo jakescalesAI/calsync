@@ -170,7 +170,6 @@ class WebTests(unittest.TestCase):
             for f in files:
                 os.remove(os.path.join(root, f))
         clear_accounts()
-        calsync_web.failed_logins.clear()
         calsync_web.pending_oauth.clear()
         self.cookie = None
 
@@ -181,8 +180,10 @@ class WebTests(unittest.TestCase):
         if form is not None:
             body = urllib.parse.urlencode(form)
             h["Content-Type"] = "application/x-www-form-urlencoded"
+        if method == "POST":
+            h["Origin"] = "http://" + h["Host"]
         if cookie and self.cookie:
-            h["Cookie"] = "calsync_session=" + self.cookie
+            h["Cookie"] = "calsync_browser=" + self.cookie
         c.request(method, path, body, h)
         r = c.getresponse()
         text = r.read().decode()
@@ -193,7 +194,7 @@ class WebTests(unittest.TestCase):
         return r, text
 
     def start(self):
-        self.req("/first-run", method="POST", form={"password": "correct horse battery"})
+        self.req("/")       # no password: the first visit just gets a browser ID
 
     def links(self, host=None):
         text = self.req("/", host=host)[1]
@@ -219,7 +220,9 @@ class WebTests(unittest.TestCase):
 
     def test_opened_from_another_machine_there_is_no_one_click(self):
         self.start()
-        found, text = self.links(host=f"192.168.1.20:{self.port}")
+        # only with CALSYNC_ALLOW_REMOTE can it be reached by another name at all
+        with mock.patch.object(calsync_web, "ALLOW_REMOTE", True), mock.patch.object(calsync_web, "EXTRA_HOSTS", {"cal.home.arpa"}):
+            found, text = self.links(host=f"cal.home.arpa:{self.port}")
         self.assertEqual(found, {})
         self.assertIn("on the computer it runs on", text)
         with mock.patch.object(calsync_web, "PUBLIC_URL", "https://cal.example.com"):

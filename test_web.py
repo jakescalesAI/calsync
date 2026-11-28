@@ -46,7 +46,6 @@ class WebTests(unittest.TestCase):
         for root, dirs, files in os.walk(home):
             for f in files:
                 os.remove(os.path.join(root, f))
-        calsync_web.failed_logins.clear()
         calsync_web.pending_google.clear()
         calsync_web.pending_ops.clear()      # an edit queued by one test must never land in the next
         self.cookie = None
@@ -60,8 +59,10 @@ class WebTests(unittest.TestCase):
             h["Content-Type"] = "application/x-www-form-urlencoded"
         if origin:
             h["Origin"] = origin
+        elif method == "POST" and origin is None:      # what a browser sends with this page's own forms
+            h["Origin"] = "http://" + h["Host"]
         if cookie and self.cookie:
-            h["Cookie"] = "calsync_session=" + self.cookie
+            h["Cookie"] = "calsync_browser=" + self.cookie
         c.request(method, path, body, h)
         r = c.getresponse()
         text = r.read().decode()
@@ -72,9 +73,10 @@ class WebTests(unittest.TestCase):
         return r, text
 
     def start(self):
-        r, text = self.req("POST", "/first-run", {"password": "correct horse battery"})
+        """The first visit: no password, just a browser ID for the form tokens."""
+        r, _ = self.req("GET", "/")
         self.assertEqual(r.status, 200)
-        self.recovery = re.search(r'<p class="code">([A-Z0-9-]+)</p>', text).group(1)     # shown once, at setup
+        self.assertIsNotNone(self.cookie)
 
     def csrf(self, path="/settings"):
         return re.search(r'name="csrf" value="(\w+)"', self.req("GET", path)[1]).group(1)
@@ -83,53 +85,6 @@ class WebTests(unittest.TestCase):
         return self.req("POST", path, dict(form, csrf=self.csrf()))
 
     # --- forgotten password, the merged sync page and the Calendar tab
-
-    def test_a_recovery_code_resets_the_password_once(self):
-        self.start()
-        self.cookie = None
-        self.assertIn("Forgot password?", self.req("GET", "/")[1])
-        self.assertIn("calsync reset-password", self.req("GET", "/forgot")[1])
-        self.assertIn("isn&#x27;t right", self.req("POST", "/forgot", {"code": "AAAA-BBBB-CCCC-DDDD", "password": "brand new password"})[1])
-        r, text = self.req("POST", "/forgot", {"code": self.recovery.lower().replace("-", " "), "password": "brand new password"})
-        self.assertEqual(r.status, 200)
-        self.assertIsNotNone(self.cookie)
-        fresh = re.search(r'<p class="code">([A-Z0-9-]+)</p>', text).group(1)
-        self.assertNotEqual(fresh, self.recovery)
-        self.cookie = None
-        self.req("POST", "/login", {"password": "brand new password"})
-        self.assertIsNotNone(self.cookie)
-        self.cookie = None      # the used code is spent
-        self.assertIn("isn&#x27;t right", self.req("POST", "/forgot", {"code": self.recovery, "password": "another new password"})[1])
-
-    def test_a_recovery_code_never_works_from_another_machine(self):
-        self.start()
-        self.cookie = None
-        with mock.patch.object(calsync_web, "is_loopback", return_value=False):
-            self.assertNotIn('name="code"', self.req("GET", "/forgot")[1])
-            r, _ = self.req("POST", "/forgot", {"code": self.recovery, "password": "brand new password"})
-            self.assertEqual(r.status, 403)
-        self.assertIsNone(self.cookie)
-        self.assertEqual(self.req("POST", "/login", {"password": "correct horse battery"})[0].status, 303)
-
-    def test_recovery_code_tries_are_capped(self):
-        self.start()
-        self.cookie = None
-        for _ in range(calsync_web.ATTEMPTS_PER_MINUTE):
-            self.req("POST", "/forgot", {"code": "AAAA-BBBB-CCCC-DDDD", "password": "brand new password"})
-        self.assertEqual(self.req("POST", "/forgot", {"code": self.recovery, "password": "brand new password"})[0].status, 429)
-
-    def test_changing_the_password_keeps_the_recovery_code(self):
-        self.start()
-        self.post("/settings/password", old="correct horse battery", new="a different password")
-        self.assertTrue(calsync_web.recovery_ok(calsync_web.web_config(), self.recovery))
-
-    def test_a_new_recovery_code_needs_the_password(self):
-        self.start()
-        self.assertIn("isn&#x27;t right", self.post("/settings/recovery", old="wrong password")[1])
-        _, text = self.post("/settings/recovery", old="correct horse battery")
-        self.assertFalse(calsync_web.recovery_ok(calsync_web.web_config(), self.recovery))
-        self.assertTrue(calsync_web.recovery_ok(calsync_web.web_config(), re.search(r'<p class="code">([A-Z0-9-]+)</p>', text).group(1)))
-        self.assertNotIn(self.recovery.replace("-", ""), json.dumps(calsync_web.web_config()))     # only its hash is kept
 
     def test_adding_a_calendar_is_on_the_sync_page(self):
         self.start()
@@ -235,57 +190,33 @@ class WebTests(unittest.TestCase):
 
     # --- who gets in
 
-    def test_first_run_sets_password_and_files_are_private(self):
+    def test_it_opens_straight_in_and_files_are_private(self):
         r, text = self.req("GET", "/")
-        self.assertIn("Choose a password", text)
-        self.assertNotIn(calsync_web.setup_code, text)
-        self.start()
-        self.assertIn("Nothing is connected", self.req("GET", "/")[1])
+        self.assertIn("Nothing is connected", text)
+        for gone in ("Choose a password", "Sign in</h1>", "Forgot password", "recovery code", "Setup code"):
+            self.assertNotIn(gone, text)
         self.assertEqual(stat.S_IMODE(os.stat(home).st_mode), 0o700)
-        self.assertEqual(stat.S_IMODE(os.stat(calsync_web.web_file()).st_mode), 0o600)
-        self.assertNotIn("correct horse", open(calsync_web.web_file()).read())
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.join(calsync.SECRETS, "page-key.json")).st_mode), 0o600)
+        for path in ("/first-run", "/login", "/forgot", "/settings/password", "/settings/recovery", "/logout"):
+            self.assertEqual(self.req("GET", path)[0].status, 404, path)
 
-    def test_first_run_can_only_happen_once(self):
+    def test_an_old_page_password_is_left_alone_and_never_asked_for(self):
+        old = {"salt": "00" * 16, "hash": "ab" * 64, "key": "cd" * 32, "recovery": {"salt": "00" * 16, "hash": "ef" * 64, "made": "2026-11-01"}}
+        calsync.ensure_home()
+        calsync.save_json(os.path.join(calsync.SECRETS, "web.json"), old)
         self.start()
-        self.cookie = None
-        self.req("POST", "/first-run", {"password": "another password here"})
-        self.assertIsNone(self.cookie)
-        self.assertEqual(self.req("POST", "/login", {"password": "another password here"})[0].status, 200)
-        self.assertIsNone(self.cookie)
+        text = self.req("GET", "/settings")[1]
+        self.assertNotIn("password", text.lower().replace("app password", ""))
+        self.assertEqual(self.post("/start")[0].status, 303)
+        self.assertEqual(calsync.load_json(os.path.join(calsync.SECRETS, "web.json"), None), old)
 
-    def test_remote_first_run_needs_the_code(self):
-        with mock.patch.object(calsync_web, "is_loopback", return_value=False):
-            self.assertIn("Setup code", self.req("GET", "/")[1])
-            self.assertIn("isn&#x27;t right", self.req("POST", "/first-run", {"password": "long enough password", "code": "nope"})[1])
-            self.assertIsNone(calsync_web.web_config())
-            self.assertEqual(self.req("POST", "/first-run", {"password": "long enough password", "code": calsync_web.setup_code})[0].status, 200)
-            self.assertIsNotNone(calsync_web.web_config())
-
-    def test_every_page_and_action_needs_signing_in(self):
+    def test_every_change_needs_this_browsers_form_token(self):
         self.start()
-        self.cookie = None
-        for path in ("/connect", "/connect/google", "/connect/ics", "/settings", "/account?label=x"):
-            self.assertIn("Sign in", self.req("GET", path)[1], path)
-        for path in ("/run", "/start", "/preview", "/purge", "/connect/google/client", "/settings/password", "/calendar/add"):
-            r, _ = self.req("POST", path, {"csrf": "x"})
-            self.assertEqual((r.status, r.getheader("Location")), (303, "/"), path)
+        token = self.csrf()
+        for path in ("/run", "/start", "/preview", "/purge", "/connect/google/client", "/calendar/prefs"):
+            self.assertEqual(self.req("POST", path, {"csrf": "x"})[0].status, 400, path)
+            self.assertEqual(self.req("POST", path, {"csrf": token}, cookie=False)[0].status, 400, path)   # another browser can't borrow it
         self.assertFalse(calsync.load_json(calsync.CONFIG, {}).get("enabled"))
-
-    def test_forged_and_expired_sessions_fail(self):
-        self.start()
-        good = self.cookie
-        cfg = calsync_web.web_config()
-        self.assertFalse(calsync_web.session_ok(cfg, "9999999999." + "0" * 64))
-        self.assertFalse(calsync_web.session_ok(cfg, good.split(".")[0] + "." + "a" * 64))
-        old = "1000"
-        self.assertFalse(calsync_web.session_ok(cfg, f"{old}.{calsync_web.sign(cfg['key'], 'session.' + old)}"))
-
-    def test_wrong_passwords_get_slowed_down(self):
-        self.start()
-        self.cookie = None
-        for _ in range(calsync_web.ATTEMPTS_PER_MINUTE):
-            self.assertEqual(self.req("POST", "/login", {"password": "nope"})[0].status, 200)
-        self.assertEqual(self.req("POST", "/login", {"password": "correct horse battery"})[0].status, 429)
 
     def test_csrf_origin_and_host_are_checked(self):
         self.start()
@@ -294,9 +225,41 @@ class WebTests(unittest.TestCase):
         token = self.csrf()
         self.assertEqual(self.req("POST", "/start", {"csrf": token}, origin="https://evil.example")[0].status, 400)
         self.assertEqual(self.req("POST", "/start", {"csrf": token}, origin="null")[0].status, 400)  # a sandboxed or referrer-less page
-        self.assertEqual(self.req("GET", "/", host="evil.example")[0].status, 400)
-        self.assertEqual(self.req("POST", "/start", {"csrf": token}, host="evil.example")[0].status, 400)
-        self.assertEqual(self.req("GET", "/", host="192.168.1.20:8484")[0].status, 200)
+        self.assertEqual(self.req("POST", "/start", {"csrf": token}, origin="")[0].status, 400)      # no Origin and no Referer
+        self.assertEqual(self.req("POST", "/start", {"csrf": token}, origin="", headers={"Referer": "https://evil.example/x"})[0].status, 400)
+        self.assertFalse(calsync.load_json(calsync.CONFIG, {}).get("enabled"))
+        # DNS rebinding: someone's name pointed at 127.0.0.1, another port, or this machine's address on the network
+        for host in ("evil.example", f"evil.example:{self.port}", "localhost:1", f"localhost.evil.example:{self.port}",
+                     f"192.168.1.20:{self.port}", f"app.localhost:{self.port}", f"[::1]:{self.port}"):
+            self.assertEqual(self.req("GET", "/", host=host)[0].status, 400, host)
+            self.assertEqual(self.req("POST", "/start", {"csrf": token}, host=host, origin=f"http://{host}")[0].status, 400, host)
+        self.assertEqual(self.req("GET", "/", host=f"127.0.0.1:{self.port}")[0].status, 200)
+        self.assertEqual(self.req("POST", "/start", {"csrf": token}, origin="", headers={"Referer": f"http://localhost:{self.port}/"})[0].status, 303)
+        self.assertTrue(calsync.load_json(calsync.CONFIG, {}).get("enabled"))
+
+    def test_no_cors_headers(self):
+        r, _ = self.req("GET", "/", headers={"Origin": "https://evil.example"})
+        self.assertFalse([h for h in r.getheaders() if h[0].lower().startswith("access-control-")])
+        r, _ = self.req("OPTIONS", "/", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"})
+        self.assertNotEqual(r.status, 200)
+        self.assertFalse([h for h in r.getheaders() if h[0].lower().startswith("access-control-")])
+
+    def test_it_only_listens_beyond_this_computer_when_told_to(self):
+        for bind in ("127.0.0.1", "localhost", "::1"):
+            calsync_web.local_only(bind)
+        with mock.patch.object(calsync_web, "ALLOW_REMOTE", False):
+            with self.assertRaises(SystemExit) as no:
+                calsync_web.local_only("0.0.0.0")
+            self.assertIn("CALSYNC_ALLOW_REMOTE=1", str(no.exception))
+        with mock.patch.object(calsync_web, "ALLOW_REMOTE", True), mock.patch("builtins.print") as said:
+            calsync_web.local_only("0.0.0.0")
+        self.assertIn("WARNING", said.call_args[0][0])
+        # allowed remote, it answers to the names you list and to a published port
+        with mock.patch.object(calsync_web, "ALLOW_REMOTE", True), mock.patch.object(calsync_web, "EXTRA_HOSTS", {"cal.home.arpa"}):
+            self.assertTrue(calsync_web.host_allowed("cal.home.arpa:9000", 8484))
+            self.assertTrue(calsync_web.host_allowed("localhost:9000", 8484))
+            self.assertFalse(calsync_web.host_allowed("evil.example:8484", 8484))
+        self.assertFalse(calsync_web.host_allowed("cal.home.arpa:8484", 8484))
 
     def test_security_headers_and_no_scripts(self):
         r, text = self.req("GET", "/")
@@ -307,21 +270,21 @@ class WebTests(unittest.TestCase):
         self.assertEqual(r.getheader("Referrer-Policy"), "same-origin")
         self.assertEqual(r.getheader("Cache-Control"), "no-store")
         self.assertEqual(re.findall(r"<script[^>]*>", text), ['<script src="/app.js" defer>'])    # the one same-origin script, for the password eye
-        self.assertIn('alt="CalSync"', text)                     # the icon names it; no wordmark under it when signed out
-        self.assertNotIn('height="64">CalSync', text)
-        self.assertIn('type="password"', text)                 # without JS the field is a plain password field
         js = self.req("GET", "/app.js")[1]
-        for bit in ("input[type=password]", "'Show '", "'Hide '", "aria-pressed", "b.type='button'"):
+        for bit in ("input[type=password][data-reveal]", "'Show '", "'Hide '", "aria-pressed", "b.type='button'"):
             self.assertIn(bit, js)
+        icloud = self.req("GET", "/connect/caldav?p=icloud")[1]       # the eye is on the app-password field only
+        self.assertIn('type="password" id="password" name="password" required autocomplete="new-password" data-reveal', icloud)
+        self.assertEqual(self.req("GET", "/connect/ics")[1].count("data-reveal"), 0)
         self.assertNotIn("<style", text)
 
     def test_cookie_flags(self):
-        r, _ = self.req("POST", "/first-run", {"password": "correct horse battery"})
+        r, _ = self.req("GET", "/")
         flags = r.getheader("Set-Cookie")
+        self.assertTrue(flags.startswith("calsync_browser="))
         self.assertIn("HttpOnly", flags)
         self.assertIn("SameSite=Lax", flags)
-
-    # --- secrets stay put
+        self.assertIsNone(self.req("GET", "/")[0].getheader("Set-Cookie"))     # once a browser has one, it keeps it
 
     def test_client_secret_and_ics_link_never_come_back(self):
         self.start()
@@ -465,14 +428,6 @@ class WebTests(unittest.TestCase):
         cfg = calsync.load_json(calsync.CONFIG, {})
         self.assertEqual((cfg["interval_minutes"], cfg["timezone"]), (10, "Europe/Paris"))
 
-    def test_changing_password_signs_others_out(self):
-        self.start()
-        other = self.cookie
-        self.assertIn("isn&#x27;t right", self.post("/settings/password", old="wrong", new="new password long")[1])
-        self.post("/settings/password", old="correct horse battery", new="new password long")
-        self.assertFalse(calsync_web.session_ok(calsync_web.web_config(), other))
-        self.assertTrue(calsync_web.session_ok(calsync_web.web_config(), self.cookie))
-
     def test_scheduler_runs_only_when_enabled(self):
         self.start()
         self.two_calendars()
@@ -491,48 +446,6 @@ class WebTests(unittest.TestCase):
             self.wait_for_run()
         self.assertEqual(len(self.cals["b"].events), 1)
 
-    def test_setup_code_tries_are_capped(self):
-        with mock.patch.object(calsync_web, "is_loopback", return_value=False):
-            for _ in range(calsync_web.ATTEMPTS_PER_MINUTE):
-                self.assertEqual(self.req("POST", "/first-run", {"password": "long enough password", "code": "nope"})[0].status, 200)
-            r, _ = self.req("POST", "/first-run", {"password": "long enough password", "code": calsync_web.setup_code})
-            self.assertEqual(r.status, 429)
-            self.assertIsNone(calsync_web.web_config())
-
-    def test_many_addresses_together_are_capped(self):
-        for kind, cap in calsync_web.EVERYONE_PER_MINUTE.items():
-            calsync_web.failed_logins.clear()
-            for i in range(cap):
-                self.assertIsNotNone(calsync_web.take_try(kind, f"10.0.{i // 250}.{i % 250}"))
-            self.assertIsNone(calsync_web.take_try(kind, "10.9.9.9"), kind)
-
-    def test_a_proxy_on_this_machine_still_needs_the_code(self):
-        local = {"password": "long enough password"}
-        for headers in ({"X-Forwarded-For": "203.0.113.9"}, {"Forwarded": "for=203.0.113.9"}, {"X-Real-IP": "203.0.113.9"}):
-            self.assertIn("Setup code", self.req("GET", "/", headers=headers)[1], headers)
-            self.assertIn("isn&#x27;t right", self.req("POST", "/first-run", local, headers=headers)[1])
-        with mock.patch.object(calsync_web, "EXTRA_HOSTS", {"cal.example.com"}):
-            self.assertIn("Setup code", self.req("GET", "/", host="cal.example.com")[1])
-        with mock.patch.object(calsync_web, "PUBLIC_URL", "https://cal.example.com"):
-            self.assertIn("Setup code", self.req("GET", "/")[1])
-        with mock.patch.object(calsync_web, "BIND", "0.0.0.0"):     # the Docker image listens beyond loopback
-            self.assertIn("Setup code", self.req("GET", "/")[1])
-        self.assertIsNone(calsync_web.web_config())
-        self.assertNotIn("Setup code", self.req("GET", "/")[1])     # plain local visit: no code needed
-
-    def test_guessing_the_old_password_on_settings_hits_the_cap(self):
-        self.start()
-        for _ in range(calsync_web.ATTEMPTS_PER_MINUTE):
-            self.assertIn("isn&#x27;t right", self.post("/settings/password", old="wrong", new="new password long")[1])
-        r, text = self.req("POST", "/settings/password", dict(old="correct horse battery", new="new password long", csrf=self.csrf()))
-        self.assertEqual(r.status, 429)
-        self.assertIn("Too many tries", text)
-
-    def test_a_right_old_password_does_not_use_up_a_try(self):
-        self.start()
-        self.post("/settings/password", old="correct horse battery", new="correct horse battery")
-        self.assertEqual(calsync_web.failed_logins.get(("login", "127.0.0.1"), []), [])
-
     def test_a_strange_csrf_value_is_refused_with_a_reply(self):
         self.start()
         r, text = self.req("POST", "/run", {"csrf": "\u00e9\u00e9"})
@@ -544,38 +457,15 @@ class WebTests(unittest.TestCase):
         self.assertEqual(calsync_web.copies(0), "0 copies")
         self.assertEqual(calsync_web.copies(2), "2 copies")
 
-    def test_parallel_wrong_passwords_respect_the_cap(self):
-        self.start()
-        self.cookie = None
-        statuses = []
-
-        def guess():
-            statuses.append(self.req("POST", "/login", {"password": "wrong guess"}, cookie=False)[0].status)
-        threads = [threading.Thread(target=guess) for _ in range(12)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-        self.assertEqual(statuses.count(200), calsync_web.ATTEMPTS_PER_MINUTE)
-        self.assertEqual(statuses.count(429), 12 - calsync_web.ATTEMPTS_PER_MINUTE)
-
     def test_negative_length_is_refused(self):
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
-        c.putrequest("POST", "/login", skip_host=True)
+        c.putrequest("POST", "/run", skip_host=True)
         c.putheader("Host", f"localhost:{self.port}")
+        c.putheader("Origin", f"http://localhost:{self.port}")
         c.putheader("Content-Length", "-1")
         c.endheaders()
         self.assertEqual(c.getresponse().status, 413)
         c.close()
-
-    def test_sign_out_everywhere_ends_other_sessions(self):
-        self.start()
-        other = self.cookie
-        self.assertEqual(self.post("/logout/everywhere")[0].status, 303)
-        self.assertFalse(calsync_web.session_ok(calsync_web.web_config(), other))
-        self.cookie = other
-        self.assertIn("Sign in", self.req("GET", "/settings")[1])
-        self.assertEqual(self.req("POST", "/login", {"password": "correct horse battery"})[0].status, 303)
 
     def test_health_needs_nothing(self):
         self.assertEqual(self.req("GET", "/healthz", host="anything.example")[1], "ok")
@@ -727,9 +617,10 @@ class HostileConnectionTests(unittest.TestCase):
 
     def test_a_connection_that_goes_quiet_is_dropped(self):
         self.assertTrue(0 < calsync_web.Handler.timeout <= 60)     # the real page has a limit; the rest shortens it to test it
-        for sent in (b"", b"GET / HT", b"POST /login HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\n"):
-            sock = self.connect(self.serve(handler={"timeout": 0.2}))
-            sock.sendall(sent)
+        for sent in (b"", b"GET / HT", b"POST /run HTTP/1.1\r\nHost: localhost:PORT\r\nOrigin: http://localhost:PORT\r\nContent-Length: 100\r\n\r\n"):
+            port = self.serve(handler={"timeout": 0.2})
+            sock = self.connect(port)
+            sock.sendall(sent.replace(b"PORT", str(port).encode()))
             self.assertEqual(sock.recv(100), b"", sent)     # closed by the server, not this test's 5 second timeout
 
     def test_connections_past_the_cap_are_turned_away_and_the_page_recovers(self):
@@ -754,14 +645,6 @@ class HostileConnectionTests(unittest.TestCase):
             except ConnectionResetError:
                 pass
         self.fail("the page never came back")
-
-    def test_strange_cookies_are_just_not_a_session(self):
-        cfg = {"key": "ab" * 32}
-        good = calsync_web.make_session(cfg)
-        self.assertTrue(calsync_web.session_ok(cfg, good))
-        expires = good.split(".")[0]
-        for cookie in (None, "", ".", "x.y", "\u00b2.abc", "\u0663.abc", "9" * 5000 + ".abc", f"{expires}.\u00e9", f"{expires}.", f"-{expires}.abc", good + "0"):
-            self.assertFalse(calsync_web.session_ok(cfg, cookie), cookie)
 
 
 if __name__ == "__main__":

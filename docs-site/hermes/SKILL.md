@@ -55,7 +55,7 @@ Hermes keeps only the last `--env`, so don't use two. Without this you'd read th
 
 ## Set up
 
-1. Run `calsync web` in the background and open http://localhost:8484, or send them the link if you have no browser tool. On the same computer the page asks only for a password, which they choose. With Docker, or from another computer, it also asks for a setup code: `docker compose logs calsync` shows it, or `calsync web` prints it.
+1. Run `calsync web` in the background and open http://localhost:8484, or send them the link if you have no browser tool. It opens straight in: there's no password, and only that computer can reach it.
 2. Follow https://docs.getcalsync.app/google/ or https://docs.getcalsync.app/microsoft/ if they need a sign-in app. iCloud and other CalDAV accounts are at https://docs.getcalsync.app/caldav/.
 3. Have them press **Preview changes** and read what it would do. They press **Apply and keep syncing** themselves, when they're happy with it.
 4. Tell them `calsync web` syncs only while it runs, so it has to stay running or start with the computer. Offer to set that up for their system, and ask first. Running `calsync run` from cron or a timer also works: see https://docs.getcalsync.app/python/.

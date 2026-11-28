@@ -7,7 +7,6 @@ recognised by a private tag, so they are never copied again, and calsync never
 edits or deletes an event it did not create. Stateless: the tags are the state.
 
   calsync web                        web setup page and background sync (http://localhost:8484)
-  calsync reset-password             forgot the page password: set a new one, on this computer only
   calsync setup google|microsoft     store your OAuth client (hidden prompts)
   calsync auth google LABEL          sign in a Google account (paste-back flow)
   calsync auth outlook LABEL [TENANT] sign in a Microsoft account (device code)
@@ -2967,9 +2966,6 @@ def main(argv):
     elif cmd == "mcp":
         import calsync_mcp
         return calsync_mcp.main(rest)
-    elif cmd == "reset-password":
-        import calsync_web
-        return calsync_web.reset_password_here(rest)
     elif cmd == "auth" and len(rest) >= 2 and rest[0] == "google":
         cmd_auth_google(rest[1])
     elif cmd == "auth" and len(rest) >= 2 and rest[0] == "outlook":

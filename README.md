@@ -13,10 +13,9 @@ Every run makes each writable calendar hold one tagged copy of every real event 
 git clone https://github.com/jakescalesAI/calsync.git
 cd calsync
 docker compose up -d
-docker compose logs calsync
 ```
 
-Open http://localhost:8484 and enter the setup code from the logs. Choose a password, add your calendars, press **Preview changes**, then **Apply and keep syncing**. Save the recovery code it shows you: if you forget the password, it lets you pick a new one on that computer, and so does `calsync reset-password`. There is no account and no email reset.
+Open http://localhost:8484. There's no account and no password: CalSync runs on your computer and only that computer can reach it. Add your calendars, press **Preview changes**, then **Apply and keep syncing**.
 
 Google and Microsoft are one click: **Sign in with Google** or **Sign in with Microsoft**, in the browser on the computer CalSync runs on.
 On a server you reach from elsewhere, use a free sign-in app of your own instead; the page walks you through it in about 10 minutes. iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server only need an app password.
@@ -81,7 +80,6 @@ Found a problem? Open an [issue](https://github.com/jakescalesAI/calsync/issues)
 
 ```text
 calsync web                          web page and background sync
-calsync reset-password               forgot the page password: choose a new one (on that computer only)
 calsync setup google|microsoft       store your sign-in app
 calsync auth google|outlook|ics NAME sign in an account
 calsync auth caldav NAME [SERVER]    iCloud, Fastmail or any CalDAV server (icloud, fastmail, yahoo, aol, zoho, or an address)

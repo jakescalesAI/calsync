@@ -6,9 +6,15 @@ and forms; one same-origin script (/app.js) adds keyboard keys, dragging events 
 shows goes through esc(). Tokens, client secrets, CalDAV passwords and .ics links are stored by the engine and never
 sent to a page.
 
-Start it from code with serve(host, port, home), for the desktop app or a hosted copy.
+Start it from code with serve(host, port, home), for the desktop app.
 
-  CALSYNC_BIND        address to listen on (default 127.0.0.1; the Docker image uses 0.0.0.0)
+There is no page password: CalSync is local. It listens on 127.0.0.1, answers only to localhost or 127.0.0.1 with its
+own port (so another site can't reach it by pointing a name at 127.0.0.1), takes a POST only when its Origin or Referer
+is this page, and checks a form token on every change. It sends no CORS headers.
+
+  CALSYNC_BIND        address to listen on (default 127.0.0.1). There's no sign-in, so anything but this computer
+                      also needs CALSYNC_ALLOW_REMOTE=1 (the Docker image, whose port compose publishes on 127.0.0.1 only)
+  CALSYNC_ALLOW_REMOTE  1 to let it listen beyond this computer anyway; then you decide who can reach it
   CALSYNC_PORT        port (default 8484)
   CALSYNC_PUBLIC_URL  https address, if you put it behind your own proxy; used as Google's redirect
   CALSYNC_HOSTS       extra host names allowed to reach it, comma separated
@@ -20,13 +26,10 @@ PORT = int(os.environ.get("CALSYNC_PORT") or 8484)
 BIND = os.environ.get("CALSYNC_BIND") or "127.0.0.1"
 PUBLIC_URL = (os.environ.get("CALSYNC_PUBLIC_URL") or "").rstrip("/")
 EXTRA_HOSTS = {h.strip().lower() for h in (os.environ.get("CALSYNC_HOSTS") or "").split(",") if h.strip()}
-SESSION_DAYS = 30
+ALLOW_REMOTE = os.environ.get("CALSYNC_ALLOW_REMOTE") == "1"
+BROWSER_DAYS = 400      # how long a browser keeps the random ID its form tokens are signed with
 MAX_BODY = 64 * 1024
 INTERVALS = (2, 5, 10, 15, 30, 60)
-ATTEMPTS_PER_MINUTE = 5            # wrong passwords or setup codes from one address
-EVERYONE_PER_MINUTE = {"login": 30, "setup": 10, "recover": 10}   # and from all addresses together, so many addresses don't help
-RECOVERY_LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"   # no 0/O, 1/I/L: a code someone copies by hand
-PROXY_HEADERS = ("Forwarded", "X-Forwarded-For", "X-Real-IP")
 
 state_lock = threading.Lock()
 pending_google = {}     # state -> label, redirect, origin, expires
@@ -34,10 +37,7 @@ pending_ms = {}         # flow id -> label, tenant, device_code, user_code, link
 pending_oauth = {}      # one-click sign-in: state -> provider, verifier, redirect, expires, status, label, problem
 here = threading.local()     # the request being answered: its Host header, so a page can build a loopback address
 MAX_OAUTH_FLOWS = 40
-failed_logins = {}      # (kind, ip or "*") -> [times of tries]
-first_run_lock = threading.Lock()
-setup_code = secrets.token_hex(4)
-last_preview = {}       # session key -> the preview shown next
+last_preview = {}       # browser ID -> the preview shown next
 run_state = {"running": False}
 
 
@@ -49,117 +49,34 @@ def copies(n):
     return f"{esc(n)} {'copy' if n == 1 else 'copies'}"
 
 
-def web_file():
-    return os.path.join(engine.SECRETS, "web.json")
-
-
-def web_config():
-    return engine.load_json(web_file(), None)
-
-
-def hash_password(password, salt):
-    return hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt), n=2**15, r=8, p=1, maxmem=64 * 1024 * 1024).hex()
-
-
-def set_password(password):
-    """A new key signs everyone out. A recovery code already made stays valid."""
-    salt = secrets.token_hex(16)
-    engine.ensure_home()
-    old = web_config() or {}
-    data = {"salt": salt, "hash": hash_password(password, salt), "key": secrets.token_hex(32)}
-    if old.get("recovery"):
-        data["recovery"] = old["recovery"]
-    engine.save_json(web_file(), data)
-
-
-def new_recovery_code():
-    """Make a recovery code, keep only its hash, and return it so it can be shown once. It replaces any older code.
-    16 letters from 31 is about 79 bits, and it only works from this machine, a few tries a minute."""
-    code = "-".join("".join(secrets.choice(RECOVERY_LETTERS) for _ in range(4)) for _ in range(4))
-    salt = secrets.token_hex(16)
-    cfg = web_config() or {}
-    cfg["recovery"] = {"salt": salt, "hash": hash_password(clean_code(code), salt), "made": engine.now_utc().strftime("%Y-%m-%d")}
-    engine.save_json(web_file(), cfg)
-    return code
-
-
-def clean_code(code):
-    return re.sub(r"[^A-Z0-9]", "", (code or "").upper())
-
-
-def recovery_ok(cfg, code):
-    r = (cfg or {}).get("recovery")
-    return bool(r) and hmac.compare_digest(hash_password(clean_code(code), r["salt"]), r["hash"])
-
-
-def reset_password_here(argv=()):
-    """`calsync reset-password`: on the machine calsync runs on, set a new page password without the old one.
-    Whoever can run this can already read calsync's folder, so it gives nothing away. It signs everyone out
-    and makes a new recovery code."""
-    import getpass
-    new = getpass.getpass("New password for the CalSync page (at least 10 characters, hidden): ")
-    if len(new) < 10:
-        raise SystemExit("Use at least 10 characters. Nothing changed.")
-    if getpass.getpass("Type it again: ") != new:
-        raise SystemExit("Those didn't match. Nothing changed.")
-    set_password(new)
-    code = new_recovery_code()
-    print("Password changed. Every browser that was signed in is signed out.")
-    print(f"New recovery code: {code}")
-    print("Keep it somewhere safe. It resets the password from this computer if you forget it again.")
-    return 0
+def page_key():
+    """The key that signs each page's form token, made once and kept in secrets/. An old web.json (the page password
+    CalSync used to have) is left where it is and no longer read."""
+    path = os.path.join(engine.SECRETS, "page-key.json")
+    with state_lock:
+        got = engine.load_json(path, None)
+        if not got or not re.fullmatch(r"[0-9a-f]{64}", str(got.get("key", ""))):
+            engine.ensure_home()
+            got = {"key": secrets.token_hex(32)}
+            engine.save_json(path, got)
+    return got["key"]
 
 
 def sign(key, text):
     return hmac.new(bytes.fromhex(key), text.encode(), hashlib.sha256).hexdigest()
 
 
-def make_session(cfg):
-    expires = str(int(time.time()) + SESSION_DAYS * 86400)
-    return f"{expires}.{sign(cfg['key'], 'session.' + expires)}"
-
-
-def session_ok(cfg, cookie):
-    expires, _, mac = (cookie or "").partition(".")
-    if not cfg or not re.fullmatch(r"[0-9]{1,12}", expires):     # anyone can send any cookie, so nothing here may raise
-        return False
-    return int(expires) > time.time() and hmac.compare_digest(mac.encode(), sign(cfg["key"], "session." + expires).encode())
-
-
-def host_allowed(host):
-    """A page on someone else's domain can point its name at this machine; only real names and bare addresses pass."""
-    name = re.sub(r":\d+$", "", (host or "").strip().lower()).strip("[]")
-    if not name:
-        return False
-    if name == "localhost" or name.endswith(".localhost") or name in EXTRA_HOSTS or name == urllib.parse.urlparse(PUBLIC_URL).hostname:
-        return True
-    try:
-        ipaddress.ip_address(name)
-        return True
-    except ValueError:
-        return False
-
-
-def take_try(kind, ip):
-    """Reserve one password or setup-code try before checking it, so parallel requests can't slip past the cap.
-    Returns the try's stamp, or None when this address or everyone together used up the last minute."""
-    now = time.time()
-    with state_lock:
-        mine = [t for t in failed_logins.get((kind, ip), []) if now - t < 60]
-        everyone = [t for t in failed_logins.get((kind, "*"), []) if now - t < 60]
-        if len(mine) >= ATTEMPTS_PER_MINUTE or len(everyone) >= EVERYONE_PER_MINUTE[kind]:
-            failed_logins[(kind, ip)], failed_logins[(kind, "*")] = mine, everyone
-            return None
-        failed_logins[(kind, ip)], failed_logins[(kind, "*")] = mine + [now], everyone + [now]
-        return now
-
-
-def give_back(kind, ip, stamp):
-    """A right answer doesn't count against anyone."""
-    with state_lock:
-        for key in ((kind, ip), (kind, "*")):
-            if stamp in failed_logins.get(key, []):
-                failed_logins[key].remove(stamp)
+def host_allowed(host, port):
+    """Only this computer's own names with this page's port. A site can point a name of its own at 127.0.0.1 (DNS
+    rebinding); its requests then carry that name and are turned away. CALSYNC_ALLOW_REMOTE adds CALSYNC_HOSTS and
+    CALSYNC_PUBLIC_URL's host, and any port, since a container's port can be published as another."""
+    host = (host or "").strip().lower()
+    name, sep, got = host.rpartition(":")
+    if not sep or not got.isdigit():
+        name, got = host, "80"
+    if name in ("localhost", "127.0.0.1"):
+        return ALLOW_REMOTE or got == str(port)
+    return ALLOW_REMOTE and bool(name) and (name in EXTRA_HOSTS or name == urllib.parse.urlparse(PUBLIC_URL).hostname)
 
 
 def is_loopback(ip):
@@ -322,8 +239,8 @@ JS = r"""
 var $=function(s,r){return (r||document).querySelector(s)},$$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
 var EYE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
     SHUT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.6 5.1A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a10 10 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>';
-$$('input[type=password]').forEach(function(f){
-  var what=f.name==='url'?'link':f.name==='client_secret'?'secret':'password',w=document.createElement('span'),b=document.createElement('button');
+$$('input[type=password][data-reveal]').forEach(function(f){
+  var what='password',w=document.createElement('span'),b=document.createElement('button');
   w.className='pw';f.parentNode.insertBefore(w,f);w.appendChild(f);
   b.type='button';b.className='eye';w.appendChild(b);
   function show(on){f.type=on?'text':'password';b.innerHTML=on?SHUT:EYE;b.setAttribute('aria-label',(on?'Hide ':'Show ')+what);b.setAttribute('aria-pressed',on?'true':'false')}
@@ -615,7 +532,7 @@ def caldav_page(kind, csrf, flash=None):
 <form method="post" action="/connect/caldav/save" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}"><input type="hidden" name="kind" value="{kind}">
 <label for="label">A short name</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="personal">
 {address}<label for="username">Username</label><input type="text" id="username" name="username" required>
-<label for="password">Password</label><input type="password" id="password" name="password" required autocomplete="new-password">
+<label for="password">Password</label><input type="password" id="password" name="password" required autocomplete="new-password" data-reveal>
 <div class="actions"><button>Check and save</button></div></form></section>''', True, flash, at="/")
 
 
@@ -646,7 +563,6 @@ def settings_page(csrf, flash=None):
     cfg = engine.load_json(engine.CONFIG, {"calendars": []})
     current = cfg.get("interval_minutes", 5)
     opts = "".join(f'<option value="{m}"{" selected" if m == current else ""}>Every {m} minutes</option>' for m in INTERVALS)
-    made = ((web_config() or {}).get("recovery") or {}).get("made")
     writable = engine.writable_calendars(cfg)
     try:
         main = engine.main_calendar(cfg)["name"] if writable else ""
@@ -656,7 +572,6 @@ def settings_page(csrf, flash=None):
         f'<option value="{esc(c["name"])}"{" selected" if c["name"] == main else ""}>{esc(c.get("label") or c["name"])}</option>' for c in writable)
         + "</select><p class=\"soft\">Pick the calendar your booking page reads, so a new event blocks the time there at once.</p>") if writable else ""
     window = cfg.get("window") or {}
-    recovery_state = f"You have a recovery code, made {esc(made)}." if made else "<b>You don't have a recovery code yet.</b> Make one now, so a forgotten password isn't a problem."
     return page("Settings", f'''<h1>Settings</h1><section><form method="post" action="/settings/save"><input type="hidden" name="csrf" value="{csrf}">
 <label for="iv">How often to sync</label><select id="iv" name="interval">{opts}</select>
 {add_to}<label for="tz">Your time zone</label><input type="text" id="tz" name="timezone" value="{esc(cfg.get("timezone") or engine.tz_name())}" required>
@@ -666,15 +581,7 @@ def settings_page(csrf, flash=None):
 <p class="soft">Events outside this window aren't copied, and their copies are left as they are.</p></fieldset>
 <label class="check"><input type="checkbox" name="fast_check" value="1"{" checked" if cfg.get("fast_check", True) else ""}> Check Google and Microsoft calendars for changes every minute, and sync as soon as one changes</label>
 <p class="soft">{esc(push_words())}</p>
-<div class="actions"><button>Save</button></div></form></section>
-<h2>Change password</h2><section><form method="post" action="/settings/password" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
-<label for="old">Current password</label><input type="password" id="old" name="old" required><label for="new">New password</label><input type="password" id="new" name="new" required minlength="10">
-<div class="actions"><button>Change password</button></div></form></section>
-<h2>Recovery code</h2><section><p>{recovery_state}</p><p class="soft">If you forget your password, the recovery code lets you choose a new one, but only on this computer. A new code replaces the old one.</p>
-<form method="post" action="/settings/recovery" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}"><label for="rcp">Current password</label><input type="password" id="rcp" name="old" required>
-<div class="actions"><button class="plain">Make a new recovery code</button></div></form></section>
-<div class="actions"><form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="{csrf}"><button class="plain">Sign out</button></form>
-<form class="inline" method="post" action="/logout/everywhere"><input type="hidden" name="csrf" value="{csrf}"><button class="plain">Sign out on every device</button></form></div>''', True, flash, at="/settings")
+<div class="actions"><button>Save</button></div></form></section>''', True, flash, at="/settings")
 
 
 # ---------- the Calendar tab: what calsync sees, as a week or a month ----------
@@ -1596,8 +1503,6 @@ def tidy_flows():
         for flows in (pending_google, pending_ms, pending_oauth):
             for key in [k for k, f in flows.items() if f["expires"] < now]:
                 del flows[key]
-        for key in [k for k, times in failed_logins.items() if not any(now - t < 60 for t in times)]:
-            del failed_logins[key]
 
 
 def poll_microsoft(flow_id):
@@ -1628,6 +1533,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def send(self, code, body, kind="text/html; charset=utf-8", headers=()):
         data = body.encode()
+        headers = [*getattr(self, "extra", ()), *headers]
         self.send_response(code)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(data)))
@@ -1652,11 +1558,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             jar.load(self.headers.get("Cookie") or "")
         except http.cookies.CookieError:
             return None
-        return jar["calsync_session"].value if "calsync_session" in jar else None
+        got = jar["calsync_browser"].value if "calsync_browser" in jar else None
+        return got if got and re.fullmatch(r"[0-9a-f]{32}", got) else None
 
-    def session_header(self, value, max_age):
-        secure = "; Secure" if PUBLIC_URL.startswith("https://") else ""
-        return ("Set-Cookie", f"calsync_session={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}{secure}")
+    def browser(self):
+        """This browser's random ID, from its cookie; a first visit is given one. Form tokens are signed with it."""
+        if not getattr(self, "_browser", None):
+            self._browser = self.cookie()
+            if not self._browser:
+                self._browser = secrets.token_hex(16)
+                secure = "; Secure" if PUBLIC_URL.startswith("https://") else ""
+                self.extra = [*getattr(self, "extra", ()), ("Set-Cookie", f"calsync_browser={self._browser}; Path=/; HttpOnly; SameSite=Lax; Max-Age={BROWSER_DAYS * 86400}{secure}")]
+        return self._browser
 
     def read_form(self):
         try:
@@ -1668,11 +1581,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return urllib.parse.parse_qs(self.rfile.read(size).decode("utf-8", "replace"), keep_blank_values=True)
 
     def csrf(self):
-        return sign(web_config()["key"], "csrf." + (self.cookie() or ""))
+        return sign(page_key(), "csrf." + self.browser())
 
     def same_origin(self):
+        """A POST has to say it came from this page: its Origin, or without one its Referer, names this host."""
+        host = (self.headers.get("Host") or "").strip().lower()
         origin = self.headers.get("Origin")
-        return not origin or urllib.parse.urlparse(origin).netloc.lower() == (self.headers.get("Host") or "").lower()
+        if origin is not None:
+            return origin != "null" and urllib.parse.urlparse(origin).netloc.lower() == host
+        referer = self.headers.get("Referer")
+        return bool(referer) and urllib.parse.urlparse(referer).netloc.lower() == host
+
+    def host_ok(self):
+        return host_allowed(self.headers.get("Host"), self.server.server_address[1])
 
     def do_GET(self):
         tidy_flows()
@@ -1681,8 +1602,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(url.query)
         if url.path == "/healthz":     # before the host check, so a container's health probe always works
             return self.send(200, "ok", "text/plain")
-        if not host_allowed(self.headers.get("Host")):
-            return self.send(400, "This host name isn't allowed. Add it to CALSYNC_HOSTS.", "text/plain")
+        self.extra = []
+        if not self.host_ok():
+            return self.send(400, "CalSync only answers at http://localhost or http://127.0.0.1 with its own port.", "text/plain")
         if url.path == "/app.css":
             return self.send(200, CSS, "text/css")
         if url.path == "/app.js":
@@ -1695,20 +1617,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.google_callback(q)
         if url.path in ("/oauth/google", "/oauth/microsoft"):
             return self.oauth_callback(url.path.rsplit("/", 1)[1], q)
-        cfg = web_config()
-        if not cfg:
-            return self.send(200, self.first_run_page())
-        if url.path == "/forgot":
-            return self.send(200, self.forgot_page())
-        if not session_ok(cfg, self.cookie()):
-            return self.send(200, login_page())
         csrf = self.csrf()
         flash = q.get("m", [None])[0]
         flash = FLASHES.get(flash)
         if url.path == "/":
             preview = None
             with state_lock:
-                preview = last_preview.pop(self.cookie(), None)
+                preview = last_preview.pop(self.browser(), None)
             return self.send(200, dashboard(csrf, flash, preview))
         if url.path == "/connect":      # old links: adding a calendar is on the sync page now
             return self.redirect("/" + ("?m=" + q["m"][0] if q.get("m", [""])[0] in FLASHES else "") + "#add")
@@ -1756,39 +1671,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         tidy_flows()
         here.host = self.headers.get("Host")
         url = urllib.parse.urlparse(self.path).path
-        if not host_allowed(self.headers.get("Host")) or not self.same_origin():
-            return self.send(400, "Blocked: this request came from another site.", "text/plain")
-        if url.startswith("/hook/"):
+        self.extra = []
+        if not self.host_ok():
+            return self.send(400, "CalSync only answers at http://localhost or http://127.0.0.1 with its own port.", "text/plain")
+        if url.startswith("/hook/"):        # Google's and Microsoft's change notices: no Origin, a secret token instead
             return self.hook(url)
+        if not self.same_origin():
+            return self.send(400, "Blocked: this request came from another site.", "text/plain")
         form = self.read_form()
         if form is None:
             return self.send(413, "Too large.", "text/plain")
         get = lambda k, d="": form.get(k, [d])[0]
-        cfg = web_config()
-        if url == "/first-run":
-            return self.first_run(get)
-        if not cfg:
-            return self.redirect("/")
-        if url == "/login":
-            return self.login(cfg, get)
-        if url == "/forgot":
-            return self.forgot(cfg, get)
-        if not session_ok(cfg, self.cookie()):
-            return self.redirect("/")
-        if not hmac.compare_digest(get("csrf").encode(), self.csrf().encode()):
+        if not self.cookie() or not hmac.compare_digest(get("csrf").encode(), self.csrf().encode()):
             return self.send(400, "This page expired. Go back and reload it.", "text/plain")
         try:
-            return self.action(url, get, form, cfg)
+            return self.action(url, get, form)
         except Exception as e:
             return self.send(200, page("Problem", f'<h1>That didn\'t work</h1><section class="bad">{esc(short_error(e))}</section><a class="button plain" href="/">Back</a>', True))
 
-    def action(self, url, get, form, cfg):
+    def action(self, url, get, form):
         csrf = self.csrf()
-        if url == "/logout":
-            return self.redirect("/", [self.session_header("", 0)])
-        if url == "/logout/everywhere":     # a new signing key ends every session, this one included
-            engine.save_json(web_file(), dict(cfg, key=secrets.token_hex(32)))
-            return self.redirect("/", [self.session_header("", 0)])
         if url == "/connect/google/client":
             cid, sec = get("client_id").strip(), get("client_secret").strip()
             if not cid or not sec:
@@ -1890,7 +1792,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if s is None:
                 return self.redirect("/?m=busy")
             with state_lock:
-                last_preview[self.cookie()] = dict(s, lines=lines, decisions=decisions)
+                last_preview[self.browser()] = dict(s, lines=lines, decisions=decisions)
             return self.redirect("/")
         if url == "/resync":
             pair = get("pair")
@@ -1984,28 +1886,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.redirect("/settings?m=saved")
         if url in ("/event/create", "/event/save", "/event/delete", "/event/move", "/event/rsvp", "/undo", "/calendar/prefs"):
             return self.calendar_action(url, get, form, csrf)
-        if url == "/settings/password":
-            ip = self.client_address[0]
-            stamp = take_try("login", ip)    # a borrowed session shouldn't get to guess the password here
-            if stamp is None:
-                return self.send(429, settings_page(csrf, "Too many tries. Wait a minute and try again."))
-            if not hmac.compare_digest(hash_password(get("old"), cfg["salt"]), cfg["hash"]):
-                return self.send(200, settings_page(csrf, "The current password isn't right."))
-            give_back("login", ip, stamp)
-            if len(get("new")) < 10:
-                return self.send(200, settings_page(csrf, "Use at least 10 characters."))
-            set_password(get("new"))
-            fresh = web_config()
-            return self.redirect("/settings?m=saved", [self.session_header(make_session(fresh), SESSION_DAYS * 86400)])
-        if url == "/settings/recovery":
-            ip = self.client_address[0]
-            stamp = take_try("login", ip)
-            if stamp is None:
-                return self.send(429, settings_page(csrf, "Too many tries. Wait a minute and try again."))
-            if not hmac.compare_digest(hash_password(get("old"), cfg["salt"]), cfg["hash"]):
-                return self.send(200, settings_page(csrf, "The current password isn't right."))
-            give_back("login", ip, stamp)
-            return self.send(200, recovery_page(new_recovery_code(), "Your new recovery code", "The old code no longer works."))
         self.send(404, page("Not found", "<h1>Page not found</h1>", True))
 
     def calendar_action(self, url, get, form, csrf):
@@ -2110,83 +1990,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pass
         return None
 
-    # first run and sign-in
-
-    def needs_code(self):
-        """Only someone on this machine itself skips the setup code. A proxy on the same machine makes every visitor
-        look local, so a public address, a forwarded request or a non-local host name all need the code. So does
-        listening beyond loopback (the Docker image): port forwarders can make an outside visitor look local."""
-        name = re.sub(r":\d+$", "", (self.headers.get("Host") or "").strip().lower()).strip("[]")
-        local_name = name in ("localhost", "127.0.0.1", "::1") or name.endswith(".localhost")
-        forwarded = any(self.headers.get(h) for h in PROXY_HEADERS)
-        return not (is_loopback(BIND) and is_loopback(self.client_address[0]) and local_name and not forwarded and not PUBLIC_URL)
-
-    def first_run_page(self, flash=None):
-        code = ('<label for="code">Setup code</label><input type="text" id="code" name="code" required autocomplete="off">'
-                '<p class="soft">It\'s in the logs: <code>docker compose logs calsync</code>. It proves you\'re the one who started this.</p>') if self.needs_code() else ""
-        return page("Welcome", f'''<h1>Welcome to CalSync</h1><section><p>Choose a password for this page. Your sign-ins stay on this machine, so this password is what guards them.</p>
-<form method="post" action="/first-run" autocomplete="off">{code}<label for="pw">Password, at least 10 characters</label><input type="password" id="pw" name="password" required minlength="10"><div class="actions"><button>Continue</button></div></form></section>''', flash=flash)
-
-    def first_run(self, get):
-        if web_config():
-            return self.redirect("/")
-        ip = self.client_address[0]
-        if self.needs_code():
-            stamp = take_try("setup", ip)
-            if stamp is None:
-                return self.send(429, self.first_run_page("Too many tries. Wait a minute and try again."))
-            if not hmac.compare_digest(get("code").strip().encode(), setup_code.encode()):
-                return self.send(200, self.first_run_page("That setup code isn't right."))
-            give_back("setup", ip, stamp)
-        if len(get("password")) < 10:
-            return self.send(200, self.first_run_page("Use at least 10 characters."))
-        with first_run_lock:
-            if web_config():
-                return self.redirect("/")
-            set_password(get("password"))
-            code = new_recovery_code()
-        return self.send(200, recovery_page(code, "Your password is set"), headers=[self.session_header(make_session(web_config()), SESSION_DAYS * 86400)])
-
-    def forgot_page(self, flash=None):
-        """Forgot the password: both ways back only work on the machine calsync runs on, never from somewhere else."""
-        here = not self.needs_code()
-        form = ('''<h2>With your recovery code</h2><section><p>You were given a recovery code when you chose your password. It works only on this computer.</p>
-<form method="post" action="/forgot" autocomplete="off"><label for="rc">Recovery code</label><input type="text" id="rc" name="code" required placeholder="ABCD-EFGH-JKLM-NPQR" autocapitalize="characters" spellcheck="false">
-<label for="np">New password, at least 10 characters</label><input type="password" id="np" name="password" required minlength="10" autocomplete="new-password"><div class="actions"><button>Reset password</button></div></form></section>'''
-                if here else '<h2>With your recovery code</h2><section class="note">For safety, a recovery code only works on the computer CalSync runs on. Open this page there, or use the command below.</section>')
-        return page("Forgot password", f'''<h1>Forgot your password?</h1><section><p>CalSync runs on your own computer, so there is no account and no email reset. You can still get back in from the computer it runs on.</p></section>
-<h2>From the computer it runs on</h2><section><p>Open a terminal there and run:</p><pre>calsync reset-password</pre><p class="soft">With Docker: <code>docker compose exec calsync calsync reset-password</code>. You choose a new password, every browser is signed out, and you get a new recovery code.</p></section>
-{form}<div class="actions"><a class="button plain" href="/">Back to sign in</a></div>''', flash=flash)
-
-    def forgot(self, cfg, get):
-        if self.needs_code():       # never from another machine, a proxy or the Docker port
-            return self.send(403, self.forgot_page("A recovery code only works on the computer CalSync runs on."))
-        ip = self.client_address[0]
-        stamp = take_try("recover", ip)
-        if stamp is None:
-            return self.send(429, self.forgot_page("Too many tries. Wait a minute and try again."))
-        if not recovery_ok(cfg, get("code")):
-            return self.send(200, self.forgot_page("That recovery code isn't right."))
-        give_back("recover", ip, stamp)
-        if len(get("password")) < 10:
-            return self.send(200, self.forgot_page("Use at least 10 characters."))
-        set_password(get("password"))
-        code = new_recovery_code()      # a used code is spent
-        return self.send(200, recovery_page(code, "Your password is reset", "Every other browser is signed out. Your old recovery code no longer works, so keep this new one."),
-                         headers=[self.session_header(make_session(web_config()), SESSION_DAYS * 86400)])
-
-    def login(self, cfg, get):
-        ip = self.client_address[0]
-        stamp = take_try("login", ip)
-        if stamp is None:
-            return self.send(429, login_page("Too many tries. Wait a minute and try again."))
-        if not hmac.compare_digest(hash_password(get("password"), cfg["salt"]), cfg["hash"]):
-            return self.send(200, login_page("That password isn't right."))
-        give_back("login", ip, stamp)
-        return self.redirect("/", [self.session_header(make_session(cfg), SESSION_DAYS * 86400)])
-
-    # Google: the browser comes back from Google to "/" with no session cookie guaranteed, so the one-use state proves it
-
     def google_redirect(self):
         if PUBLIC_URL:
             return PUBLIC_URL + "/"
@@ -2250,7 +2053,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             flow.update(status="failed", problem=short_error(e))
             return self.send(200, page("Sign in", f'<h1>That didn\'t work</h1><section class="bad">{esc(short_error(e))}</section>'))
-        if session_ok(web_config(), self.cookie()):
+        if self.cookie():       # this browser has CalSync open; the desktop app's system browser doesn't
             return self.redirect("/account?label=" + urllib.parse.quote(label))
         return self.send(200, page("Signed in", f'''<h1>Signed in to {name}</h1><section><p>You can close this tab and go back to CalSync,
 where you choose which calendars to sync.</p></section>'''))
@@ -2298,18 +2101,6 @@ FLASHES = {"saved": "Saved.", "added": "Added. Preview to see what will change."
            "toolate": "Too late to undo that one.", "answered": "Answer sent.", "bad": "That change couldn't be read."}
 
 
-def login_page(flash=None):
-    return page("Sign in", '<h1>Sign in</h1><section><form method="post" action="/login"><label for="pw">Password</label><input type="password" id="pw" name="password" required autofocus><div class="actions"><button>Sign in</button></div></form></section>'
-                '<p class="center"><a href="/forgot">Forgot password?</a></p>', flash=flash)
-
-
-def recovery_page(code, title, note="If you ever forget your password, this code lets you choose a new one from this computer."):
-    """Shown once: only the code's hash is kept."""
-    return page("Recovery code", f'''<h1>{esc(title)}</h1><section><p><b>Save this recovery code somewhere safe</b>, like a password manager or on paper. It's shown only now.</p>
-<p class="code">{esc(code)}</p><p class="soft">{esc(note)} You can also reset the password with <code>calsync reset-password</code> on this computer.</p>
-<div class="actions"><a class="button" href="/">I saved it, continue</a></div></section>''', flash=None)
-
-
 class Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
     MAX_CONNECTIONS = 64    # one person uses this page, so more at once than this is someone leaning on it
@@ -2331,6 +2122,18 @@ class Server(http.server.ThreadingHTTPServer):
             self.slots.release()
 
 
+def local_only(bind):
+    """CalSync has no sign-in, so it listens on this computer only, unless CALSYNC_ALLOW_REMOTE=1 says otherwise."""
+    if bind == "localhost" or is_loopback(bind):
+        return
+    if not ALLOW_REMOTE:
+        raise SystemExit(f"CalSync has no sign-in, so it only listens on this computer (127.0.0.1), not {bind}. "
+                         "To listen there anyway, also set CALSYNC_ALLOW_REMOTE=1, and make sure only you can reach it.")
+    print(f"WARNING: CalSync is listening on {bind} with CALSYNC_ALLOW_REMOTE=1. It has no sign-in: anyone who can reach "
+          "this address can read and change your calendars. Publish the port on 127.0.0.1 only, or put it behind a "
+          "private network or a proxy that signs you in.", flush=True)
+
+
 def serve(host=None, port=None, home=None, block=True):
     """Run the page and the background sync. host, port and home override CALSYNC_BIND, CALSYNC_PORT and CALSYNC_HOME,
     so the desktop app or a hosted copy can start it from code. block=False returns (server, stop) with both running
@@ -2339,6 +2142,7 @@ def serve(host=None, port=None, home=None, block=True):
     if home:
         engine.set_home(home)
     BIND, PORT = host or BIND, int(port if port is not None else PORT)
+    local_only(BIND)
     engine.ensure_home()
     server = Server((BIND, PORT), Handler)
     PORT = server.server_address[1]
@@ -2352,8 +2156,6 @@ def serve(host=None, port=None, home=None, block=True):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, stop_now)
     print(f"CalSync is on port {PORT} (open http://localhost:{PORT})", flush=True)
-    if not web_config():
-        print(f"First-time setup code: {setup_code}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

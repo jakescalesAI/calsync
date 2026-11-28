@@ -17,14 +17,30 @@ reply: a failure is reported as one of a few fixed reasons. --busy-only can't be
 """
 import contextlib, datetime as dt, hmac, http.client, http.server, json, os, re, secrets, signal, socket, ssl, sys, unicodedata, urllib.error, urllib.parse
 from xml.etree import ElementTree
+import ipaddress
 import calsync as engine
-from calsync_web import host_allowed
 
 VERSION = "0.1.0"
 SUPPORTED = ("2025-06-18", "2025-03-26", "2024-11-05")
 BIND = os.environ.get("CALSYNC_MCP_BIND") or "127.0.0.1"
 PORT = os.environ.get("CALSYNC_MCP_PORT") or "8485"
 TOKEN_FILE = os.path.join(engine.SECRETS, "mcp-token")
+EXTRA_HOSTS = {h.strip().lower() for h in (os.environ.get("CALSYNC_HOSTS") or "").split(",") if h.strip()}
+
+
+def host_allowed(host):
+    """A page on someone else's domain can point its name at this machine; only real names and bare addresses pass.
+    Every request also needs the bearer token."""
+    name = re.sub(r":\d+$", "", (host or "").strip().lower()).strip("[]")
+    if not name:
+        return False
+    if name == "localhost" or name.endswith(".localhost") or name in EXTRA_HOSTS:
+        return True
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        return False
 MAX_BODY = 64 * 1024
 MAX_DAYS = 60
 MAX_WORDS = 300

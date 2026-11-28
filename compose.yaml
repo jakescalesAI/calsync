@@ -6,6 +6,9 @@ services:
     ports:
       - "127.0.0.1:${CALSYNC_PORT:-8484}:8484"   # this machine only; see the docs before opening it up
     environment:
+      # The page has no password, so it listens on this computer only. Inside a container that takes 0.0.0.0,
+      # which CalSync refuses unless told: the port above is published on 127.0.0.1 only, so only you reach it.
+      CALSYNC_ALLOW_REMOTE: "1"
       CALSYNC_TZ: ${CALSYNC_TZ:-}
       CALSYNC_HOSTS: ${CALSYNC_HOSTS:-}
       CALSYNC_PUBLIC_URL: ${CALSYNC_PUBLIC_URL:-}

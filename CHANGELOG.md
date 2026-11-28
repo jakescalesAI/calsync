@@ -33,7 +33,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
   how to go on) and at most 100 people can sign in with it.
 
 ### Changed
-- Signed-in pages load one same-origin script (`/app.js`) for keys, dragging and the Undo countdown. The content policy
+- No page password. CalSync opens straight to the app: no first-run password, sign-in page, recovery code or
+  `calsync reset-password`. It stays yours by being local: it listens on 127.0.0.1, answers only to localhost or
+  127.0.0.1 with its own port (against DNS rebinding), takes a change only with this page's Origin or Referer and a form
+  token tied to the browser, and sends no CORS headers. Listening on any other address needs `CALSYNC_ALLOW_REMOTE=1`
+  and prints a warning; `compose.yaml` sets it and still publishes the port on 127.0.0.1 only. An older install's
+  `secrets/web.json` is left alone and no longer read. One-click Google and Microsoft sign-in, for connecting
+  calendars, is unchanged.
+- The CalDAV app-password field has a show/hide button.
+- Pages load one same-origin script (`/app.js`) for keys, dragging and the Undo countdown. The content policy
   still allows no inline script or style, and every page works without it.
 - Google birthdays are read (and left out of syncs by default) so they show on the Calendar tab.
 - Configs from before rules keep their behaviour: Busy only and Don't copy X here map onto the new rules, and copies
