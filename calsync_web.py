@@ -1669,6 +1669,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if url.path == "/app.js":
             return self.send(200, JS, "text/javascript")
         if url.path == "/" and ("state" in q or "code" in q or "error" in q):
+            with state_lock:
+                mine = pending_oauth.get(q.get("state", [""])[0])
+            if mine:        # one-click Microsoft comes back to "/" (its registered address has no path)
+                return self.oauth_callback(mine["provider"], q)
             return self.google_callback(q)
         if url.path in ("/oauth/google", "/oauth/microsoft"):
             return self.oauth_callback(url.path.rsplit("/", 1)[1], q)

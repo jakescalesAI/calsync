@@ -45,7 +45,8 @@ class EngineTests(unittest.TestCase):
         self.assertNotEqual(v, calsync.pkce()[0])
 
     def test_no_built_in_app_until_one_is_set(self):
-        with mock.patch.dict(os.environ, {"CALSYNC_GOOGLE_CLIENT_ID": "", "CALSYNC_MS_CLIENT_ID": ""}):
+        with mock.patch.dict(os.environ, {"CALSYNC_GOOGLE_CLIENT_ID": "", "CALSYNC_MS_CLIENT_ID": ""}), \
+             mock.patch.object(calsync, "CALSYNC_GOOGLE_ID", "REPLACE-ME"), mock.patch.object(calsync, "CALSYNC_MICROSOFT_ID", "REPLACE-ME"):
             self.assertIsNone(calsync.builtin_app("google"))
             self.assertIsNone(calsync.builtin_app("microsoft"))
             with self.assertRaises(RuntimeError):
@@ -63,7 +64,7 @@ class EngineTests(unittest.TestCase):
         self.assertNotIn(g["verifier"], g["url"])
         m = calsync.oauth_start("microsoft", calsync.loopback_redirect("microsoft", 8495))
         q = urllib.parse.parse_qs(urllib.parse.urlparse(m["url"]).query)
-        self.assertEqual((q["redirect_uri"][0], q["scope"][0]), ("http://localhost:8495/oauth/microsoft", "offline_access Calendars.ReadWrite"))
+        self.assertEqual((q["redirect_uri"][0], q["scope"][0]), ("http://localhost:8495", "offline_access Calendars.ReadWrite"))
         self.assertTrue(m["url"].startswith("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"))
 
     def test_finishing_sends_the_verifier_and_stores_a_built_in_account(self):
@@ -80,7 +81,7 @@ class EngineTests(unittest.TestCase):
     def test_microsoft_sends_no_secret(self):
         tokens = TokenServer()
         with mock.patch.object(calsync, "http", tokens):
-            label = calsync.oauth_finish("microsoft", "c", "v", "http://localhost:8495/oauth/microsoft")
+            label = calsync.oauth_finish("microsoft", "c", "v", "http://localhost:8495")
         self.assertNotIn("client_secret", tokens.forms[0][1])
         self.assertEqual(calsync._accounts()[label]["provider"], "outlook")
 
@@ -97,6 +98,19 @@ class EngineTests(unittest.TestCase):
         with mock.patch.object(calsync, "http", TokenServer()) as t:
             calsync.microsoft_access_token("ms")
         self.assertEqual(t.forms[0][1]["client_id"], TEST_APPS["CALSYNC_MS_CLIENT_ID"])
+        self.assertNotIn("client_secret", t.forms[0][1])
+        # CalSync Hosted's web app: its secret is in the client file and goes only with its own ("calsync-web") tokens
+        calsync.save_json(os.path.join(calsync.SECRETS, "microsoft-client.json"), {"client_id": "web-id", "client_secret": "web-secret"})
+        calsync._save_account("hosted", {"provider": "outlook", "app": "calsync-web", "refresh_token": "r4"})
+        with mock.patch.object(calsync, "http", TokenServer()) as t:
+            calsync.microsoft_access_token("hosted")
+            calsync.microsoft_access_token("ms")
+        self.assertEqual([(f["client_id"], f.get("client_secret")) for _, f in t.forms],
+                         [("web-id", "web-secret"), (TEST_APPS["CALSYNC_MS_CLIENT_ID"], None)])
+
+    def test_the_calsync_microsoft_app_is_built_in(self):
+        with mock.patch.dict(os.environ, {"CALSYNC_MS_CLIENT_ID": ""}):
+            self.assertEqual(calsync.builtin_app("microsoft"), {"client_id": "a2275ea1-af64-4bbb-b10b-a5841ac41268"})
 
     def test_an_organisation_that_needs_an_admin_is_named_plainly(self):
         with self.assertRaises(calsync.SignInBlocked):
@@ -106,7 +120,7 @@ class EngineTests(unittest.TestCase):
         self.assertIn("didn't allow", calsync.oauth_refused("google", {"error": "access_denied"}))
         with mock.patch.object(calsync, "http", TokenServer(error='{"error":"invalid_grant","error_description":"AADSTS65001: The user or administrator has not consented"}')):
             with self.assertRaises(calsync.SignInBlocked):
-                calsync.oauth_finish("microsoft", "c", "v", "http://localhost:1/oauth/microsoft")
+                calsync.oauth_finish("microsoft", "c", "v", "http://localhost:1")
 
     def test_command_line_listens_on_a_random_loopback_port(self):
         seen = {}
@@ -192,7 +206,7 @@ class WebTests(unittest.TestCase):
         q = urllib.parse.parse_qs(urllib.parse.urlparse(found["google"][0]).query)
         self.assertEqual(q["redirect_uri"][0], f"http://127.0.0.1:{self.port}/oauth/google")
         q = urllib.parse.parse_qs(urllib.parse.urlparse(found["microsoft"][0]).query)
-        self.assertEqual(q["redirect_uri"][0], f"http://localhost:{self.port}/oauth/microsoft")
+        self.assertEqual(q["redirect_uri"][0], f"http://localhost:{self.port}")
         adv = self.req("/connect/advanced")[1]
         self.assertIn('href="/connect/google"', adv)
         self.assertIn("console.cloud.google.com", self.req("/connect/google")[1])     # the own-app steps are still there
@@ -230,7 +244,7 @@ class WebTests(unittest.TestCase):
         url = self.links()[0]["microsoft"][0]
         state = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["state"][0]
         with mock.patch.object(calsync, "http", TokenServer()):
-            r, _ = self.req(f"/oauth/microsoft?state={state}&code=c")
+            r, _ = self.req(f"/?state={state}&code=c")
         self.assertEqual(r.getheader("Location"), "/account?label=microsoft")
 
     def test_wrong_provider_or_unknown_state_is_refused(self):
@@ -247,7 +261,7 @@ class WebTests(unittest.TestCase):
         url, wait = self.links()[0]["microsoft"]
         state = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["state"][0]
         desc = urllib.parse.quote("AADSTS90094: An administrator of Indiana University has set a policy that prevents you from granting CalSync the permissions it is requesting.")
-        _, text = self.req(f"/oauth/microsoft?state={state}&error=access_denied&error_description={desc}", cookie=False)
+        _, text = self.req(f"/?state={state}&error=access_denied&error_description={desc}", cookie=False)
         self.assertIn("needs an administrator to approve CalSync", text)
         self.assertIn('href="/connect/ics"', text)
         self.assertIn("needs an administrator", self.req(wait)[1])

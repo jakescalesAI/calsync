@@ -1710,13 +1710,15 @@ def _client(provider):
 
 CALSYNC_GOOGLE_ID = "REPLACE-WITH-CALSYNC-DESKTOP-CLIENT-ID.apps.googleusercontent.com"     # set when Jake creates the app
 CALSYNC_GOOGLE_SECRET = "REPLACE-WITH-CALSYNC-DESKTOP-CLIENT-SECRET"
-CALSYNC_MICROSOFT_ID = "REPLACE-WITH-CALSYNC-ENTRA-APPLICATION-ID"
+CALSYNC_MICROSOFT_ID = "a2275ea1-af64-4bbb-b10b-a5841ac41268"     # the CalSync Entra app: public client, redirect http://localhost, no secret
 OAUTH = {
     "google": {"authorize": "https://accounts.google.com/o/oauth2/v2/auth", "token": "https://oauth2.googleapis.com/token",
                "scope": GOOGLE_SCOPES, "host": "127.0.0.1", "path": "/oauth/google"},
     "microsoft": {"authorize": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
                   "token": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-                  "scope": MS_SCOPES, "host": "localhost", "path": "/oauth/microsoft"},     # Microsoft wants "localhost" for any port
+                  "scope": MS_SCOPES, "host": "localhost", "path": ""},
+    # The CalSync Entra app registers exactly "http://localhost": Microsoft lets the port vary for localhost but not the
+    # path, so the redirect is http://localhost:PORT and the browser comes back to "/" (the page sends it on by its state).
 }
 ADMIN_ONLY = re.compile(r"AADSTS(65001|90094|90095|50105|530003)|admin(istrator)?\s+(approval|consent)|need[s]?\s+admin", re.I)
 
@@ -1819,7 +1821,7 @@ def loopback_signin(provider, label=None, open_browser=None, timeout=600, ready=
 
         def do_GET(self):
             u = urllib.parse.urlparse(self.path)
-            if u.path != OAUTH[provider]["path"]:
+            if u.path != (OAUTH[provider]["path"] or "/"):
                 self.send_response(404)
                 self.end_headers()
                 return
@@ -1870,9 +1872,10 @@ def microsoft_access_token(label):
     c = (builtin_app("microsoft") or {}) if acct.get("app") == "calsync" else _client("microsoft")
     if not c:
         raise RuntimeError("not signed in: this account used CalSync's own Microsoft app, which this copy doesn't have")
-    r = http("POST", f"https://login.microsoftonline.com/{acct.get('tenant', 'common')}/oauth2/v2.0/token", form={
-        "client_id": c["client_id"], "grant_type": "refresh_token", "refresh_token": acct["refresh_token"],
-        "scope": MS_SCOPES})
+    form = {"client_id": c["client_id"], "grant_type": "refresh_token", "refresh_token": acct["refresh_token"], "scope": MS_SCOPES}
+    if acct.get("app") != "calsync" and c.get("client_secret"):     # a web app's secret (CalSync Hosted) only ever goes with its own tokens
+        form["client_secret"] = c["client_secret"]
+    r = http("POST", f"https://login.microsoftonline.com/{acct.get('tenant', 'common')}/oauth2/v2.0/token", form=form)
     if r.get("refresh_token"):  # Microsoft rotates refresh tokens
         acct["refresh_token"] = r["refresh_token"]
         _save_account(label, acct)
