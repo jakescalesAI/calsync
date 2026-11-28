@@ -1177,7 +1177,7 @@ def calendar_page(csrf, q, flash=None, quick=None):
     body = f'''<div class="calbar" data-cal-page><h1>Calendar</h1><div class="tools">{search}<nav class="seg" aria-label="View">{seg}</nav><span class="step">{step}</span></div></div>
 {zone_notice()}{adder}{quick or ""}{undo_toast(csrf, q)}<p class="range">{esc(title)}</p><div class="legend" role="group" aria-label="Calendars">{"".join(legend)}</div>{toggles}{bad}
 {grid}
-<p class="calnote">{explain}Open an event to see it, change it, answer it, or skip copying it. Drag one to move it; drag its bottom edge to make it longer. Double-click an empty time to add one there. Times are in {esc(engine.tz_name())}{tz2}. Press <kbd>?</kbd> for keys. Read a moment ago; <a href="{esc(link(fresh="1"))}">refresh</a>.</p>{keys}{skipped_list}'''
+<p class="calnote">{explain}Open an event to see it, change it, answer it, or skip copying it. Drag one to move it; drag its bottom edge to make it longer. Click or drag across an empty time to add one there. Times are in {esc(engine.tz_name())}{tz2}. Press <kbd>?</kbd> for keys. Read a moment ago; <a href="{esc(link(fresh="1"))}">refresh</a>.</p>{keys}{skipped_list}'''
     return page("Calendar", body, True, flash, at="/calendar", wide=True)
 
 
