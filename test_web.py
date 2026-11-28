@@ -1,5 +1,5 @@
 """Web page tests against a real local server and in-memory calendars: python3 -m unittest test_web"""
-import http.client, json, os, re, socket, stat, tempfile, threading, time, unittest, urllib.parse
+import contextlib, http.client, json, os, re, socket, stat, tempfile, threading, time, unittest, urllib.parse
 from unittest import mock
 
 home = os.environ.setdefault("CALSYNC_HOME", tempfile.mkdtemp())    # never your real one
@@ -43,9 +43,14 @@ class WebTests(unittest.TestCase):
         cls.server.shutdown()
 
     def setUp(self):
+        for _ in range(200):                 # a sync an earlier test started in the background finishes first
+            if not calsync_web.run_state["running"]:
+                break
+            time.sleep(0.02)
         for root, dirs, files in os.walk(home):
             for f in files:
-                os.remove(os.path.join(root, f))
+                with contextlib.suppress(FileNotFoundError):
+                    os.remove(os.path.join(root, f))
         calsync_web.pending_google.clear()
         calsync_web.pending_ops.clear()      # an edit queued by one test must never land in the next
         self.cookie = None
@@ -150,6 +155,26 @@ class WebTests(unittest.TestCase):
         with mock.patch.object(calsync, "make_adapter", side_effect=RuntimeError("no way in")):
             calsync_web.CAL_CACHE.clear()
             self.assertIn("no way in", self.req("GET", "/calendar")[1])
+
+    def test_an_unknown_time_zone_is_said_on_settings_and_the_calendar(self):
+        self.start()
+        self.assertNotIn("time zone", self.req("GET", "/settings")[1].split("<form")[0])
+        calsync.update_config(lambda c: c["calendars"].append({"name": "work", "label": "work", "account": "a", "calendar_id": "x"}))
+
+        class Fake:
+            def list(self, tmin, tmax):
+                return []
+        with mock.patch.object(calsync, "zone_problem", return_value="unknown"), mock.patch.object(calsync, "make_adapter", return_value=Fake()):
+            text = self.req("GET", "/settings")[1]
+            self.assertIn("Couldn&#x27;t detect your time zone, so times are shown in UTC. Choose yours below.", text)
+            self.assertIn('list="zones"', text)
+            self.assertIn('<option value="America/Chicago">', text)
+            calsync_web.CAL_CACHE.clear()
+            text = self.req("GET", "/calendar")[1]
+            self.assertIn("Couldn&#x27;t detect your time zone", text)
+            self.assertIn('href="/settings#tz">Choose your time zone</a>', text)
+        with mock.patch.object(calsync, "zone_problem", return_value="no-data"):
+            self.assertIn("pip install tzdata", self.req("GET", "/settings")[1])
 
     # --- CalDAV
 

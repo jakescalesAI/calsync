@@ -50,6 +50,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
   with a tray icon: Open CalSync, Sync now, Pause, the last sync and its problems, Keep syncing in the background,
   Start on login, and Quit. `desktop\build.ps1` makes the installer; it isn't signed or released yet.
 
+### Fixed
+- On Windows, CalSync run from source or with pip showed and wrote times in UTC: Windows Python has no time zone data,
+  and zones the built-in table didn't know (like "US Eastern Standard Time", Indiana) fell back to UTC. `tzdata` is
+  now listed in the install docs (the package already required it), the engine asks Windows' own ICU for any zone its
+  table doesn't know (the desktop app did this alone before), and when no zone can be found, Settings and the
+  Calendar tab say so and ask you to choose one instead of quietly using UTC.
+
 ## [0.1.0] - 2026-11-27 (beta)
 
 The first beta. Highlights:

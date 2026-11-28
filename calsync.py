@@ -23,7 +23,7 @@ edits or deletes an event it did not create. Stateless: the tags are the state.
   calsync mcp token [--new]          print the --http token, or replace it
 Optional, in config.json: quick_add turns new "- " lines of a Markdown note into events; agenda writes a
 Markdown agenda and refreshes daily notes' Calendar sections; export writes one .ics per source calendar.
-Python stdlib + python-dateutil (for repeating events in .ics links) + tzdata where the system has none.
+Python stdlib + python-dateutil (for repeating events in .ics links) + tzdata (Windows has no zone data of its own).
 Config and tokens live in $CALSYNC_HOME, default ~/.calsync (0700).
 """
 import base64, contextlib, datetime as dt, getpass, hashlib, ipaddress, json, os, re, sys, threading, time, urllib.error, urllib.parse, urllib.request, uuid
@@ -804,7 +804,7 @@ WINDOWS_TZ = {  # Outlook writes Windows zone names into published calendars
 }
 
 
-# The Windows zone names people are most likely to have. Anyone else sets their zone on the settings page.
+# The Windows zone names people are most likely to have. Windows' own ICU knows the rest (icu_zone).
 WINDOWS_ZONES = {
     "Eastern Standard Time": "America/New_York", "Central Standard Time": "America/Chicago",
     "Mountain Standard Time": "America/Denver", "US Mountain Standard Time": "America/Phoenix",
@@ -817,34 +817,88 @@ WINDOWS_ZONES = {
 }
 
 
+_icu = {}
+
+
+def icu_zone(windows_name):
+    """Windows' own ICU (icu.dll, Windows 10 1703 and later) maps any Windows zone name to its IANA name, like
+    "US Eastern Standard Time" (Indiana) to America/Indianapolis. "" when there's no ICU or it doesn't know the name."""
+    if windows_name not in _icu:
+        try:
+            import ctypes
+            f = ctypes.WinDLL("icu.dll").ucal_getTimeZoneIDForWindowsID
+            f.restype = ctypes.c_int32
+            f.argtypes = [ctypes.c_wchar_p, ctypes.c_int32, ctypes.c_char_p, ctypes.c_wchar_p, ctypes.c_int32, ctypes.POINTER(ctypes.c_int)]
+            out, status = ctypes.create_unicode_buffer(128), ctypes.c_int(0)
+            n = f(windows_name, -1, None, out, 128, ctypes.byref(status))
+            _icu[windows_name] = out.value[:n] if status.value <= 0 and 0 < n <= 128 else ""
+        except (ImportError, OSError, AttributeError, ValueError):
+            _icu[windows_name] = ""
+    return _icu[windows_name]
+
+
 def windows_zone():
+    """This PC's zone as an IANA name: our table, then Windows' ICU. "" off Windows or when neither knows it."""
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\TimeZoneInformation") as key:
-            return WINDOWS_ZONES.get(winreg.QueryValueEx(key, "TimeZoneKeyName")[0], "")
+            name = winreg.QueryValueEx(key, "TimeZoneKeyName")[0]
     except (ImportError, OSError):
         return ""
+    return WINDOWS_ZONES.get(name) or icu_zone(name)
+
+
+def system_zone():
+    """The computer's own zone as an IANA name, or ""."""
+    try:
+        with open("/etc/timezone") as f:
+            name = f.read().strip()
+    except OSError:
+        link = os.path.realpath("/etc/localtime")
+        name = link.split("zoneinfo/", 1)[1] if "zoneinfo/" in link else windows_zone()
+    return name
+
+
+def chosen_zone():
+    """CALSYNC_TZ, then the zone in Settings, then the system's; "" when none of them names one."""
+    return os.environ.get("CALSYNC_TZ") or load_json(CONFIG, {}).get("timezone") or system_zone()
 
 
 def tz_name():
     """The zone for quick-add text, agendas and .ics times that name none: CALSYNC_TZ, then config, then the system."""
-    name = os.environ.get("CALSYNC_TZ") or load_json(CONFIG, {}).get("timezone")
-    if not name:
-        try:
-            with open("/etc/timezone") as f:
-                name = f.read().strip()
-        except OSError:
-            link = os.path.realpath("/etc/localtime")
-            name = link.split("zoneinfo/", 1)[1] if "zoneinfo/" in link else windows_zone()
-    return name or "UTC"
+    return chosen_zone() or "UTC"
+
+
+def _zone(name):
+    from zoneinfo import ZoneInfo
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return None
+
+
+def zone_problem():
+    """Why times would fall back to UTC, in words for the person, or None when the zone is fine.
+    "unknown": nothing names a zone. "no-data": this Python has no zone data (Windows without the tzdata package).
+    "bad-name": the zone named isn't one zoneinfo knows."""
+    name = chosen_zone()
+    if name and _zone(name):
+        return None
+    if not _zone("America/New_York"):
+        return "no-data"
+    return "bad-name" if name else "unknown"
+
+
+ZONE_WORDS = {
+    "unknown": "Couldn't detect your time zone, so times are shown in UTC. Choose one in Settings.",
+    "no-data": "Couldn't load time zones: this Python has no time zone data, so times are shown in UTC. "
+               "Run pip install tzdata (or reinstall CalSync), then start CalSync again.",
+    "bad-name": "Your time zone isn't one CalSync knows, so times are shown in UTC. Choose one in Settings.",
+}
 
 
 def local_tz():
-    from zoneinfo import ZoneInfo
-    try:
-        return ZoneInfo(tz_name())
-    except Exception:
-        return dt.timezone.utc
+    return _zone(tz_name()) or dt.timezone.utc
 
 
 def _unescape(v):

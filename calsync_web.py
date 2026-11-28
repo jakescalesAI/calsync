@@ -644,6 +644,29 @@ def account_page(label, csrf, flash=None):
     return page("Choose calendars", f'<h1>{esc(label)}: choose calendars</h1>{listed}<div class="actions"><a class="button plain" href="/">Back to sync</a></div>', True, flash, at="/")
 
 
+def zone_notice(here=""):
+    """A notice when times would fall back to UTC: no zone detected, no zone data, or a zone nobody knows."""
+    problem = engine.zone_problem()
+    if not problem:
+        return ""
+    words = engine.ZONE_WORDS[problem]
+    if problem != "no-data":
+        words = words.replace("Choose one in Settings.", "Choose yours below." if here == "settings" else "")
+        more = "" if here == "settings" else ' <a href="/settings#tz">Choose your time zone</a>'
+    else:
+        more = ""
+    return f'<section class="warn" role="alert"><p><b>{esc(words.strip())}</b>{more}</p></section>'
+
+
+def zone_choices():
+    try:
+        from zoneinfo import available_timezones
+        names = sorted(z for z in available_timezones() if "/" in z and not z.startswith(("Etc/", "SystemV/", "posix/", "right/")))
+    except Exception:
+        return ""
+    return '<datalist id="zones">' + "".join(f'<option value="{esc(z)}">' for z in names + ["UTC"]) + "</datalist>"
+
+
 def settings_page(csrf, flash=None):
     cfg = engine.load_json(engine.CONFIG, {"calendars": []})
     current = cfg.get("interval_minutes", 5)
@@ -657,9 +680,9 @@ def settings_page(csrf, flash=None):
         f'<option value="{esc(c["name"])}"{" selected" if c["name"] == main else ""}>{esc(c.get("label") or c["name"])}</option>' for c in writable)
         + "</select><p class=\"soft\">Pick the calendar your booking page reads, so a new event blocks the time there at once.</p>") if writable else ""
     window = cfg.get("window") or {}
-    return page("Settings", f'''<h1>Settings</h1><section><form method="post" action="/settings/save"><input type="hidden" name="csrf" value="{csrf}">
+    return page("Settings", f'''<h1>Settings</h1>{zone_notice("settings")}<section><form method="post" action="/settings/save"><input type="hidden" name="csrf" value="{csrf}">
 <label for="iv">How often to sync</label><select id="iv" name="interval">{opts}</select>
-{add_to}<label for="tz">Your time zone</label><input type="text" id="tz" name="timezone" value="{esc(cfg.get("timezone") or engine.tz_name())}" required>
+{add_to}<label for="tz">Your time zone</label><input type="text" id="tz" name="timezone" value="{esc(cfg.get("timezone") or engine.chosen_zone())}" placeholder="America/New_York" list="zones" autocomplete="off" required>{zone_choices()}
 <label for="tz2">A second time zone beside it on the Calendar tab</label><input type="text" id="tz2" name="tz2" value="{esc(calendar_prefs(cfg)["tz2"])}" placeholder="Europe/London">
 <fieldset><legend>How far to sync</legend><div class="inline-fields"><input type="number" name="past_days" min="0" max="365" value="{esc(window.get("past_days", engine.PAST_DAYS))}" aria-label="Days back"><span>days back and</span>
 <input type="number" name="future_days" min="1" max="730" value="{esc(window.get("future_days", engine.FUTURE_DAYS))}" aria-label="Days ahead"><span>days ahead</span></div>
@@ -1152,9 +1175,9 @@ def calendar_page(csrf, q, flash=None, quick=None):
     keys = ('<p class="keys noprint" id="keys" hidden><kbd>D</kbd> day · <kbd>W</kbd> week · <kbd>M</kbd> month · <kbd>T</kbd> today · <kbd>J</kbd>/<kbd>K</kbd> next and back · '
             '<kbd>N</kbd> new event · <kbd>/</kbd> search · <kbd>P</kbd> print · <kbd>Esc</kbd> close</p>')
     body = f'''<div class="calbar" data-cal-page><h1>Calendar</h1><div class="tools">{search}<nav class="seg" aria-label="View">{seg}</nav><span class="step">{step}</span></div></div>
-{adder}{quick or ""}{undo_toast(csrf, q)}<p class="range">{esc(title)}</p><div class="legend" role="group" aria-label="Calendars">{"".join(legend)}</div>{toggles}{bad}
+{zone_notice()}{adder}{quick or ""}{undo_toast(csrf, q)}<p class="range">{esc(title)}</p><div class="legend" role="group" aria-label="Calendars">{"".join(legend)}</div>{toggles}{bad}
 {grid}
-<p class="calnote">{explain}Open an event to see it, change it, answer it, or skip copying it. Drag one to move it; drag its bottom edge to make it longer. Double-click an empty time to add one there. Times are in {esc(engine.tz_name())}{tz2}. Press <kbd>?</kbd> for keys. Read a moment ago; <a href="{esc(link(fresh="1"))}">refresh</a>.</p>{keys}{skipped_list}'''
+<p class="calnote">{explain}Open an event to see it, change it, answer it, or skip copying it. Drag one to move it; drag its bottom edge to make it longer. Click or drag across an empty time to add one there. Times are in {esc(engine.tz_name())}{tz2}. Press <kbd>?</kbd> for keys. Read a moment ago; <a href="{esc(link(fresh="1"))}">refresh</a>.</p>{keys}{skipped_list}'''
     return page("Calendar", body, True, flash, at="/calendar", wide=True)
 
 
