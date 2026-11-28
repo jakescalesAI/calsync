@@ -82,8 +82,9 @@ class Protocol(Base):
 
     def test_read_only_unless_asked(self):
         names = lambda o: {t["name"] for t in calsync_mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, o)["result"]["tools"]}
-        self.assertEqual(names(READ), {"calsync_status", "calsync_agenda", "calsync_check_event", "calsync_preview_sync"})
-        self.assertEqual(names(WRITE) - names(READ), {"calsync_add_event", "calsync_sync_now"})
+        self.assertEqual(names(READ), {"calsync_status", "calsync_agenda", "calsync_check_event", "calsync_preview_sync",
+                                       "calsync_sync_rules", "calsync_why", "calsync_activity"})
+        self.assertEqual(names(WRITE) - names(READ), {"calsync_add_event", "calsync_sync_now", "calsync_resync"})
         for name in ("calsync_add_event", "calsync_sync_now"):
             self.assertEqual(self.call(name, {"text": "Dentist tomorrow 3pm"})["error"]["code"], -32602)
         self.assertEqual(self.cals["work"].created, [])
@@ -746,3 +747,30 @@ class OverlapsAndGuests(Base):
 
     def test_a_named_calendar_must_be_writable(self):
         self.assertIn("calendar must be", self.failed("calsync_add_event", {"text": f"Lunch {SOON.isoformat()} 1pm", "calendar": "home"}, WRITE))
+
+
+class RuleTools(Base):
+    def test_rules_say_what_goes_where_without_account_names(self):
+        calsync.update_config(lambda c: c.update(rules={"home>work": calsync.clean_rule({"copy": {"title": False}, "filters": {"keywords": ["gym"]}})}))
+        out = self.ok("calsync_sync_rules")
+        row = next(r for r in out["directions"] if r["from"] == "home")
+        self.assertEqual((row["to"], row["shows_title"], row["leaves_out"]), ("work", False, ["birthdays", "some title words"]))
+        self.assertNotIn("secret", json.dumps(out))
+
+    def test_why_explains_from_a_dry_run(self):
+        self.cals["home"].events.append(event("Gym class"))
+        self.cals["home"].events.append(event("Lecture", 17))
+        calsync.update_config(lambda c: c.update(rules={"home>work": {"filters": {"keywords": ["gym"]}}}))
+        out = self.ok("calsync_why", {"title": "gym"})
+        self.assertEqual([(m["title"], m["to"], m["copied"], m["because"]) for m in out["matches"]], [("Gym class", "work", False, 'its title has "gym"')])
+        self.assertEqual(self.cals["work"].created, [])
+        self.assertIn("times only", self.failed("calsync_why", {"title": "gym"}, {"write": False, "busy_only": True}))
+
+    def test_activity_and_resync(self):
+        calsync.record_activity({"at": "2026-11-27T10:00:00Z", "created": 2, "trigger": "timer", "pairs": {"home>work": {"created": 2}}})
+        out = self.ok("calsync_activity", {"runs": 1})
+        self.assertEqual((out["runs"][0]["created"], out["runs"][0]["by_direction"]), (2, {"home to work": {"created": 2}}))
+        self.assertIn("two different calendar names", self.failed("calsync_resync", {"from": "home", "to": "home"}, WRITE))
+        with mock.patch.object(calsync, "run_once", return_value={"created": 0, "updated": 3}) as run:
+            self.assertEqual(self.ok("calsync_resync", {"from": "home", "to": "work"}, WRITE)["updated"], 3)
+        self.assertEqual(run.call_args.kwargs["pair"], "home>work")

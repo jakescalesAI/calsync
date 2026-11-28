@@ -34,6 +34,8 @@
 <a href="/booking-apps/">Booking apps</a>
 <a href="/agents/">AI agents</a>
 <a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/sync-rules/">Sync rules</a>
+<a href="/calendar/">The Calendar tab</a>
 <a href="/settings/">Settings and environment</a>
 <a href="/faq/">FAQ</a>
 <a href="/troubleshooting/">Troubleshooting</a>
@@ -52,6 +54,8 @@
 <li><a href="/booking-apps/">Booking apps</a></li>
 <li><a href="/agents/">AI agents</a></li>
 <li><a href="/how-a-sync-decides/" aria-current="page">How a sync decides</a></li>
+<li><a href="/sync-rules/">Sync rules</a></li>
+<li><a href="/calendar/">The Calendar tab</a></li>
 <li><a href="/settings/">Settings and environment</a></li>
 <li><a href="/faq/">FAQ</a></li>
 <li><a href="/troubleshooting/">Troubleshooting</a></li>
@@ -62,9 +66,9 @@
 <p class="lede">CalSync keeps no database. Each run it reads your calendars and works out what is missing, changed or left over.</p>
 <h2>One run</h2>
 <ol>
-<li><strong>List.</strong> It reads each calendar for the next 120 days. Events that already ended are ignored.</li>
+<li><strong>List.</strong> It reads each calendar in the sync window: by default the next 120 days, and nothing that already ended. You can change the window in Settings.</li>
 <li><strong>Find the real events.</strong> A real event is one CalSync did not make. Declined events and cancelled events are not real events, so they are skipped.</li>
-<li><strong>Work out the wanted copies.</strong> Each writable calendar should hold one copy of every real event from every other calendar, apart from the exceptions below.</li>
+<li><strong>Work out the wanted copies.</strong> Each writable calendar should hold one copy of every real event from every other calendar, shaped by the <a href="/sync-rules/">sync rule</a> for that direction, apart from the exceptions below.</li>
 <li><strong>Compare.</strong> It finds the copies already there by their private tag. It creates the missing ones, updates the changed ones and deletes copies whose original is gone, declined or cancelled.</li>
 </ol>
 <h2>The tag is the state</h2>
@@ -76,12 +80,14 @@
 <li><strong>Never write to this calendar.</strong> It is a source only. CalSync never writes to it.</li>
 <li><strong>Copies here only say Busy.</strong> Copies on that calendar have no title or location.</li>
 <li><strong>Private events.</strong> Copies of private events always say Busy, on every calendar.</li>
+<li><strong>Sync rules.</strong> A direction can be off, or leave out free, Maybe, unanswered, all-day, birthday or out-of-office events, some words, colours, days or hours. See <a href="/sync-rules/">Sync rules</a>.</li>
+<li><strong>Kept copies.</strong> When you turn a direction off or stop a calendar and choose to keep its copies, CalSync leaves those copies alone.</li>
 </ul>
 <h2>What a copy looks like</h2>
 <ul>
 <li>The same start and end as the original.</li>
-<li>The original's title and location, unless Busy only or a private event hides them.</li>
-<li>No reminders, so you are not alerted more than once.</li>
+<li>The original's title and location, unless the rule or a private event hides them. The rule can add a tag, a colour, the description, the video call link and the guest list.</li>
+<li>No reminders unless the rule turns them on, so you are not alerted more than once.</li>
 <li>A repeating event shows up as separate copies, one per occurrence in the window.</li>
 </ul>
 <h2>What stops a run</h2>
@@ -91,10 +97,10 @@
 <dt>A very large delete</dt>
 <dd>If a run would delete more than half of a calendar's copies, and more than 10, it stops for that calendar and waits. If the delete is what you meant, run <code>calsync run --force</code>.</dd>
 <dt>Preview</dt>
-<dd>Preview changes on the page, or <code>calsync run --dry-run</code>, goes through the same steps and changes nothing.</dd>
+<dd>Preview changes on the page, or <code>calsync run --dry-run</code>, goes through the same steps and changes nothing. On the page, every event says why it is or isn't copied.</dd>
 </dl>
 
-<div class="pager"><a href="/agents/">Back: AI agents</a><a href="/settings/">Next: Settings and environment</a></div>
+<div class="pager"><a href="/agents/">Back: AI agents</a><a href="/sync-rules/">Next: Sync rules</a></div>
 </main>
 </div>
 <footer class="foot">

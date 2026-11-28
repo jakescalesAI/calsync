@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Calendar tab | CalSync docs</title>
+<meta name="description" content="Day, week and month views of every calendar, with events you can add, change, drag and answer, search, and undo.">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#ffffff">
+<link rel="canonical" href="https://docs.getcalsync.app/calendar/">
+<link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="The Calendar tab | CalSync docs">
+<meta property="og:description" content="Day, week and month views of every calendar, with events you can add, change, drag and answer, search, and undo.">
+<meta property="og:url" content="https://docs.getcalsync.app/calendar/">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap bar hd">
+<a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a>
+<nav aria-label="Main"><a href="https://getcalsync.app/">getcalsync.app</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a></nav><a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
+</header>
+<span id="shut" hidden></span>
+<nav class="menu" id="menu" aria-label="Menu">
+<div class="menu-top"><a class="brand" href="/"><img src="/mark-small.svg" alt="" width="40" height="40">CalSync docs</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<a href="/">Overview</a>
+<a href="/docker/">Install with Docker</a>
+<a href="/python/">Install without Docker</a>
+<a href="/google/">Google sign-in app</a>
+<a href="/microsoft/">Microsoft sign-in app</a>
+<a href="/caldav/">iCloud and CalDAV</a>
+<a href="/ics/">Published .ics feeds</a>
+<a href="/booking-apps/">Booking apps</a>
+<a href="/agents/">AI agents</a>
+<a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/sync-rules/">Sync rules</a>
+<a href="/calendar/">The Calendar tab</a>
+<a href="/settings/">Settings and environment</a>
+<a href="/faq/">FAQ</a>
+<a href="/troubleshooting/">Troubleshooting</a>
+<a href="https://getcalsync.app/">getcalsync.app</a>
+<a href="https://github.com/jakescalesAI/calsync">GitHub</a>
+</nav>
+<div class="wrap docs">
+<nav class="side" aria-label="Docs"><p>Docs</p><ul>
+<li><a href="/">Overview</a></li>
+<li><a href="/docker/">Install with Docker</a></li>
+<li><a href="/python/">Install without Docker</a></li>
+<li><a href="/google/">Google sign-in app</a></li>
+<li><a href="/microsoft/">Microsoft sign-in app</a></li>
+<li><a href="/caldav/">iCloud and CalDAV</a></li>
+<li><a href="/ics/">Published .ics feeds</a></li>
+<li><a href="/booking-apps/">Booking apps</a></li>
+<li><a href="/agents/">AI agents</a></li>
+<li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/sync-rules/">Sync rules</a></li>
+<li><a href="/calendar/" aria-current="page">The Calendar tab</a></li>
+<li><a href="/settings/">Settings and environment</a></li>
+<li><a href="/faq/">FAQ</a></li>
+<li><a href="/troubleshooting/">Troubleshooting</a></li>
+</ul></nav>
+<main id="main" class="doc">
+
+<h1>The Calendar tab</h1>
+<p class="lede">Every calendar in one place, with your own events in one colour each. You can add, change, move and delete events here, and CalSync copies them out by your sync rules.</p>
+<h2>Views and keys</h2>
+<p>Day, week and month. The day and week views are a time grid. Keys: <kbd>D</kbd> day, <kbd>W</kbd> week, <kbd>M</kbd> month, <kbd>T</kbd> today, <kbd>J</kbd> and <kbd>K</kbd> next and back, <kbd>N</kbd> new event, <kbd>/</kbd> search, <kbd>P</kbd> print, <kbd>Esc</kbd> close, <kbd>?</kbd> show the keys.</p>
+<h2>Add an event</h2>
+<p>Press <strong>New event</strong>, or double-click an empty time. Pick the calendar, the time or all day, a repeat (every day, weekday, week, month or year, with an optional end), a colour, guests, a Google Meet or Microsoft Teams link, the place, busy or free, private, and a description. For Zoom, paste the link into the place. Quick add still takes plain words, like <code>lunch with Sam fri 1pm</code>.</p>
+<p>Guests get an invite from Google or Microsoft calendars. CalDAV calendars such as iCloud don't send invites from CalSync.</p>
+<h2>Change, move or delete</h2>
+<p>Open an event to change it, or drag it to a new time or day. Drag its bottom edge to change how long it is. For a repeating event you choose: only this one, this one and the ones after it, or every one. If it has guests, you choose whether to email them. Microsoft always tells guests about changes.</p>
+<p>After each change, <strong>Undo</strong> shows for 10 seconds. Nothing is written until then, so Undo leaves your calendar as it was.</p>
+<h2>Copies open their original</h2>
+<p>A copy CalSync made opens the event it came from. Change it there and every copy follows at the next sync. Events from a read-only calendar or a .ics link can be viewed but not changed.</p>
+<h2>Invites</h2>
+<p>An invite you received has <strong>Going</strong>, <strong>Maybe</strong> and <strong>No</strong>, and a <strong>Join</strong> button when it has a video call link.</p>
+<h2>What to show</h2>
+<ul>
+<li>Pick a calendar's colour from its options on the Sync tab.</li>
+<li>Pick one calendar to see only what is on it, with CalSync's copies striped in their source's colour.</li>
+<li><strong>Hide copies</strong>, <strong>Hide weekends</strong> and <strong>Week numbers</strong> stay as you set them.</li>
+<li>A second time zone beside your own: set it in Settings.</li>
+<li><strong>Print</strong> gives a clean page you can also save as a PDF.</li>
+</ul>
+<h2>Search</h2>
+<p>Search looks through titles, places, notes and guests on every calendar, 90 days back and a year ahead. Narrow it with <code>cal:work</code>, <code>from:someone@example.com</code> (who sent the invite), <code>before:2026-12-31</code> and <code>after:2026-12-01</code>.</p>
+<h2>Without JavaScript</h2>
+<p>Every part of the tab works with plain links and forms. One small script from CalSync itself adds the keys, dragging and the Undo countdown.</p>
+
+<div class="pager"><a href="/sync-rules/">Back: Sync rules</a><a href="/settings/">Next: Settings and environment</a></div>
+</main>
+</div>
+<footer class="foot">
+<div class="wrap">
+<a class="brand" href="/" aria-label="CalSync home"><img src="/mark-small.svg" alt="" width="30" height="30">CalSync</a>
+<p>This page has no trackers, analytics or cookies.</p>
+</div>
+</footer>
+</body>
+</html>

@@ -34,6 +34,8 @@
 <a href="/booking-apps/">Booking apps</a>
 <a href="/agents/">AI agents</a>
 <a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/sync-rules/">Sync rules</a>
+<a href="/calendar/">The Calendar tab</a>
 <a href="/settings/">Settings and environment</a>
 <a href="/faq/">FAQ</a>
 <a href="/troubleshooting/">Troubleshooting</a>
@@ -52,6 +54,8 @@
 <li><a href="/booking-apps/">Booking apps</a></li>
 <li><a href="/agents/">AI agents</a></li>
 <li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/sync-rules/">Sync rules</a></li>
+<li><a href="/calendar/">The Calendar tab</a></li>
 <li><a href="/settings/">Settings and environment</a></li>
 <li><a href="/faq/">FAQ</a></li>
 <li><a href="/troubleshooting/">Troubleshooting</a></li>
@@ -67,13 +71,12 @@ py -m pipx ensurepath</code></pre>
 <p>On a Mac, use <code>brew install pipx</code>. On Debian or Ubuntu, use <code>sudo apt install pipx</code>. Then:</p>
 <pre><code>pipx install git+https://github.com/jakescalesAI/calsync
 calsync web</code></pre>
-<p>Open <code>http://localhost:8484</code>. From the same machine the page asks only for a password. From another machine, or through a proxy, it also asks for a setup code, which <code>calsync web</code> prints when it starts. The page syncs in the background while <code>calsync web</code> runs.</p>
+<p>Open <code>http://localhost:8484</code>. It opens straight in, with no account and no password, and only this computer can reach it. The page syncs in the background while <code>calsync web</code> runs.</p>
 <p>To update later, run <code>pipx upgrade calsync</code>.</p>
 <p>Syncing runs for as long as <code>calsync web</code> is running, so leave that window open. On Windows, Task Scheduler can start it when you sign in.</p>
 <h2>The command line</h2>
 <dl class="kv">
 <div><dt><code>calsync web</code></dt><dd>The web page and background sync.</dd></div>
-<div><dt><code>calsync reset-password</code></dt><dd>Forgot the page password: choose a new one. Works only on this computer.</dd></div>
 <div><dt><code>calsync setup</code></dt><dd>Store your Google or Microsoft sign-in app.</dd></div>
 <div><dt><code>calsync auth</code></dt><dd>Sign in an account: google, outlook or ics.</dd></div>
 <div><dt><code>calsync calendars</code></dt><dd>List the calendars on your accounts.</dd></div>

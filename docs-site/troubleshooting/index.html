@@ -34,6 +34,8 @@
 <a href="/booking-apps/">Booking apps</a>
 <a href="/agents/">AI agents</a>
 <a href="/how-a-sync-decides/">How a sync decides</a>
+<a href="/sync-rules/">Sync rules</a>
+<a href="/calendar/">The Calendar tab</a>
 <a href="/settings/">Settings and environment</a>
 <a href="/faq/">FAQ</a>
 <a href="/troubleshooting/">Troubleshooting</a>
@@ -52,6 +54,8 @@
 <li><a href="/booking-apps/">Booking apps</a></li>
 <li><a href="/agents/">AI agents</a></li>
 <li><a href="/how-a-sync-decides/">How a sync decides</a></li>
+<li><a href="/sync-rules/">Sync rules</a></li>
+<li><a href="/calendar/">The Calendar tab</a></li>
 <li><a href="/settings/">Settings and environment</a></li>
 <li><a href="/faq/">FAQ</a></li>
 <li><a href="/troubleshooting/" aria-current="page">Troubleshooting</a></li>
@@ -104,14 +108,12 @@
 <dl class="q">
 <dt>The page at localhost:8484 will not open</dt>
 <dd>Run <code>docker compose ps</code> to see if it is up, and <code>docker compose logs calsync</code> to see why not. Another program may be using port 8484. You can change the port with <code>CALSYNC_PORT</code>.</dd>
-<dt>I lost the setup code</dt>
-<dd>Run <code>docker compose logs calsync</code> and look for the first-time setup code. It changes each time CalSync starts until you choose a password, so use the newest one.</dd>
-<dt>I forgot the page password</dt>
-<dd>On the computer CalSync runs on, run <code>calsync reset-password</code>, or use your recovery code from Forgot password? on the sign-in page. See <a href="/settings/#forgot">Forgot your password</a>.</dd>
-<dt>The page says "Too many tries"</dt>
-<dd>Too many wrong passwords or setup codes came in the last minute, from you or from someone else. Wait a minute. If it keeps happening, someone else can reach the page: move it off the open internet.</dd>
-<dt>The page says "This host name isn't allowed"</dt>
-<dd>You are reaching it by a name it does not know. Add the name to <code>CALSYNC_HOSTS</code>.</dd>
+<dt>It asks for a password or a setup code</dt>
+<dd>That's an older CalSync. The current one has no password. Update it, and it opens straight in.</dd>
+<dt>The page says "CalSync only answers at http://localhost or http://127.0.0.1"</dt>
+<dd>You reached it by another name, another port, or from another machine. Open <code>http://localhost:8484</code> (or your <code>CALSYNC_PORT</code>) on the computer it runs on.</dd>
+<dt>It won't start: "CalSync has no sign-in, so it only listens on this computer"</dt>
+<dd><code>CALSYNC_BIND</code> is set to an address other than 127.0.0.1. Remove it. If you really mean it, see <a href="/settings/">Reaching it from other machines</a>.</dd>
 <dt>The timer runs but nothing happens</dt>
 <dd>Cron has a smaller environment than your shell. Use the full path to <code>calsync</code>, set <code>CALSYNC_HOME</code> on the cron line if you changed it, and log the output to a file.</dd>
 </dl>

@@ -43,13 +43,14 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           persist-credentials: false
-      - name: docker compose up shows the setup code and guards the first visit
+      - name: docker compose up opens straight in, on this machine only
         run: |
           docker compose up -d --build
-          for i in $(seq 1 60); do docker compose logs calsync | grep -q "First-time setup code" && break; sleep 1; done
-          docker compose logs calsync | grep -q "First-time setup code"
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8484/healthz && break; sleep 1; done
           curl -fsS http://127.0.0.1:8484/healthz
-          curl -fsS http://127.0.0.1:8484/ | grep -q "Setup code"
+          curl -fsS http://127.0.0.1:8484/ | grep -q "Nothing is connected"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example' http://127.0.0.1:8484/)" = 400
+          docker compose logs calsync | grep -q "CALSYNC_ALLOW_REMOTE=1"
           test "$(docker compose exec -T calsync id -u)" = 10001
       - if: always()
         run: docker compose down -v
