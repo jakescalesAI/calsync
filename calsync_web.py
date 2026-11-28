@@ -122,6 +122,14 @@ button:hover,.button:hover{text-decoration:none}button:active,.button:active{opa
 .pw{position:relative;display:block}.pw input{padding-right:52px}
 .pw button.eye{position:absolute;top:50%;right:4px;width:40px;min-height:0;height:40px;padding:0;margin:0;transform:translateY(-50%);border-radius:8px;background:none;color:var(--dim)}
 .pw button.eye:hover{background:var(--hover);color:var(--text)}.pw button.eye:active{opacity:.6}.pw button.eye svg{width:22px;height:22px;display:block}
+.more{position:sticky;z-index:4;height:0;display:flex;justify-content:center;pointer-events:none}.more.up{top:0}.more.down{bottom:0;margin-top:auto}.more[hidden]{display:none}
+.more button{pointer-events:auto;min-height:0;height:22px;margin:3px 0;padding:0 8px;border-radius:999px;background:var(--text);color:#fff;font-size:11px;font-weight:600;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.more.down button{transform:translateY(calc(-100% - 6px))}
+.tg-day .ev.ghost{z-index:3;border:1.5px dashed var(--blue);background:var(--tint);pointer-events:none}.tg-day.picking{cursor:ns-resize}
+dialog.evdlg{width:min(640px,calc(100vw - 32px));max-height:min(88vh,920px);padding:0;border:0;border-radius:18px;background:var(--bg);color:var(--text);box-shadow:0 24px 64px rgba(0,0,0,.22);overflow:auto}
+dialog.evdlg::backdrop{background:rgba(0,0,0,.28)}.dlgin{position:relative;padding:22px 22px 18px}.evdlg h1{margin:0 40px 14px 0;font-size:22px;text-align:left}.evdlg h1:focus{outline:none}
+.evdlg .dlgx{position:sticky;top:0;float:right;z-index:2;width:34px;min-height:0;height:34px;margin:-8px -8px 0 8px;padding:0;border-radius:50%;background:var(--panel);color:var(--text);font-size:20px;line-height:1}
+.evdlg section{margin-bottom:10px}.evdlg>.dlgin>.dlgbody>p.soft{margin-bottom:0}
 button.plain,.button.plain{background:var(--tint);color:var(--blue)}button.danger{background:var(--bad-bg);color:var(--bad)}form.inline{display:inline-flex}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:20px}.actions.flat{margin:0}
 .flash{display:flex;align-items:center;gap:10px;width:fit-content;max-width:100%;margin:0 auto 20px;padding:10px 18px;border-radius:999px;background:var(--panel);color:var(--text);font-size:15px;font-weight:600;box-shadow:0 0 0 .5px var(--line),0 8px 24px rgba(0,0,0,.08)}
@@ -211,7 +219,7 @@ textarea{min-height:96px;resize:vertical}.days{display:flex;flex-wrap:wrap;gap:6
 .tg-scroll{max-height:70vh;overflow-y:auto;scrollbar-gutter:stable}.tg-head,.tg-all{overflow-y:hidden;scrollbar-gutter:stable}.tg-body{position:relative}
 .tg-hours{display:grid;grid-auto-rows:48px;font-size:11px;color:var(--faint);text-align:right}.tg-hours span{padding:0 8px;transform:translateY(-7px)}
 .tg-hours.two{grid-template-columns:1fr 1fr}
-.tg-day{position:relative;height:1152px;border-left:1px solid var(--line);background:repeating-linear-gradient(#fff 0 47px,var(--line) 47px 48px)}
+.tg-day{position:relative;display:flex;flex-direction:column;height:1152px;border-left:1px solid var(--line);background:repeating-linear-gradient(#fff 0 47px,var(--line) 47px 48px)}
 .tg-day.today{background:repeating-linear-gradient(#f7fbff 0 47px,var(--line) 47px 48px)}.tg-day.wk{background:repeating-linear-gradient(#fbfbfd 0 47px,var(--line) 47px 48px)}
 .tg-day .ev,.tg-day .evl{position:absolute;left:2px;right:2px;margin:0;white-space:normal;overflow:hidden;z-index:1}
 .ev a,.evl{color:inherit;text-decoration:none}.evl{display:block}.evl:hover{text-decoration:none;filter:brightness(.97)}
@@ -250,7 +258,47 @@ $$('input[type=password][data-reveal]').forEach(function(f){
 });
 var body=document.body,cal=$('[data-cal-page]');
 function go(u){if(u)location.href=u}
+// New and existing events open in a dialog over the calendar. The links stay plain pages without JS.
+var dlg=null,opener=null;
+function same(u){try{u=new URL(u,location.href)}catch(e){return null}return u.origin===location.origin&&/^\/event(\/new)?$/.test(u.pathname)?u.pathname+u.search:null}
+function dialogFor(url){
+  if(!cal||!window.HTMLDialogElement||!same(url)){go(url);return}
+  if(!dlg){
+    dlg=document.createElement('dialog');dlg.className='evdlg';
+    dlg.innerHTML='<div class="dlgin"><button type="button" class="dlgx" aria-label="Close">\u00d7</button><div class="dlgbody"></div></div>';
+    body.appendChild(dlg);
+    dlg.addEventListener('click',function(e){
+      if(e.target===dlg||e.target.closest('.dlgx')){dlg.close();return}      // outside the box, or the close button
+      var a=e.target.closest('a[href]');if(!a)return;
+      if(a.hasAttribute('data-close')){e.preventDefault();dlg.close();return}
+      var u=same(a.href);if(u&&!a.target){e.preventDefault();load(u,false)}
+    });
+    dlg.addEventListener('close',function(){$('.dlgbody',dlg).innerHTML='';if(opener&&opener.focus)opener.focus()});
+  }
+  var u=new URL(same(url),location.href);
+  if(!u.searchParams.get('back')&&location.pathname==='/calendar'){     // so Save comes back to this view, not the default week
+    var here=new URLSearchParams(location.search);['m','undo','at'].forEach(function(k){here.delete(k)});
+    u.searchParams.set('back','/calendar'+(here.toString()?'?'+here.toString():''))}
+  opener=document.activeElement;load(u.pathname+u.search,u.pathname==='/event/new');
+}
+function load(url,fresh){
+  fetch(url,{credentials:'same-origin'}).then(function(r){return r.text()}).then(function(html){
+    var m=new DOMParser().parseFromString(html,'text/html').querySelector('main');if(!m){go(url);return}
+    var b=$('.dlgbody',dlg);b.innerHTML='';
+    Array.prototype.slice.call(m.childNodes).forEach(function(n){b.appendChild(document.importNode(n,true))});
+    var h=$('h1',b);if(h){h.id='dlgtitle';h.tabIndex=-1;dlg.setAttribute('aria-labelledby','dlgtitle')}
+    if(!dlg.open)dlg.showModal();
+    dlg.scrollTop=0;
+    var f=fresh?$('input[name=title]',b):h;if(f)f.focus();
+  },function(){go(url)});
+}
+document.addEventListener('click',function(e){
+  if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||(dlg&&dlg.contains(e.target)))return;
+  var a=e.target.closest('a[data-new], .ev a.evl');if(!a||!cal)return;
+  e.preventDefault();dialogFor(a.getAttribute('href'));
+});
 document.addEventListener('keydown',function(e){
+  if(dlg&&dlg.open)return;           // the dialog has the keys: Esc closes it, typing stays typing
   var t=e.target,typing=/INPUT|TEXTAREA|SELECT/.test(t.tagName)||t.isContentEditable;
   if(e.key==='Escape'){var x=$('[data-close]');if(x&&!typing)go(x.getAttribute('href'));if(typing)t.blur();return}
   if(typing||e.metaKey||e.ctrlKey||e.altKey||!cal)return;
@@ -258,10 +306,9 @@ document.addEventListener('keydown',function(e){
   if(k==='/'){var s=$('#search');if(s){e.preventDefault();s.focus()}return}
   if(k==='?'){var h=$('#keys');if(h)h.hidden=!h.hidden;return}
   if(k==='p'){window.print();return}
-  if(m[k]){var a=$('['+m[k]+']');if(a){e.preventDefault();go(a.getAttribute('href'))}}
+  if(m[k]){var a=$('['+m[k]+']');if(a){e.preventDefault();(k==='n'?dialogFor:go)(a.getAttribute('href'))}}
 });
 $$('[data-print]').forEach(function(b){b.hidden=false;b.addEventListener('click',function(e){e.preventDefault();window.print()})});
-var sc=$('.tg-scroll');if(sc&&!location.hash)sc.scrollTop=7*48;
 $$('[data-until]').forEach(function(el){
   var until=+el.getAttribute('data-until'),n=$('.left',el);
   (function tick(){var s=Math.max(0,Math.ceil((until-Date.now())/1000));if(n)n.textContent=s+' s';if(s<=0){el.remove();return}setTimeout(tick,250)})();
@@ -273,12 +320,50 @@ $$('[data-oauth-wait]').forEach(function(a){a.addEventListener('click',function(
 var off=$('#enabled');function keep(){var k=$('#keepbox');if(k&&off)k.hidden=off.checked}if(off){off.addEventListener('change',keep);keep()}
 // drag to move or resize, in the day and week views: quarter-hour steps, across days
 var grid=$('.tg-body');if(!grid)return;
-var csrf=grid.getAttribute('data-csrf'),slot=12;
+var csrf=grid.getAttribute('data-csrf'),slot=12,sc=$('.tg-scroll');
 function cols(){return $$('.tg-day',grid)}
+function evs(d){return $$('.ev',d).filter(function(x){return !x.classList.contains('ghost')})}
+// open where something is: just before now when today is shown (or its next event, if that would be out of sight),
+// else the earliest event shown, else 8 am
+if(sc&&!location.hash){
+  var y=8*48,now=$('.tg-day.today .now',grid),first=null,at=/[?&]at=([0-9]{2}):([0-9]{2})/.exec(location.search);
+  cols().forEach(function(d){evs(d).forEach(function(x){if(first===null||x.offsetTop<first)first=x.offsetTop})});
+  if(at)y=(+at[1]*60+ +at[2])/15*slot-48;      // just added, changed or moved: show it
+  else if(now){y=now.offsetTop-48;
+    var next=evs(now.parentNode).filter(function(x){return x.offsetTop+x.offsetHeight>now.offsetTop}).sort(function(a,b){return a.offsetTop-b.offsetTop})[0];
+    if(next&&next.offsetTop>y+sc.clientHeight-48)y=next.offsetTop-48}
+  else if(first!==null)y=first-24;
+  sc.scrollTop=Math.max(0,y);
+}
+// per day: how many events are above or below what's in view, as a marker that scrolls to them
+function marker(d,cls){var m=$('.more.'+cls,d);if(!m){m=document.createElement('div');m.className='more '+cls;m.hidden=true;m.innerHTML='<button type="button"></button>';
+  if(cls==='up')d.insertBefore(m,d.firstChild);else d.appendChild(m);
+  m.firstChild.addEventListener('click',function(){var to=+m.getAttribute('data-to');sc.scrollTo({top:Math.max(0,to-(cls==='up'?24:48)),behavior:'smooth'})})}return m}
+function markers(){if(!sc)return;var top=sc.scrollTop,bot=top+sc.clientHeight;
+  cols().forEach(function(d){var up=0,down=0,upTo=null,downTo=null;
+    evs(d).forEach(function(x){var a=x.offsetTop,b=a+x.offsetHeight;
+      if(b<=top+4){up++;if(upTo===null||a>upTo)upTo=a}else if(a>=bot-4){down++;if(downTo===null||a<downTo)downTo=a}});
+    [['up',up,upTo,'\u2191 '+up+' earlier'],['down',down,downTo,'\u2193 '+down+' later']].forEach(function(s){var m=marker(d,s[0]);m.hidden=!s[1];
+      if(s[1]){m.setAttribute('data-to',s[2]);m.firstChild.textContent=s[3];m.firstChild.setAttribute('aria-label',s[1]+(s[1]===1?' event ':' events ')+(s[0]==='up'?'earlier':'later')+' on '+d.getAttribute('data-date'))}})})}
+var queued=false;function soon(){if(!queued){queued=true;requestAnimationFrame(function(){queued=false;markers()})}}
+if(sc){sc.addEventListener('scroll',soon,{passive:true});window.addEventListener('resize',soon);markers()}
 function post(url,data){var f=new URLSearchParams(data);f.append('csrf',csrf);return fetch(url,{method:'POST',body:f,credentials:'same-origin',headers:{'Content-Type':'application/x-www-form-urlencoded'}})}
-grid.addEventListener('dblclick',function(e){var d=e.target.closest('.tg-day');if(!d||e.target.closest('.ev'))return;
-  var y=e.clientY-d.getBoundingClientRect().top,q=Math.floor(y/slot),h=Math.floor(q/4),mi=(q%4)*15;
-  go(d.getAttribute('data-new')+'&t='+(h<10?'0':'')+h+':'+(mi<10?'0':'')+mi)});
+function hm(q){q=Math.max(0,Math.min(95,q));var hh=Math.floor(q/4),mm=(q%4)*15;return (hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm}
+grid.addEventListener('pointerdown',function(e){
+  var d=e.target.closest('.tg-day');if(!d||e.button!==0||e.target.closest('.ev, .more'))return;
+  var at=function(m){return Math.max(0,Math.min(95,Math.floor((m.clientY-d.getBoundingClientRect().top)/slot)))},q0=at(e),q1=q0,moved=false,ghost=null,touch=e.pointerType==='touch';
+  if(!touch)e.preventDefault();
+  function show(){if(!ghost){ghost=document.createElement('div');d.appendChild(ghost);d.classList.add('picking')}
+    var a=Math.min(q0,q1),n=Math.abs(q1-q0)+1;ghost.className='ev ghost s'+a+' l'+n}
+  function mv(m){if(touch)return;var q=at(m);if(q!==q0||moved){moved=true;q1=q;show()}}
+  function done(){document.removeEventListener('pointermove',mv);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',cancel);d.classList.remove('picking')}
+  function cancel(){done();if(ghost)ghost.remove()}
+  function up(){done();
+    var a=Math.min(q0,q1),b=moved?Math.max(q0,q1)+1:a+4;
+    dialogFor(d.getAttribute('data-new')+'&t='+hm(a)+(b<=95?'&e='+hm(b):''));
+    if(ghost)setTimeout(function(){ghost.remove()},300)}
+  document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up);document.addEventListener('pointercancel',cancel);
+});
 grid.addEventListener('pointerdown',function(e){
   var ev=e.target.closest('.ev[data-move]');if(!ev||e.button!==0)return;
   var resize=e.target.classList.contains('rs'),startY=e.clientY,startX=e.clientX,top=ev.offsetTop,h=ev.offsetHeight,col=ev.parentNode,moved=false,target=col;
@@ -293,7 +378,7 @@ grid.addEventListener('pointerdown',function(e){
     var q0=Math.round(ev.offsetTop/slot),len=Math.max(1,Math.round((ev.offsetHeight+2)/slot)),day=target.getAttribute('data-date');
     var t=function(q){var hh=Math.floor(q/4),mm=(q%4)*15;return (hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm};
     var data={cal:ev.getAttribute('data-cal'),uid:ev.getAttribute('data-uid'),href:ev.getAttribute('data-href')||'',date:day,start:t(q0),end:t(Math.min(96,q0+len)),back:location.pathname+location.search};
-    if(ev.getAttribute('data-move')==='ask'){go('/event?'+new URLSearchParams(data).toString()+'&edit=1');return}
+    if(ev.getAttribute('data-move')==='ask'){dialogFor('/event?'+new URLSearchParams(data).toString()+'&edit=1');return}
     post('/event/move',data).then(function(r){return r.json()}).then(function(j){if(j.go)location.href=j.go;else location.reload()},function(){location.reload()})}
   document.addEventListener('pointermove',mv);document.addEventListener('pointerup',up);e.preventDefault()});
 grid.addEventListener('click',function(e){var ev=e.target.closest('.ev.dragging');if(ev){e.preventDefault();e.stopPropagation()}},true);
@@ -1294,13 +1379,16 @@ def new_event_page(csrf, q, flash=None):
         end = f"{min(23, h + 1):02d}:{m:02d}"
     except ValueError:
         t, end = "09:00", "10:00"
+    asked = q.get("e", [""])[0]       # a drag across empty time gives its end too
+    if re.fullmatch(r"([01][0-9]|2[0-3]):[0-5][0-9]", asked) and asked > t:
+        end = asked
     pick = q.get("cal", [""])[0]
     if pick not in {c["name"] for c in writable}:
         try:
             pick = engine.main_calendar(cfg)["name"]
         except SystemExit:
             pick = writable[0]["name"]
-    back = back_to("/calendar?" + urllib.parse.urlencode({"view": "week", "d": date}))
+    back = back_to(q.get("back", [""])[0] or "/calendar?" + urllib.parse.urlencode({"view": "week", "d": date}))
     fields = event_form_fields({"parts": (date, t, date, end), "busy": True}, cfg, True, pick)
     return page("New event", f'''<h1>New event</h1><form method="post" action="/event/create"><section>{hidden_csrf(csrf)}<input type="hidden" name="back" value="{esc(back)}">{fields}
 <label class="check"><input type="checkbox" name="notify" value="1" checked> Email the invites to the guests</label>
@@ -1923,7 +2011,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                       "due": 0, "undo_until": time.time() + UNDO_SECONDS, "done": True, "shown": {}}
             if engine.load_json(engine.CONFIG, {}).get("enabled"):
                 run_in_background(trigger="manual")
-            return self.redirect(with_flash(back, "added_ev") + "&undo=" + token)
+            return self.redirect(with_flash(back, "added_ev") + "&undo=" + token + at_time(get))
         cal, uid, href, scope = get("cal"), get("uid"), get("href"), get("scope") or "this"
         notify = bool(get("notify"))
         if url == "/event/rsvp":
@@ -1945,7 +2033,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             shown = {"title": checked.get("title"), "all_day": checked.get("all_day"),
                      "start": engine._ics_time_text(checked["start"], checked["all_day"]), "end": engine._ics_time_text(checked["end"], checked["all_day"])}
             token = queue_op("update", cal, uid, raw, scope, notify, href, "Saved.", back, shown)
-            return self.redirect(with_flash(back, "pending") + "&undo=" + token)
+            return self.redirect(with_flash(back, "pending") + "&undo=" + token + at_time(get))
         # /event/move, from dragging in the day and week views: only the time changes
         D = engine.dt
         tz = engine.local_tz()
@@ -1958,7 +2046,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             e = s + D.timedelta(minutes=15)
         shown = {"start": engine._ics_time_text(s, False), "end": engine._ics_time_text(e, False), "all_day": False}
         token = queue_op("update", cal, uid, {"start": s, "end": e, "all_day": False}, "this", notify, href, "Moved.", back, shown)
-        return self.send(200, json.dumps({"go": with_flash(back, "pending") + "&undo=" + token}), "application/json")
+        return self.send(200, json.dumps({"go": with_flash(back, "pending") + "&undo=" + token + at_time(get)}), "application/json")
 
     def hook(self, url):
         """Google and Microsoft calling to say a calendar changed (only with a public https address). Each proves
@@ -2081,6 +2169,12 @@ where you choose which calendars to sync.</p></section>'''))
 def back_to(path):
     """Only back to a Calendar page: never somewhere else a form could be pointed at."""
     return path if re.fullmatch(r"/calendar(\?[A-Za-z0-9=&%._+-]*)?", path or "") else "/calendar"
+
+
+def at_time(get):
+    """Where the calendar opens after an event is added, changed or moved: at its start, so it's in view."""
+    start = get("start")
+    return "" if get("all_day") or not re.fullmatch(r"([01][0-9]|2[0-3]):[0-5][0-9]", start or "") else "&at=" + start
 
 
 def with_flash(path, key):

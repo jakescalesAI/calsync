@@ -537,6 +537,23 @@ class WebTests(unittest.TestCase):
         r, js = self.req("GET", "/app.js")
         self.assertEqual((r.status, r.getheader("Content-Type")), (200, "text/javascript"))
         self.assertIn("pointerdown", js)
+        # New and existing events open in a <dialog>; the opening scroll and the earlier/later markers
+        for bit in ("showModal", "a[data-new], .ev a.evl", "' earlier'", "' later'", "&e=", "[?&]at=", "'back'"):
+            self.assertIn(bit, js)
+        for link in re.findall(r'href="(/event[^"]*)"', text):      # without JS they're still pages
+            self.assertEqual(self.req("GET", link.replace("&amp;", "&"))[0].status, 200, link)
+
+    def test_new_event_takes_the_clicked_or_dragged_time_and_comes_back_to_the_view(self):
+        self.start()
+        self.two_calendars()
+        calsync._save_account("one", {"provider": "caldav", "server": "https://dav.example.com/", "username": "u", "password": "p"})
+        text = self.req("GET", "/event/new?d=2030-01-02&t=15:00&e=16:30&back=" + urllib.parse.quote("/calendar?view=day&d=2030-01-02"))[1]
+        self.assertIn('name="start" value="15:00"', text)
+        self.assertIn('name="end" value="16:30"', text)
+        self.assertIn('name="back" value="/calendar?view=day&amp;d=2030-01-02"', text)
+        text = self.req("GET", "/event/new?d=2030-01-02&t=15:00&e=14:00&back=https://evil.example/")[1]
+        self.assertIn('name="end" value="16:00"', text)               # an end before the start is ignored: an hour
+        self.assertNotIn("evil.example", text)                         # and back only ever leads to a Calendar page
 
     def test_new_event_change_and_undo(self):
         self.start()
@@ -549,20 +566,23 @@ class WebTests(unittest.TestCase):
             self.assertTrue(loc.startswith("/calendar?view=week&d=2030-01-02&m=added_ev&undo="))
             name, raw = create.call_args.args
             self.assertEqual((name, raw["title"], raw["repeat"][:30], raw["start"].hour), ("a", "Run", "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,", 7))
-            token = loc.split("undo=")[1]
+            self.assertTrue(loc.endswith("&at=07:00"))        # the calendar opens where the new event is
+            token = loc.split("undo=")[1].split("&")[0]
             self.assertIn("Undo", self.req("GET", loc)[1])
             self.post("/undo", token=token, back="/calendar")
             delete.assert_called_once_with("a", "new1", "all", False)       # undoing a new event removes it
             # a change waits, so Undo just drops it
             r, _ = self.post("/event/save", cal="a", uid="u1", title="Moved", date="2030-01-03", start="09:00", end="10:00", scope="all", back="/calendar")
-            token = r.getheader("Location").split("undo=")[1]
+            self.assertTrue(r.getheader("Location").endswith("&at=09:00"))
+            token = r.getheader("Location").split("undo=")[1].split("&")[0]
             self.assertEqual(calsync_web.pending_ops[token]["scope"], "all")
             self.post("/undo", token=token, back="/calendar")
             self.assertNotIn(token, calsync_web.pending_ops)
             # a drag answers with where to go next
             r, text = self.post("/event/move", cal="a", uid="u2", date="2030-01-03", start="11:00", end="11:30", back="/calendar?view=day")
             self.assertTrue(json.loads(text)["go"].startswith("/calendar?view=day&m=pending&undo="))
-            op = calsync_web.pending_ops[json.loads(text)["go"].split("undo=")[1]]
+            self.assertTrue(json.loads(text)["go"].endswith("&at=11:00"))
+            op = calsync_web.pending_ops[json.loads(text)["go"].split("undo=")[1].split("&")[0]]
             op["due"] = 0
             calsync_web.run_op(op)
             name, uid, changes, scope, notify, href = update.call_args.args
