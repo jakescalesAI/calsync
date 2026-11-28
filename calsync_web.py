@@ -31,6 +31,9 @@ PROXY_HEADERS = ("Forwarded", "X-Forwarded-For", "X-Real-IP")
 state_lock = threading.Lock()
 pending_google = {}     # state -> label, redirect, origin, expires
 pending_ms = {}         # flow id -> label, tenant, device_code, user_code, link, expires, status
+pending_oauth = {}      # one-click sign-in: state -> provider, verifier, redirect, expires, status, label, problem
+here = threading.local()     # the request being answered: its Host header, so a page can build a loopback address
+MAX_OAUTH_FLOWS = 40
 failed_logins = {}      # (kind, ip or "*") -> [times of tries]
 first_run_lock = threading.Lock()
 setup_code = secrets.token_hex(4)
@@ -244,6 +247,7 @@ h2.big{margin:40px 0 12px;padding:0;color:var(--text);font:700 26px/1.15 var(--d
 .ev.copy{border-left-style:dashed;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--k) 12%,#fff) 0 6px,#fff 6px 12px)}
 .plus{display:block;font-size:12px;font-weight:500}.calnote{margin:14px 0 0;color:var(--dim);font-size:13px}
 @media (max-width:760px){.grid.week{grid-template-columns:1fr}.grid.week>div{min-height:0}.grid.month>div:not(.wd){min-height:64px;padding:4px}.grid.month .ev{padding:2px 4px;font-size:10px}.grid.month .ev .t{display:none}.grid>.wd{padding:6px 0;font-size:10px}.dn{min-width:24px;height:24px;font-size:13px}}
+.adv{margin:-4px 0 12px;padding:0 20px;font-size:14px}section.warn{background:var(--bad-bg);color:var(--text)}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .quick{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}.quick input[type=text]{flex:1 1 320px;width:auto}.quick select{flex:0 1 180px;width:auto}
 .qpre{margin:10px 0 4px;box-shadow:0 0 0 1px var(--line)}.qline{font-size:17px}.warn{padding:10px 14px;border-radius:12px;background:var(--bad-bg);color:var(--bad)}
@@ -334,6 +338,7 @@ $$('[data-until]').forEach(function(el){
 var tag=$('#tag'),tt=$('#title_text'),showTitle=$('#copy_title');
 function sample(){var p=$('#tagprev');if(!p)return;var t=(showTitle&&!showTitle.checked)?((tt&&tt.value)||'Busy'):p.getAttribute('data-title');p.textContent=((tag&&tag.value)?tag.value+' ':'')+t}
 [tag,tt,showTitle].forEach(function(i){if(i){i.addEventListener('input',sample);i.addEventListener('change',sample)}});
+$$('[data-oauth-wait]').forEach(function(a){a.addEventListener('click',function(){var w=a.getAttribute('data-oauth-wait');setTimeout(function(){go(w)},400)})});
 var off=$('#enabled');function keep(){var k=$('#keepbox');if(k&&off)k.hidden=off.checked}if(off){off.addEventListener('change',keep);keep()}
 // drag to move or resize, in the day and week views: quarter-hour steps, across days
 var grid=$('.tg-body');if(!grid)return;
@@ -480,12 +485,68 @@ def connect_body(csrf):
     existing = ('<h2>Signed in accounts</h2><section class="list">' + "".join(rows) + "</section>") if rows else ""
     caldav = "".join(f'''<div class="row"><div><b>{"Another CalDAV server" if k == "other" else v[0]}</b></div><a class="button" href="/connect/caldav?p={k}">Connect</a></div>'''
                      for k, v in engine.CALDAV_SERVERS.items())
+    one = {**oneclick("google"), **oneclick("microsoft")}
+    sign = lambda k, name: (f'<a class="button" href="{esc(one[k])}" target="_blank" rel="noopener" data-oauth-wait="/connect/wait?flow={esc(one[k + "_state"])}">Sign in with {name}</a>'
+                            if one.get(k) else f'<a class="button" href="/connect/{k}">Connect</a>')
+    advanced = ('<p class="soft adv"><a href="/connect/advanced">Advanced: use your own OAuth app</a></p>' if one.get("google") or one.get("microsoft")
+                else '<p class="soft adv">One-click sign-in works when you open CalSync on the computer it runs on. From here, use your own sign-in app. <a href="/connect/advanced">More</a></p>' if one.get("remote") else "")
     return f'''{existing}<h2>Connect an account</h2>
-<section class="list"><div class="row"><div><b>Google Calendar</b></div><a class="button" href="/connect/google">Connect</a></div>
-<div class="row"><div><b>Outlook or Microsoft 365</b></div><a class="button" href="/connect/microsoft">Connect</a></div>
-{caldav}</section>
+<section class="list"><div class="row"><div><b>Google Calendar</b></div>{sign("google", "Google")}</div>
+<div class="row"><div><b>Outlook or Microsoft 365</b> <span class="soft">Work and school accounts too, unless your organisation blocks outside apps.</span></div>{sign("microsoft", "Microsoft")}</div>
+{caldav}</section>{advanced}
 <section class="list"><div class="row long"><div><b>Published .ics link</b> <span class="soft">Read-only: its events are copied out, nothing is written back. For Proton Calendar, an Exchange server, or an organization that blocks outside apps.</span></div><a class="button" href="/connect/ics">Add link</a></div>
 <div class="row long"><div><b>Calendly, Cal.com or another booking app</b> <span class="soft">Nothing to add here. Connect the booking app to any calendar above. CalSync keeps that calendar showing your busy times from all the others.</span></div><a class="button plain" href="https://docs.getcalsync.app/booking-apps/">How it works</a></div></section>'''
+
+
+def oneclick(provider):
+    """A ready sign-in link for CalSync's own app, made for this page view: {provider: url, provider_state: state}.
+    Only when the page was opened on this computer, since the sign-in comes back to 127.0.0.1 or localhost."""
+    if not engine.builtin_app(provider):
+        return {}
+    name = re.sub(r":\d+$", "", (getattr(here, "host", "") or "").strip().lower()).strip("[]")
+    if PUBLIC_URL or not (name in ("localhost", "127.0.0.1", "::1") or name.endswith(".localhost")):
+        return {"remote": True}
+    port = re.search(r":(\d+)$", getattr(here, "host", "") or "")
+    redirect = engine.loopback_redirect(provider, port.group(1) if port else 80)
+    flow = engine.oauth_start(provider, redirect)
+    with state_lock:
+        if len(pending_oauth) >= MAX_OAUTH_FLOWS:       # each page view makes one; the oldest unused go first
+            for key in sorted(pending_oauth, key=lambda k: pending_oauth[k]["expires"])[:len(pending_oauth) - MAX_OAUTH_FLOWS + 1]:
+                del pending_oauth[key]
+        pending_oauth[flow["state"]] = {"provider": provider, "verifier": flow["verifier"], "redirect": redirect,
+                                        "expires": time.time() + 900, "status": "waiting"}
+    return {provider: flow["url"], provider + "_state": flow["state"]}
+
+
+def advanced_page(csrf, flash=None):
+    return page("Your own sign-in app", '''<h1>Advanced: use your own OAuth app</h1><section><p>CalSync's own Google and Microsoft apps are the quick way. If you run CalSync on a server,
+or would rather your sign-ins go through an app you own, make your own. It takes about 10 minutes each.</p></section>
+<section class="list"><div class="row"><div><b>Your own Google app</b> <span class="soft">A Desktop app client from Google Cloud, with its ID and secret.</span></div><a class="button" href="/connect/google">Set up</a></div>
+<div class="row"><div><b>Your own Microsoft app</b> <span class="soft">An Entra app registration, signed in with a code.</span></div><a class="button" href="/connect/microsoft">Set up</a></div></section>
+<div class="actions"><a class="button plain" href="/#add">Back</a></div>''', True, flash, at="/")
+
+
+def blocked_section():
+    return ('<section class="warn"><p><b>Your organisation needs an administrator to approve CalSync.</b> Many schools and workplaces do this for '
+            'outside apps. You can ask your IT team, or sync this calendar one way: in Outlook on the web, publish the calendar and '
+            'add its .ics link here.</p><div class="actions"><a class="button" href="/connect/ics">Add an .ics link</a>'
+            '<a class="button plain" href="https://docs.getcalsync.app/ics/">How to publish it</a></div></section>')
+
+
+def wait_page(flow_id):
+    with state_lock:
+        flow = pending_oauth.get(flow_id)
+    if not flow:
+        return None, page("Sign in", '<h1>This sign-in has expired</h1><section class="note">Start again from Add a calendar.</section><a class="button plain" href="/#add">Add a calendar</a>', True, at="/")
+    name = "Google" if flow["provider"] == "google" else "Microsoft"
+    if flow["status"] == "done":
+        return "/account?label=" + urllib.parse.quote(flow["label"]), None
+    if flow["status"] == "blocked":
+        return None, page("Sign in", f'<h1>{name} didn\'t let CalSync in</h1>{blocked_section()}', True, at="/")
+    if flow["status"] == "failed":
+        return None, page("Sign in", f'<h1>That didn\'t work</h1><section class="bad">{esc(flow.get("problem", ""))}</section><a class="button plain" href="/#add">Try again</a>', True, at="/")
+    return None, page("Sign in", f'''<h1>Sign in to {name}</h1><section><p>Your browser opened {name}. Choose your account and allow CalSync.
+This page moves on by itself when you're done.</p><p class="soft">If no browser window opened, <a href="/#add">go back</a> and press Sign in with {name} again.</p></section>''', True, refresh=2, at="/")
 
 
 def connect_page(csrf, flash=None):
@@ -500,7 +561,7 @@ def google_page(csrf, flash=None):
 <label for="label">A short name for this account</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="work">
 <div class="actions"><button>Continue</button></div></form></section>
 <section><p>Your Google sign-in app is saved. Replace it only if you made a new one.</p>{client_form(csrf, True)}</section>''', True, flash, at="/")
-    return page("Connect Google", f'<h1>Connect Google</h1><section><p>Google needs a sign-in app of your own. It\'s free and takes about 10 minutes. You only do it once, for all your Google accounts.</p>{GOOGLE_STEPS}{client_form(csrf)}</section>', True, flash, at="/")
+    return page("Connect Google", f'<h1>Your own Google app</h1><section><p>Make a sign-in app of your own in Google Cloud. It\'s free and takes about 10 minutes. You only do it once, for all your Google accounts.</p>{GOOGLE_STEPS}{client_form(csrf)}</section>', True, flash, at="/")
 
 
 def client_form(csrf, replacing=False):
@@ -514,7 +575,7 @@ def microsoft_page(csrf, flash=None):
     client = engine.load_json(os.path.join(engine.SECRETS, "microsoft-client.json"), None)
     steps = "" if client else f"<p>Microsoft needs a sign-in app of your own. It's free and you only make it once.</p>{MICROSOFT_STEPS}"
     cid = esc(client["client_id"]) if client else ""
-    return page("Connect Microsoft", f'''<h1>Connect Outlook or Microsoft 365</h1><section>{steps}<form method="post" action="/connect/microsoft/start" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
+    return page("Connect Microsoft", f'''<h1>Your own Microsoft app</h1><section>{steps}<form method="post" action="/connect/microsoft/start" autocomplete="off"><input type="hidden" name="csrf" value="{csrf}">
 <label for="cid">Application (client) ID</label><input type="text" id="cid" name="client_id" required value="{cid}">
 <label for="label">A short name for this account</label><input type="text" id="label" name="label" required maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="school">
 <div class="actions"><button>Continue</button></div></form></section>''', True, flash, at="/")
@@ -1513,7 +1574,7 @@ def scheduler(stop):
 def tidy_flows():
     now = time.time()
     with state_lock:
-        for flows in (pending_google, pending_ms):
+        for flows in (pending_google, pending_ms, pending_oauth):
             for key in [k for k, f in flows.items() if f["expires"] < now]:
                 del flows[key]
         for key in [k for k, times in failed_logins.items() if not any(now - t < 60 for t in times)]:
@@ -1596,6 +1657,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         tidy_flows()
+        here.host = self.headers.get("Host")
         url = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(url.query)
         if url.path == "/healthz":     # before the host check, so a container's health probe always works
@@ -1608,6 +1670,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send(200, JS, "text/javascript")
         if url.path == "/" and ("state" in q or "code" in q or "error" in q):
             return self.google_callback(q)
+        if url.path in ("/oauth/google", "/oauth/microsoft"):
+            return self.oauth_callback(url.path.rsplit("/", 1)[1], q)
         cfg = web_config()
         if not cfg:
             return self.send(200, self.first_run_page())
@@ -1627,6 +1691,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.redirect("/" + ("?m=" + q["m"][0] if q.get("m", [""])[0] in FLASHES else "") + "#add")
         if url.path == "/connect/google":
             return self.send(200, google_page(csrf, flash))
+        if url.path == "/connect/advanced":
+            return self.send(200, advanced_page(csrf, flash))
+        if url.path == "/connect/wait":
+            to, body = wait_page(q.get("flow", [""])[0])
+            return self.redirect(to) if to else self.send(200, body)
         if url.path == "/connect/microsoft":
             return self.send(200, microsoft_page(csrf, flash))
         if url.path == "/connect/microsoft/wait":
@@ -1662,6 +1731,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         tidy_flows()
+        here.host = self.headers.get("Host")
         url = urllib.parse.urlparse(self.path).path
         if not host_allowed(self.headers.get("Host")) or not self.same_origin():
             return self.send(400, "Blocked: this request came from another site.", "text/plain")
@@ -2131,6 +2201,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if problem:
             return self.send(200, page("Connect Google", f'<h1>That didn\'t work</h1><section class="bad">{esc(problem)}</section><a class="button plain" href="{esc(flow["origin"])}/#add">Back</a>'))
         self.redirect(f"{flow['origin']}/account?label={urllib.parse.quote(flow['label'])}")
+
+    def oauth_callback(self, provider, q):
+        """Google or Microsoft sending the browser back after one-click sign-in. The one-use state proves it's ours,
+        and the PKCE verifier that only this server holds is what turns the code into a sign-in."""
+        state = q.get("state", [""])[0]
+        with state_lock:
+            flow = pending_oauth.get(state)
+            if flow and (flow["provider"] != provider or flow["status"] != "waiting"):
+                flow = None
+            if flow:
+                flow["status"] = "working"
+        if not flow:
+            return self.send(400, page("Sign in", '<h1>This sign-in link has expired</h1><section>Start again from Add a calendar in CalSync.</section>'))
+        name = "Google" if provider == "google" else "Microsoft"
+        params = {k: v[0] for k, v in q.items()}
+        try:
+            if "code" not in params:
+                raise RuntimeError(engine.oauth_refused(provider, params))
+            label = engine.oauth_finish(provider, params["code"], flow["verifier"], flow["redirect"])
+            flow.update(status="done", label=label)
+        except engine.SignInBlocked:
+            flow["status"] = "blocked"
+            return self.send(200, page("Sign in", f'<h1>{name} didn\'t let CalSync in</h1>{blocked_section()}'))
+        except Exception as e:
+            flow.update(status="failed", problem=short_error(e))
+            return self.send(200, page("Sign in", f'<h1>That didn\'t work</h1><section class="bad">{esc(short_error(e))}</section>'))
+        if session_ok(web_config(), self.cookie()):
+            return self.redirect("/account?label=" + urllib.parse.quote(label))
+        return self.send(200, page("Signed in", f'''<h1>Signed in to {name}</h1><section><p>You can close this tab and go back to CalSync,
+where you choose which calendars to sync.</p></section>'''))
 
     def google_paste(self, address):
         q = urllib.parse.parse_qs(urllib.parse.urlparse(address.strip()).query)

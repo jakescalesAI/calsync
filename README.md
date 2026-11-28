@@ -18,7 +18,8 @@ docker compose logs calsync
 
 Open http://localhost:8484 and enter the setup code from the logs. Choose a password, add your calendars, press **Preview changes**, then **Apply and keep syncing**. Save the recovery code it shows you: if you forget the password, it lets you pick a new one on that computer, and so does `calsync reset-password`. There is no account and no email reset.
 
-Google and Microsoft each need a free sign-in app of your own. The page walks you through it in about 10 minutes. iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server only need an app password.
+Google and Microsoft are one click: **Sign in with Google** or **Sign in with Microsoft**, in the browser on the computer CalSync runs on.
+On a server you reach from elsewhere, use a free sign-in app of your own instead; the page walks you through it in about 10 minutes. iCloud, Fastmail, Yahoo, AOL, Zoho, Nextcloud and any other CalDAV server only need an app password.
 
 Without Docker, using Python 3.10 or newer:
 

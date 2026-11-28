@@ -1700,8 +1700,165 @@ def _client(provider):
     return c
 
 
+# ---------- one-click sign-in: CalSync's own Google and Microsoft apps, PKCE and a loopback redirect ----------
+# Like Thunderbird, rclone and gcalcli, CalSync ships its own "installed app" clients, so signing in is one button.
+# Google documents that an installed (Desktop) app's client secret can't be kept secret and isn't treated as one: it
+# only identifies the app. What protects the sign-in is PKCE (RFC 7636): the code Google sends back is useless without
+# the verifier, which never leaves this machine. Microsoft's app is a public client with no secret at all. Both send the
+# browser back to this computer (127.0.0.1 or localhost), so only a CalSync running here can finish the sign-in.
+# Self-hosters can still use their own apps (Advanced on the Connect page), and these can be overridden for testing.
+
+CALSYNC_GOOGLE_ID = "REPLACE-WITH-CALSYNC-DESKTOP-CLIENT-ID.apps.googleusercontent.com"     # set when Jake creates the app
+CALSYNC_GOOGLE_SECRET = "REPLACE-WITH-CALSYNC-DESKTOP-CLIENT-SECRET"
+CALSYNC_MICROSOFT_ID = "REPLACE-WITH-CALSYNC-ENTRA-APPLICATION-ID"
+OAUTH = {
+    "google": {"authorize": "https://accounts.google.com/o/oauth2/v2/auth", "token": "https://oauth2.googleapis.com/token",
+               "scope": GOOGLE_SCOPES, "host": "127.0.0.1", "path": "/oauth/google"},
+    "microsoft": {"authorize": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+                  "token": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+                  "scope": MS_SCOPES, "host": "localhost", "path": "/oauth/microsoft"},     # Microsoft wants "localhost" for any port
+}
+ADMIN_ONLY = re.compile(r"AADSTS(65001|90094|90095|50105|530003)|admin(istrator)?\s+(approval|consent)|need[s]?\s+admin", re.I)
+
+
+def builtin_app(provider):
+    """CalSync's own app for google or microsoft: {"client_id", ["client_secret"]}, or None while this build has none."""
+    if provider == "google":
+        cid = os.environ.get("CALSYNC_GOOGLE_CLIENT_ID") or CALSYNC_GOOGLE_ID
+        out = {"client_id": cid, "client_secret": os.environ.get("CALSYNC_GOOGLE_CLIENT_SECRET") or CALSYNC_GOOGLE_SECRET}
+    elif provider == "microsoft":
+        cid = os.environ.get("CALSYNC_MS_CLIENT_ID") or CALSYNC_MICROSOFT_ID
+        out = {"client_id": cid}
+    else:
+        raise ValueError(provider)
+    return None if cid.startswith("REPLACE-") else out
+
+
+def pkce():
+    """-> (verifier, challenge): 64 random bytes as the verifier, its SHA-256 as the S256 challenge."""
+    verifier = base64.urlsafe_b64encode(os.urandom(64)).rstrip(b"=").decode()
+    return verifier, pkce_challenge(verifier)
+
+
+def pkce_challenge(verifier):
+    return base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+
+
+def loopback_redirect(provider, port):
+    o = OAUTH[provider]
+    return f"http://{o['host']}:{int(port)}{o['path']}"
+
+
+def oauth_start(provider, redirect):
+    """Begin a one-click sign-in. -> {"state", "verifier", "url"}: send the person's browser to url, keep the rest."""
+    app = builtin_app(provider)
+    if not app:
+        raise RuntimeError(f"this copy of CalSync has no built-in {provider.title()} sign-in; use your own app under Advanced")
+    o, (verifier, challenge), state = OAUTH[provider], pkce(), base64.urlsafe_b64encode(os.urandom(24)).rstrip(b"=").decode()
+    q = {"client_id": app["client_id"], "redirect_uri": redirect, "response_type": "code", "scope": o["scope"],
+         "state": state, "code_challenge": challenge, "code_challenge_method": "S256"}
+    q.update({"access_type": "offline", "prompt": "consent"} if provider == "google" else {"response_mode": "query", "prompt": "select_account"})
+    return {"state": state, "verifier": verifier, "url": o["authorize"] + "?" + urllib.parse.urlencode(q)}
+
+
+class SignInBlocked(RuntimeError):
+    """A work or school account whose organisation makes an administrator approve outside apps."""
+
+
+def oauth_refused(provider, params):
+    """What the provider's error coming back to the redirect means, in plain words. Raises SignInBlocked for "needs an admin"."""
+    err = (params.get("error") or "").strip()
+    desc = (params.get("error_description") or "").strip()
+    if ADMIN_ONLY.search(desc) or ADMIN_ONLY.search(err) or err == "consent_required":
+        raise SignInBlocked(desc[:300])
+    if err == "access_denied":
+        return "You didn't allow CalSync, so nothing was connected."
+    return f"{provider.title()} didn't finish the sign-in ({err or 'no reason given'}). Nothing was connected."
+
+
+def next_label(provider):
+    """A name for a new account: google, google-2, microsoft... The calendars on it are named when you pick them."""
+    base, have = provider, set(_accounts())
+    return base if base not in have else next(f"{base}-{i}" for i in range(2, 1000) if f"{base}-{i}" not in have)
+
+
+def oauth_finish(provider, code, verifier, redirect, label=None):
+    """Trade the code for a refresh token with the PKCE verifier, and store the account. -> its label."""
+    app = builtin_app(provider)
+    if not app:
+        raise RuntimeError(f"this copy of CalSync has no built-in {provider.title()} sign-in")
+    form = {"client_id": app["client_id"], "code": code, "code_verifier": verifier, "redirect_uri": redirect, "grant_type": "authorization_code"}
+    if provider == "google":
+        form["client_secret"] = app["client_secret"]
+    else:
+        form["scope"] = MS_SCOPES
+    try:
+        r = http("POST", OAUTH[provider]["token"], form=form)
+    except RuntimeError as e:
+        if ADMIN_ONLY.search(str(e)):
+            raise SignInBlocked(str(e)[:300]) from None
+        raise
+    if "refresh_token" not in r:
+        raise RuntimeError(f"{provider.title()} gave no lasting sign-in. Remove CalSync from your account's connected apps and try again.")
+    label = label or next_label(provider)
+    _save_account(label, {"provider": "google" if provider == "google" else "outlook", "app": "calsync", "refresh_token": r["refresh_token"],
+                          **({"tenant": "common"} if provider == "microsoft" else {})})
+    return label
+
+
+def loopback_signin(provider, label=None, open_browser=None, timeout=600, ready=None):
+    """One-click sign-in from the command line: listen on 127.0.0.1 on a random free port for the redirect, open the
+    system browser, wait. -> the account's label. ready(url) is called once listening (tests use it instead of a browser)."""
+    import http.server, socketserver
+    got = {}
+    done = threading.Event()
+
+    class Back(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):          # the address holds the code
+            pass
+
+        def do_GET(self):
+            u = urllib.parse.urlparse(self.path)
+            if u.path != OAUTH[provider]["path"]:
+                self.send_response(404)
+                self.end_headers()
+                return
+            got.update({k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()})
+            body = b"<!doctype html><meta charset=utf-8><title>CalSync</title><p style='font:17px system-ui;margin:48px'>Done. You can close this tab and go back to CalSync.</p>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            done.set()
+
+    bind = "127.0.0.1"
+    with socketserver.TCPServer((bind, 0), Back) as srv:
+        redirect = loopback_redirect(provider, srv.server_address[1])
+        flow = oauth_start(provider, redirect)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            if ready:
+                ready(flow["url"])
+            else:
+                import webbrowser
+                (open_browser or webbrowser.open)(flow["url"])
+            if not done.wait(timeout):
+                raise RuntimeError("timed out waiting for the sign-in")
+        finally:
+            srv.shutdown()
+    if got.get("state") != flow["state"]:
+        raise RuntimeError("the sign-in came back for a different request, so it was ignored")
+    if "code" not in got:
+        raise RuntimeError(oauth_refused(provider, got))
+    return oauth_finish(provider, got["code"], flow["verifier"], redirect, label)
+
+
 def google_access_token(label):
-    acct, c = _accounts()[label], _client("google")
+    acct = _accounts()[label]
+    c = (builtin_app("google") or {}) if acct.get("app") == "calsync" else _client("google")
+    if not c:
+        raise RuntimeError("not signed in: this account used CalSync's own Google app, which this copy doesn't have")
     r = http("POST", "https://oauth2.googleapis.com/token", form={
         "client_id": c["client_id"], "client_secret": c["client_secret"],
         "refresh_token": acct["refresh_token"], "grant_type": "refresh_token"})
@@ -1709,7 +1866,10 @@ def google_access_token(label):
 
 
 def microsoft_access_token(label):
-    acct, c = _accounts()[label], _client("microsoft")
+    acct = _accounts()[label]
+    c = (builtin_app("microsoft") or {}) if acct.get("app") == "calsync" else _client("microsoft")
+    if not c:
+        raise RuntimeError("not signed in: this account used CalSync's own Microsoft app, which this copy doesn't have")
     r = http("POST", f"https://login.microsoftonline.com/{acct.get('tenant', 'common')}/oauth2/v2.0/token", form={
         "client_id": c["client_id"], "grant_type": "refresh_token", "refresh_token": acct["refresh_token"],
         "scope": MS_SCOPES})
@@ -1796,6 +1956,11 @@ def cmd_setup(provider):
 
 
 def cmd_auth_google(label):
+    if builtin_app("google") and not load_json(os.path.join(SECRETS, "google-client.json"), None):
+        print("Opening your browser to sign in to Google...")
+        label = loopback_signin("google", label)
+        print(f"Signed in {label!r}. Its calendars:")
+        return _print_calendars(label)
     c = _client("google")
     print("1. Open this link in your browser and sign in as the account for", repr(label) + ":\n\n" + google_auth_url(c["client_id"], GOOGLE_REDIRECT) + "\n")
     print("2. After you click Allow, the browser shows an error page at 127.0.0.1. That's expected.")
@@ -1809,6 +1974,15 @@ def cmd_auth_google(label):
 
 
 def cmd_auth_outlook(label, tenant="common"):
+    if builtin_app("microsoft") and not load_json(os.path.join(SECRETS, "microsoft-client.json"), None):
+        print("Opening your browser to sign in to Microsoft...")
+        try:
+            label = loopback_signin("microsoft", label)
+        except SignInBlocked:
+            raise SystemExit("Your organisation needs an administrator to approve CalSync. You can still sync this calendar one way "
+                             "with a published .ics link: calsync auth ics NAME") from None
+        print(f"Signed in {label!r}. Its calendars:")
+        return _print_calendars(label)
     r = microsoft_device_start(tenant)
     print(r["message"])
     deadline = time.time() + int(r.get("expires_in", 900))
