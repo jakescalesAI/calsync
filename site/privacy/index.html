@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy | CalSync</title>
+<meta name="description" content="What CalSync does with your calendar data: it stays on your computer. No accounts, servers, analytics or tracking.">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#ffffff">
+<link rel="canonical" href="https://getcalsync.app/privacy/">
+<link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/mark-small.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="CalSync">
+<meta property="og:title" content="Privacy | CalSync">
+<meta property="og:description" content="What CalSync does with your calendar data: it stays on your computer. No accounts, servers, analytics or tracking.">
+<meta property="og:url" content="https://getcalsync.app/privacy/">
+<meta property="og:image" content="https://getcalsync.app/og.png">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+<div class="wrap">
+<a class="brand" href="/"><img class="glyph" src="/glyph-light.svg" alt="" width="37" height="40">CalSync</a>
+<nav aria-label="Main">
+<a href="/#how">How it works</a>
+<a href="/#careful">Safety</a>
+<a href="/#compare">Compare</a>
+<a href="/blog/">Blog</a>
+<a href="https://docs.getcalsync.app/">Docs</a>
+<a class="gh" href="https://github.com/jakescalesAI/calsync">GitHub</a>
+</nav>
+<a class="burger" href="#menu" aria-label="Open menu"><i></i><i></i><i></i></a>
+</div>
+</header>
+<span id="shut" hidden></span>
+<nav class="menu" id="menu" aria-label="Menu">
+<div class="menu-top"><a class="brand" href="/"><img class="glyph" src="/glyph-light.svg" alt="" width="37" height="40">CalSync</a><a class="shut" href="#shut" aria-label="Close menu"><i></i><i></i></a></div>
+<a href="/#how">How it works</a>
+<a href="/#careful">Safety</a>
+<a href="/#compare">Compare</a>
+<a href="/blog/">Blog</a>
+<a href="https://docs.getcalsync.app/">Docs</a>
+<a href="https://github.com/jakescalesAI/calsync">GitHub</a>
+</nav>
+
+<main id="main">
+<article>
+<header class="wrap post-head">
+<p class="eyebrow">Privacy</p>
+<h1>Your calendars stay on your computer.</h1>
+<p class="lede">CalSync is free, open-source software that runs on your own computer. We don't run a server that your calendars pass through, and we never see your events.</p>
+<p class="byline">Effective 28 November 2026</p>
+</header>
+<div class="wrap prose">
+<h2>Who this covers</h2>
+<p>This policy covers the CalSync app (the desktop app, the <code>calsync</code> command and its web page, and the Docker image) and this website, getcalsync.app. CalSync is published under the MIT licence at <a href="https://github.com/jakescalesAI/calsync">github.com/jakescalesAI/calsync</a>, so you can read exactly what it does.</p>
+
+<h2>What CalSync accesses</h2>
+<p>When you connect a calendar, CalSync asks only for what it needs to copy events between your calendars:</p>
+<ul>
+<li><strong>Google Calendar:</strong> your list of calendars (<code>calendar.calendarlist.readonly</code>) and the events on them (<code>calendar.events</code>), so it can read events and create, update or remove the copies it makes.</li>
+<li><strong>Microsoft Outlook and Microsoft 365:</strong> your calendars and their events (<code>Calendars.ReadWrite</code>), plus <code>offline_access</code> so syncing keeps working in the background.</li>
+<li><strong>iCloud and other CalDAV calendars:</strong> the server address, user name and app-specific password you type in.</li>
+<li><strong>.ics links:</strong> the link you paste, read only.</li>
+</ul>
+<p>CalSync only changes or removes events it created itself, which it marks with its own tag. It never sends invitations, emails or messages for you.</p>
+
+<h2>Where your data goes</h2>
+<p>Everything stays on your computer. Sign-in tokens, passwords and settings are kept in CalSync's data folder, readable only by your user account. Event details are read from your calendar provider and written back to your other calendars; CalSync keeps only what it needs to match copies to their originals.</p>
+<p>CalSync talks only to Google, Microsoft, the CalDAV servers you add and the .ics links you add. It has no analytics, no crash reporting, no ads and no tracking, and it sends nothing to us or to anyone else.</p>
+<p>The CalSync page your browser opens is served by your own computer, at <code>localhost</code>, and refuses connections from anywhere else.</p>
+
+<h2>AI agents</h2>
+<p>CalSync can act as a tool for an AI agent you choose to connect, through <code>calsync mcp</code>. It's off until you turn it on. When you use it, CalSync gives that agent the calendar details it asks for, and the agent may send them to the AI model it runs on, under that provider's own terms. A <code>--busy-only</code> mode shares times only. CalSync never uses your calendar data to train AI models, and doesn't allow it to be used for that.</p>
+
+<h2>Google user data</h2>
+<p>CalSync's use and transfer of information received from Google APIs to any other app will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. Data from Google is used only to show and sync your own calendars at your request. It is never sold, never used for advertising, and never read by a person.</p>
+
+<h2>Removing your data</h2>
+<ul>
+<li>Remove a calendar in CalSync, or run <code>calsync purge</code> to delete the copies CalSync made.</li>
+<li>Delete CalSync's data folder to remove every sign-in and setting. On Windows the desktop app keeps it in <code>%LOCALAPPDATA%pp.getcalsync.desktop</code>; the command-line version uses <code>~/.calsync</code>.</li>
+<li>You can also withdraw CalSync's access at any time from your <a href="https://myaccount.google.com/permissions">Google account</a> or <a href="https://account.live.com/consent/Manage">Microsoft account</a>.</li>
+</ul>
+
+<h2>This website</h2>
+<p>getcalsync.app is a static site hosted on Cloudflare Pages. It has no cookies, analytics or trackers. Like any web host, Cloudflare processes standard request data such as IP addresses to deliver and protect the site.</p>
+
+<h2>Children</h2>
+<p>CalSync isn't directed at children under 13.</p>
+
+<h2>Changes</h2>
+<p>If this policy changes, the new version will be posted here with a new effective date, and the history is public on GitHub.</p>
+
+<h2>Contact</h2>
+<p>Questions or requests: open an issue at <a href="https://github.com/jakescalesAI/calsync/issues">github.com/jakescalesAI/calsync/issues</a>, or report a security problem privately as described in <a href="https://github.com/jakescalesAI/calsync/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+</div>
+</article>
+</main>
+
+<footer class="foot">
+<div class="wrap">
+<a class="brand" href="/" aria-label="CalSync home"><img class="glyph" src="/glyph-light.svg" alt="" width="22" height="24">CalSync</a>
+<nav aria-label="Footer"><a href="/blog/">Blog</a><a href="https://docs.getcalsync.app/">Docs</a><a href="https://docs.getcalsync.app/faq/">FAQ</a><a href="https://github.com/jakescalesAI/calsync">GitHub</a><a href="/privacy/">Privacy</a></nav>
+<p>MIT licence. This page has no trackers, analytics or cookies.</p>
+</div>
+</footer>
+</body>
+</html>
